@@ -58,9 +58,9 @@ export function AuthShell({ title, subtitle, children }) {
       <div className="w-full max-w-md">
         <div className="mb-6 flex items-center justify-center gap-2">
           <div className="grid h-10 w-10 place-items-center rounded-xl bg-gradient-to-br from-indigo-500 to-violet-500 text-xl font-black text-white">
-            S
+            A
           </div>
-          <span className="text-xl font-bold">Social SaaS</span>
+          <span className="text-xl font-bold">AutoSocial AI</span>
         </div>
         <div className="card p-7">
           <h1 className="text-2xl font-bold">{title}</h1>

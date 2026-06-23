@@ -26,10 +26,10 @@ export default function Layout() {
       <aside className="sticky top-0 hidden h-screen w-64 shrink-0 flex-col border-r border-slate-200 bg-white/70 p-4 backdrop-blur-xl dark:border-white/10 dark:bg-slate-900/40 md:flex">
         <div className="mb-8 flex items-center gap-2 px-2">
           <div className="grid h-9 w-9 place-items-center rounded-xl bg-gradient-to-br from-indigo-500 to-violet-500 text-lg font-black text-white">
-            S
+            A
           </div>
           <div>
-            <div className="text-sm font-bold leading-tight">Social SaaS</div>
+            <div className="text-sm font-bold leading-tight">AutoSocial AI</div>
             <div className="text-xs text-slate-400">AI Post Studio</div>
           </div>
         </div>

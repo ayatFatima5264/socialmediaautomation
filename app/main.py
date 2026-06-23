@@ -1,4 +1,4 @@
-"""FastAPI entrypoint for the Social Media SaaS backend.
+"""FastAPI entrypoint for the AutoSocial AI backend.
 
 Run from the project root (social-saas/):
     venv/Scripts/uvicorn app.main:app --reload
@@ -37,7 +37,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="Social Media SaaS API",
+    title="AutoSocial AI API",
     description="AI-powered multi-platform social post generation.",
     version="0.2.0",
     lifespan=lifespan,
@@ -58,4 +58,4 @@ app.include_router(schedule.router)
 
 @app.get("/")
 def home() -> dict:
-    return {"status": "ok", "service": "social-saas", "docs": "/docs"}
+    return {"status": "ok", "service": "autosocial-ai", "docs": "/docs"}

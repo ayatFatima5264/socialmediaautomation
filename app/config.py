@@ -18,10 +18,19 @@ class Settings(BaseSettings):
     )
 
     # ---- AI provider selection -------------------------------------------
-    # Which provider ai_service uses by default. "groq" (free Llama models)
-    # or "mock" (offline, no network/key required). If "groq" is selected but
-    # no GROQ_API_KEY is present, the factory transparently falls back to mock.
-    ai_provider: str = "groq"
+    # Which provider ai_service uses by default. Real free options:
+    #   "gemini" (Google, generous free tier) or "groq" (fast free Llama).
+    # "mock" (offline, no key) is still available but must be selected
+    # explicitly — a real provider with a missing key now errors clearly
+    # instead of silently producing placeholder text.
+    ai_provider: str = "gemini"
+
+    # ---- Google Gemini (free tier) ---------------------------------------
+    # Get a free key at https://aistudio.google.com/apikey
+    # Uses Gemini's OpenAI-compatibility endpoint.
+    gemini_api_key: str | None = None
+    gemini_model: str = "gemini-2.0-flash"
+    gemini_base_url: str = "https://generativelanguage.googleapis.com/v1beta/openai"
 
     # ---- Groq (free tier) -------------------------------------------------
     # Get a free key at https://console.groq.com/keys
