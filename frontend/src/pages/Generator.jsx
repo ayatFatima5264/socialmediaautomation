@@ -45,6 +45,10 @@ export default function Generator() {
           platform: res.platform,
           content: res.text,
           hashtags: (res.hashtags || []).join(' '),
+          imagePrompt: topic, // seed image prompt from the topic
+          imageUrl: '',
+          imgLoading: false,
+          igBusy: false,
         })),
       )
       setDrafts(cards)
@@ -94,6 +98,45 @@ export default function Generator() {
       toast.success(`Published to ${PLATFORMS[c.platform].label} (simulated)`)
     } catch (err) {
       toast.error(err.message)
+    }
+  }
+
+  async function genImage(i) {
+    const c = drafts[i]
+    const prompt = (c.imagePrompt || '').trim()
+    if (!prompt) return toast.error('Enter an image prompt')
+    updateDraft(i, { imgLoading: true })
+    try {
+      const { image_url } = await api.generateImage({ prompt })
+      updateDraft(i, { imageUrl: image_url })
+      toast.success('Image generated')
+    } catch (err) {
+      toast.error(err.message || 'Image generation failed')
+    } finally {
+      updateDraft(i, { imgLoading: false })
+    }
+  }
+
+  async function publishInstagram(i) {
+    const c = drafts[i]
+    const caption = [c.content, hashtagList(c.hashtags).map((t) => `#${t}`).join(' ')]
+      .filter(Boolean)
+      .join('\n\n')
+    updateDraft(i, { igBusy: true })
+    try {
+      const res = await api.publishInstagram({
+        caption,
+        image_url: c.imageUrl || null,
+        image_prompt: c.imageUrl ? null : c.imagePrompt || c.content,
+        content: c.content,
+        hashtags: hashtagList(c.hashtags),
+      })
+      updateDraft(i, { imageUrl: res.image_url })
+      toast.success('Published to Instagram — see it in History')
+    } catch (err) {
+      toast.error(err.message || 'Instagram publish failed')
+    } finally {
+      updateDraft(i, { igBusy: false })
     }
   }
 
@@ -247,6 +290,31 @@ export default function Generator() {
                   placeholder="space or comma separated"
                 />
 
+                {/* AI image */}
+                <label className="label mt-3">Image prompt</label>
+                <div className="flex gap-2">
+                  <input
+                    className="input"
+                    value={c.imagePrompt}
+                    onChange={(e) => updateDraft(i, { imagePrompt: e.target.value })}
+                    placeholder="Describe the image to generate"
+                  />
+                  <button
+                    onClick={() => genImage(i)}
+                    disabled={c.imgLoading}
+                    className="btn btn-ghost btn-sm whitespace-nowrap"
+                  >
+                    {c.imgLoading ? 'Generating…' : '🖼 Generate'}
+                  </button>
+                </div>
+                {c.imageUrl && (
+                  <img
+                    src={c.imageUrl}
+                    alt="Generated preview"
+                    className="mt-3 aspect-square w-full max-w-xs rounded-xl object-cover"
+                  />
+                )}
+
                 <div className="mt-4 flex flex-wrap gap-2">
                   <button onClick={() => saveDraft(i)} className="btn btn-ghost btn-sm">
                     Save Draft
@@ -257,6 +325,15 @@ export default function Generator() {
                   <button onClick={() => publishNow(i)} className="btn btn-primary btn-sm">
                     Publish Now
                   </button>
+                  {c.platform === 'instagram' && (
+                    <button
+                      onClick={() => publishInstagram(i)}
+                      disabled={c.igBusy}
+                      className="btn btn-sm bg-pink-600 text-white hover:bg-pink-500"
+                    >
+                      {c.igBusy ? 'Publishing…' : '📸 Publish to Instagram'}
+                    </button>
+                  )}
                 </div>
               </div>
             )

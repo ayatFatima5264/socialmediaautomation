@@ -17,6 +17,7 @@ from app.config import settings
 from app.core.timeutils import utcnow
 from app.database import SessionLocal
 from app.models.post import Post
+from app.models.social_account import SocialAccount
 from app.schemas.post import Platform, PostStatus
 from app.services.publisher import PublishResult, get_publisher
 
@@ -31,7 +32,16 @@ async def publish_post(db: Session, post: Post) -> Post:
     post.status = PostStatus.publishing.value
     db.commit()
 
-    publisher = get_publisher(Platform(post.platform))
+    platform = Platform(post.platform)
+    # Use the post owner's connected account for this platform, if any.
+    account = db.scalars(
+        select(SocialAccount).where(
+            SocialAccount.user_id == post.user_id,
+            SocialAccount.platform == platform.value,
+        )
+    ).first()
+
+    publisher = get_publisher(platform, account)
     try:
         result = await publisher.publish(
             content=post.content, hashtags=post.hashtags or []

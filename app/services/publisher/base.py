@@ -24,6 +24,12 @@ class BasePublisher(ABC):
     platform: Platform
 
     @abstractmethod
-    async def publish(self, *, content: str, hashtags: list[str]) -> PublishResult:
-        """Publish a post to the platform."""
+    async def publish(
+        self, *, content: str, hashtags: list[str], image_url: str | None = None
+    ) -> PublishResult:
+        """Publish a post to the platform.
+
+        `image_url` is a publicly reachable media URL. Some platforms (Instagram)
+        require it; text-only platforms ignore it.
+        """
         raise NotImplementedError

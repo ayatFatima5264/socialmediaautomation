@@ -74,6 +74,12 @@ export const api = {
   // generation
   meta: () => request('/api/meta', { auth: false }),
   generate: (body) => request('/api/generate-post', { method: 'POST', body }),
+  generateImage: (body) => request('/api/generate-image', { method: 'POST', body, auth: false }),
+
+  // instagram (Instagram Login API)
+  instagramProfile: () => request('/instagram/profile', { auth: false }),
+  publishInstagram: (body) =>
+    request('/instagram/publish', { method: 'POST', body }),
 
   // posts
   listPosts: (status) => request(`/api/posts${status ? `?status=${status}` : ''}`),
@@ -83,4 +89,11 @@ export const api = {
   deletePost: (id) => request(`/api/posts/${id}`, { method: 'DELETE' }),
   publishPost: (id) => request(`/api/posts/${id}/publish`, { method: 'POST' }),
   cancelPost: (id) => request(`/api/posts/${id}/cancel`, { method: 'POST' }),
+
+  // connected social accounts
+  listAccounts: () => request('/api/accounts'),
+  connectInstagram: (body) =>
+    request('/api/accounts/instagram/connect', { method: 'POST', body }),
+  disconnectAccount: (platform) =>
+    request(`/api/accounts/${platform}`, { method: 'DELETE' }),
 }

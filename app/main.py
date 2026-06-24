@@ -15,7 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.database import init_db
-from app.routes import auth, posts, schedule
+from app.routes import accounts, auth, instagram, posts, schedule
 from app.services.scheduler import scheduler_loop
 
 logging.basicConfig(level=logging.INFO)
@@ -54,6 +54,8 @@ app.add_middleware(
 app.include_router(auth.router)
 app.include_router(posts.router)
 app.include_router(schedule.router)
+app.include_router(accounts.router)
+app.include_router(instagram.router)
 
 
 @app.get("/")

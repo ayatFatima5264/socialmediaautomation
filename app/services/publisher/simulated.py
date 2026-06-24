@@ -19,7 +19,9 @@ class SimulatedPublisher(BasePublisher):
     def __init__(self, platform: Platform) -> None:
         self.platform = platform
 
-    async def publish(self, *, content: str, hashtags: list[str]) -> PublishResult:
+    async def publish(
+        self, *, content: str, hashtags: list[str], image_url: str | None = None
+    ) -> PublishResult:
         # Simulate network latency to a platform API.
         await asyncio.sleep(0.1)
 

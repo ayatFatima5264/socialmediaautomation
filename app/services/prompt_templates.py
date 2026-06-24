@@ -19,6 +19,7 @@ from app.schemas.post import GeneratePostRequest, Platform
 class PlatformSpec:
     label: str
     char_limit: int          # hard platform limit for the main `text`
+    min_chars: int           # soft floor — keep the model from emitting a bare slogan
     sweet_spot: str          # human description of the ideal length
     hashtags: str            # hashtag etiquette
     voice: str               # tone/structure guidance
@@ -28,16 +29,20 @@ PLATFORM_SPECS: dict[Platform, PlatformSpec] = {
     Platform.twitter: PlatformSpec(
         label="Twitter/X",
         char_limit=280,
-        sweet_spot="one punchy thought, ideally under 280 characters",
+        min_chars=160,
+        sweet_spot="180–270 characters — a complete, punchy thought that uses the space",
         hashtags="0–2 highly relevant hashtags, never more",
         voice=(
-            "Hook in the first 7 words. Be concise, witty and scroll-stopping. "
-            "No filler. One clear idea. Emojis only if they add punch."
+            "Hook in the first 7 words, then develop the idea with a concrete "
+            "detail, benefit or call-to-action — aim for 2–3 tight sentences. "
+            "Witty and scroll-stopping, no filler, but don't stop at a bare "
+            "slogan: fill out the tweet. Emojis only if they add punch."
         ),
     ),
     Platform.instagram: PlatformSpec(
         label="Instagram",
         char_limit=2200,
+        min_chars=150,
         sweet_spot="125–250 characters of caption before the hashtags",
         hashtags="5–10 relevant, mixed popular + niche hashtags",
         voice=(
@@ -49,6 +54,7 @@ PLATFORM_SPECS: dict[Platform, PlatformSpec] = {
     Platform.facebook: PlatformSpec(
         label="Facebook",
         char_limit=63206,
+        min_chars=200,
         sweet_spot="40–80 words, conversational",
         hashtags="0–2 hashtags only",
         voice=(
@@ -59,6 +65,7 @@ PLATFORM_SPECS: dict[Platform, PlatformSpec] = {
     Platform.linkedin: PlatformSpec(
         label="LinkedIn",
         char_limit=3000,
+        min_chars=400,
         sweet_spot="100–200 words with short paragraphs",
         hashtags="3 professional hashtags",
         voice=(
@@ -71,6 +78,7 @@ PLATFORM_SPECS: dict[Platform, PlatformSpec] = {
     Platform.threads: PlatformSpec(
         label="Threads",
         char_limit=500,
+        min_chars=150,
         sweet_spot="under 500 characters, casual",
         hashtags="0–1 hashtag",
         voice=(
@@ -96,7 +104,11 @@ def build_user_prompt(req: GeneratePostRequest, platform: Platform) -> str:
 
     # Describe the exact JSON object we want back.
     schema: dict[str, str] = {
-        "text": f"the main post copy for {spec.label}, within {spec.char_limit} characters",
+        "text": (
+            f"the main post copy for {spec.label}, between {spec.min_chars} and "
+            f"{spec.char_limit} characters — at least {spec.min_chars} characters, "
+            "written as full sentences, never a one-line slogan"
+        ),
     }
     if req.variants:
         schema["short_version"] = "a tighter, shorter variant of the post"
@@ -115,6 +127,9 @@ def build_user_prompt(req: GeneratePostRequest, platform: Platform) -> str:
         "",
         f"PLATFORM VOICE: {spec.voice}",
         f"IDEAL LENGTH: {spec.sweet_spot}.",
+        f"MINIMUM LENGTH: the post text MUST be at least {spec.min_chars} "
+        "characters. Do NOT return a bare headline or one-line slogan — "
+        "develop the idea into full sentences.",
         f"HARD LIMIT: stay within {spec.char_limit} characters.",
     ]
     if req.include_hashtags:
