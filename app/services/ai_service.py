@@ -48,6 +48,79 @@ async def generate_posts(req: GeneratePostRequest) -> GeneratePostResponse:
     )
 
 
+async def generate_article(
+    topic: str,
+    *,
+    audience: str | None = None,
+    tone: str = "professional",
+    provider_name: str | None = None,
+) -> dict:
+    """Generate a LinkedIn article (title, body, tags, SEO keywords, cover prompt).
+
+    Returns a dict the route serializes; reading time is derived from the body.
+    Deliberately produces long-form prose — no hashtags or short captions.
+    """
+    provider = get_provider(provider_name)
+    system = (
+        "You are an expert LinkedIn ghostwriter who writes engaging, "
+        "professional long-form articles. You ALWAYS return only a JSON object "
+        "matching the requested schema — no markdown, no code fences, no commentary."
+    )
+    audience_line = f"\nTARGET AUDIENCE: {audience}" if audience else ""
+    user = (
+        f"Write a {tone} LinkedIn article about this topic:\n"
+        f"TOPIC: {topic}{audience_line}\n\n"
+        "Requirements:\n"
+        "- A compelling, specific title (max ~80 characters).\n"
+        "- A body of roughly 400-800 words in clear paragraphs separated by "
+        "blank lines. Use a few short plain-text subheadings. Professional, "
+        "insight-driven, with a strong opening hook and a closing takeaway.\n"
+        "- 3-6 topical tags (no # symbol).\n"
+        "- 4-8 SEO keywords/phrases.\n"
+        "- A short visual description for a 16:9 cover image.\n\n"
+        "Return ONLY a JSON object with exactly these keys:\n"
+        '{"title": "...", "body": "...", "tags": ["..."], '
+        '"seo_keywords": ["..."], "cover_image_prompt": "..."}'
+    )
+    raw = await provider.complete(
+        system=system,
+        user=user,
+        max_tokens=max(settings.ai_max_tokens, 2048),
+        temperature=settings.ai_temperature,
+        json_mode=True,
+        context={"article": True, "topic": topic},
+    )
+    data = _parse_json(raw)
+    body = str(data.get("body", "")).strip()
+    title = str(data.get("title", "")).strip() or topic[:80]
+    words = len(body.split())
+    return {
+        "title": title,
+        "body": body,
+        "tags": _normalize_hashtags(data.get("tags")),
+        "seo_keywords": _normalize_list(data.get("seo_keywords")),
+        "cover_image_prompt": str(data.get("cover_image_prompt", "")).strip() or title,
+        "reading_time_min": max(1, round(words / 200)),
+        "word_count": words,
+    }
+
+
+def _normalize_list(value: object) -> list[str]:
+    """Normalize a value into a clean list of strings (keeps phrases intact)."""
+    if value is None:
+        return []
+    if isinstance(value, str):
+        value = re.split(r"[,\n]+", value)
+    if not isinstance(value, (list, tuple)):
+        return []
+    out: list[str] = []
+    for item in value:
+        s = str(item).strip().lstrip("#").strip()
+        if s:
+            out.append(s)
+    return out
+
+
 async def generate_carousel_outline(
     topic: str,
     slides: int,

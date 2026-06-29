@@ -184,6 +184,18 @@ def test_assist_requires_text():
     assert r.status_code == 422
 
 
+def test_generate_article_requires_a_topic():
+    r = client.post("/api/generate-article", json={"topic": ""})
+    assert r.status_code == 422
+
+
+def test_normalize_list_keeps_phrases():
+    from app.services.ai_service import _normalize_list
+
+    assert _normalize_list(["#AI in HR", " recruiting ", ""]) == ["AI in HR", "recruiting"]
+    assert _normalize_list("ai, future of work") == ["ai", "future of work"]
+
+
 def test_assist_action_set_is_complete():
     from app.services.ai_service import ASSIST_INSTRUCTIONS
 

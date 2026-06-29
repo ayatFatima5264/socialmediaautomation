@@ -79,6 +79,7 @@ export const api = {
   generate: (body) => request('/api/generate-post', { method: 'POST', body }),
   generateImage: (body) => request('/api/generate-image', { method: 'POST', body, auth: false }),
   generateImages: (body) => request('/api/generate-images', { method: 'POST', body, auth: false }),
+  generateArticle: (body) => request('/api/generate-article', { method: 'POST', body }),
 
   // AI text assist (in-place edits for the manual composer)
   assist: (body) => request('/api/assist', { method: 'POST', body, auth: false }),

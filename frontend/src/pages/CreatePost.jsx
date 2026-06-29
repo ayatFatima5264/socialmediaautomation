@@ -4,6 +4,12 @@ import { api } from '../lib/api'
 import { useToast } from '../context/ToastContext.jsx'
 import { useAuth } from '../context/AuthContext.jsx'
 import { PLATFORMS, PLATFORM_KEYS } from '../lib/constants'
+import {
+  CONTENT_TYPES,
+  CONTENT_TYPE_ORDER,
+  contentTypeStates,
+  isLinkedInOnly,
+} from '../lib/contentTypes'
 import { localInputToISO } from '../lib/datetime'
 import PlatformIcon from '../components/PlatformIcon.jsx'
 
@@ -43,49 +49,8 @@ const ASSIST_ACTIONS = [
 const TONE_OPTIONS = ['Professional', 'Casual', 'Friendly', 'Bold', 'Funny', 'Inspirational']
 const LANGUAGE_OPTIONS = ['English', 'Spanish', 'French', 'German', 'Arabic', 'Hindi', 'Portuguese', 'Chinese']
 
-// Content types, always visible. Universal ones (post/image/video) work on
-// every platform; the rest are gated by platform capabilities below.
-const CONTENT_TYPES = {
-  post: { id: 'post', label: 'Social Post', icon: '📝' },
-  image: { id: 'image', label: 'Image Post', icon: '🖼' },
-  video: { id: 'video', label: 'Video Post', icon: '🎬' },
-  carousel: { id: 'carousel', label: 'Carousel', icon: '▦' },
-  link: { id: 'link', label: 'Link Post', icon: '🔗' },
-  article: { id: 'article', label: 'LinkedIn Article', icon: '📄' },
-}
-const CONTENT_TYPE_ORDER = ['post', 'image', 'video', 'carousel', 'link', 'article']
-const UNIVERSAL_TYPES = ['post', 'image', 'video']
-
-// Platform capabilities for the gated content types.
-const CAROUSEL_PLATFORMS = new Set(['instagram', 'facebook', 'linkedin', 'twitter', 'threads'])
-const LINK_PLATFORMS = new Set(['facebook', 'linkedin', 'twitter', 'threads', 'pinterest'])
-
-function isLinkedInOnly(selected) {
-  return selected.length === 1 && selected[0] === 'linkedin'
-}
-
-// Per-type { enabled, reason } for the current selection.
-function contentTypeStates(selected) {
-  const states = {}
-  for (const id of UNIVERSAL_TYPES) states[id] = { enabled: true }
-
-  const hasSel = selected.length > 0
-  const carouselOk = hasSel && selected.every((p) => CAROUSEL_PLATFORMS.has(p))
-  states.carousel = carouselOk
-    ? { enabled: true }
-    : { enabled: false, reason: 'Carousel posts are not supported across all selected platforms.' }
-
-  const linkOk = hasSel && selected.every((p) => LINK_PLATFORMS.has(p))
-  states.link = linkOk
-    ? { enabled: true }
-    : { enabled: false, reason: 'Link Posts are not fully supported on all selected platforms.' }
-
-  states.article = isLinkedInOnly(selected)
-    ? { enabled: true }
-    : { enabled: false, reason: 'LinkedIn Articles can only be published when LinkedIn is the only selected platform.' }
-
-  return states
-}
+// Content types + platform-capability rules live in lib/contentTypes.js,
+// shared with the AI Generator.
 
 function minLocal() {
   const d = new Date(Date.now() + 60_000)

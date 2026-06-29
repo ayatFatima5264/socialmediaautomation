@@ -14,6 +14,12 @@ import {
 } from '../lib/constants'
 import { localInputToISO } from '../lib/datetime'
 import { loadFirstAvailable } from '../lib/imageLoader'
+import {
+  CONTENT_TYPES,
+  CONTENT_TYPE_ORDER,
+  contentTypeStates,
+  isLinkedInOnly,
+} from '../lib/contentTypes'
 import PlatformIcon from '../components/PlatformIcon.jsx'
 import ScheduleModal from '../components/ScheduleModal.jsx'
 
@@ -99,6 +105,11 @@ export default function Generator() {
   const [includeHashtags, setIncludeHashtags] = useState(SAVED?.includeHashtags ?? true)
   const [variants, setVariants] = useState(SAVED?.variants ?? false)
 
+  // Content type (Social Post / Image / Video / Carousel / Link / LinkedIn Article).
+  const [contentType, setContentType] = useState(SAVED?.contentType ?? 'post')
+  const [article, setArticle] = useState(SAVED?.article ?? null) // generated article result
+  const [articleBusy, setArticleBusy] = useState(false)
+
   // Global image settings (apply to all selected platforms) + per-platform
   // overrides keyed by platform.
   const [img, setImg] = useState({ ...DEFAULT_IMAGE_SETTINGS, ...(SAVED?.img || {}) })
@@ -124,8 +135,12 @@ export default function Generator() {
   const [bulkBusy, setBulkBusy] = useState(false)
   const busyRef = useRef(false) // guards against double-submit
 
-  // Unsaved generated content = at least one card not yet published/scheduled.
-  const hasUnsaved = drafts.some((d) => !['published', 'scheduled'].includes(d.status))
+  // Unsaved generated content = a generated article, or a card not yet
+  // published/scheduled.
+  const hasUnsaved =
+    !!article || drafts.some((d) => !['published', 'scheduled'].includes(d.status))
+
+  const ctStates = contentTypeStates(selected)
 
   // Warn before leaving / refreshing with unsaved generated content.
   useEffect(() => {
@@ -145,6 +160,7 @@ export default function Generator() {
       topic, tone, audience, selected, includeHashtags, variants,
       img, overrides, meta, drafts: slim,
       sourceType, sourceText, sourceUrl, transform, imageNote, activeSource,
+      contentType, article,
     }
     try {
       sessionStorage.setItem(STORAGE_KEY, JSON.stringify(payload))
@@ -152,11 +168,43 @@ export default function Generator() {
       /* quota / serialization issues are non-fatal */
     }
   }, [topic, tone, audience, selected, includeHashtags, variants, img, overrides, meta, drafts,
-    sourceType, sourceText, sourceUrl, transform, imageNote, activeSource])
+    sourceType, sourceText, sourceUrl, transform, imageNote, activeSource, contentType, article])
 
   function togglePlatform(p) {
+    const adding = !selected.includes(p)
+    // Adding another platform while a LinkedIn Article is in play needs a choice.
+    if (contentType === 'article' && adding && p !== 'linkedin') {
+      setConfirmModal({
+        title: 'LinkedIn Article Not Supported',
+        message:
+          'LinkedIn Articles can only be published to LinkedIn. Choose how you want to continue.',
+        actions: [
+          { label: 'Keep LinkedIn Only', variant: 'primary', onClick: () => setConfirmModal(null) },
+          {
+            label: 'Convert to Social Post',
+            variant: 'ghost',
+            onClick: () => convertArticleToPost(p),
+          },
+          { label: 'Cancel', variant: 'ghost', onClick: () => setConfirmModal(null) },
+        ],
+      })
+      return
+    }
     setSelected((s) => (s.includes(p) ? s.filter((x) => x !== p) : [...s, p]))
   }
+
+  function useLinkedInOnly() {
+    setSelected(['linkedin'])
+    setContentType('article')
+  }
+
+  // Keep the content type valid for the selection (silent fallback to post).
+  useEffect(() => {
+    if (contentType !== 'post' && !ctStates[contentType]?.enabled && !article) {
+      setContentType('post')
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected])
 
   function updateImg(patch) {
     setImg((s) => ({ ...s, ...patch }))
@@ -323,27 +371,42 @@ export default function Generator() {
         danger: true,
         onConfirm: () => {
           setConfirmModal(null)
-          runGenerate()
+          startGeneration()
         },
       })
       return
     }
-    runGenerate()
+    startGeneration()
   }
 
-  async function runGenerate() {
+  function startGeneration() {
+    if (contentType === 'article') runGenerateArticle()
+    else runGenerate()
+  }
+
+  // Apply content-type intent to a card's image settings.
+  function withContentType(settings) {
+    if (contentType === 'image') return { ...settings, aiImage: true, carousel: false }
+    if (contentType === 'carousel') return { ...settings, aiImage: true, carousel: true }
+    if (contentType === 'video') return { ...settings, aiImage: false } // no AI video
+    return settings
+  }
+
+  async function runGenerate({ preResolved, platformsOverride } = {}) {
     busyRef.current = true
     setLoading(true)
 
     // Resolve the chosen source first (URLs/files may fetch). Don't clear
     // existing results until we know we have usable source text.
-    let resolved
-    try {
-      resolved = await resolveSource()
-    } catch (err) {
-      setLoading(false)
-      busyRef.current = false
-      return toast.error(err.message || 'Could not read that source')
+    let resolved = preResolved
+    if (!resolved) {
+      try {
+        resolved = await resolveSource()
+      } catch (err) {
+        setLoading(false)
+        busyRef.current = false
+        return toast.error(err.message || 'Could not read that source')
+      }
     }
     const sourceText = (resolved.text || '').trim()
     if (sourceText.length < 2) {
@@ -352,10 +415,11 @@ export default function Generator() {
       return toast.error('Not enough content to generate from')
     }
 
+    setArticle(null) // normal posts replace any prior article
     setActiveSource(sourceText)
     setDrafts([])
     try {
-      const platforms = selected.length ? selected : PLATFORM_KEYS
+      const platforms = platformsOverride || (selected.length ? selected : PLATFORM_KEYS)
       const base = captionBase(sourceText)
 
       // 1. Captions — one request per platform (existing multi-platform flow).
@@ -368,7 +432,7 @@ export default function Generator() {
           content: res.text,
           hashtags: formatHashtags(res.hashtags),
           imagePrompt: sourceText, // base prompt for image (re)generation
-          settings: resolveSettings(img, overrides[res.platform]),
+          settings: withContentType(resolveSettings(img, overrides[res.platform])),
           // Image source: use the uploaded image directly instead of AI gen.
           images: resolved.imageOverride
             ? [{ url: resolved.imageOverride, label: null }]
@@ -395,6 +459,78 @@ export default function Generator() {
       setLoading(false)
       busyRef.current = false
     }
+  }
+
+  // --- LinkedIn Article generation -----------------------------------------
+  async function runGenerateArticle() {
+    busyRef.current = true
+    setArticleBusy(true)
+    let resolved
+    try {
+      resolved = await resolveSource()
+    } catch (err) {
+      setArticleBusy(false)
+      busyRef.current = false
+      return toast.error(err.message || 'Could not read that source')
+    }
+    const sourceText = (resolved.text || '').trim()
+    setActiveSource(sourceText)
+    setDrafts([])
+    setArticle(null)
+    try {
+      const a = await api.generateArticle({
+        topic: sourceText,
+        audience: audience || null,
+        tone,
+      })
+      const readingMin = a.reading_time_min
+      // Build cover-image candidates (16:9) via the same image pipeline.
+      let cover = null
+      try {
+        const imgRes = await api.generateImages({
+          prompt: a.cover_image_prompt || a.title,
+          aspect_ratio: '16:9',
+          style: img.style,
+          quality: img.quality,
+        })
+        cover = imgRes.images[0]
+      } catch {
+        /* cover is optional — the article still stands without it */
+      }
+      setArticle({
+        title: a.title,
+        body: a.body,
+        tags: a.tags,
+        seoKeywords: a.seo_keywords,
+        readingTime: readingMin,
+        cover, // {url, fallbacks} | null
+        coverPrompt: a.cover_image_prompt || a.title,
+        status: null,
+      })
+      setMeta({ provider: a.provider, model: a.model })
+      toast.success('Article generated')
+    } catch (err) {
+      toast.error(err.message || 'Article generation failed')
+    } finally {
+      setArticleBusy(false)
+      busyRef.current = false
+    }
+  }
+
+  // Convert an in-progress article into a normal multi-platform post: the
+  // article body becomes the source and AI re-summarizes it per platform.
+  function convertArticleToPost(addPlatform) {
+    const body = article?.body || activeSource
+    const newSelected = selected.includes(addPlatform)
+      ? selected
+      : [...selected, addPlatform]
+    setContentType('post')
+    setSourceType('text')
+    setSourceText(body)
+    setSelected(newSelected)
+    setArticle(null)
+    setConfirmModal(null)
+    runGenerate({ preResolved: { text: body }, platformsOverride: newSelected })
   }
 
   async function generateCardImages(i, card) {
@@ -730,6 +866,57 @@ export default function Generator() {
     }
   }
 
+  // --- article actions ------------------------------------------------------
+  function updateArticle(patch) {
+    setArticle((a) => (a ? { ...a, ...patch } : a))
+  }
+
+  function articleContent() {
+    return `${article.title}\n\n${article.body}`
+  }
+
+  async function saveArticleDraft() {
+    if (!article) return
+    updateArticle({ status: 'publishing' })
+    try {
+      await api.createPost({ platform: 'linkedin', content: articleContent(), hashtags: article.tags })
+      updateArticle({ status: 'saved' })
+      toast.success('Article saved as draft')
+    } catch (err) {
+      updateArticle({ status: null })
+      toast.error(err.message || 'Could not save the article')
+    }
+  }
+
+  async function publishArticleLinkedIn() {
+    if (!article) return
+    updateArticle({ status: 'publishing' })
+    try {
+      const post = await api.createPost({
+        platform: 'linkedin', content: articleContent(), hashtags: article.tags,
+      })
+      await api.publishPost(post.id)
+      updateArticle({ status: 'published' })
+      toast.success('Published to LinkedIn (simulated)')
+    } catch (err) {
+      updateArticle({ status: null })
+      toast.error(err.message || 'LinkedIn publish failed')
+    }
+  }
+
+  async function regenerateCover() {
+    if (!article) return
+    try {
+      const imgRes = await api.generateImages({
+        prompt: article.coverPrompt, aspect_ratio: '16:9',
+        style: img.style, quality: img.quality,
+      })
+      updateArticle({ cover: imgRes.images[0] })
+    } catch (err) {
+      toast.error(err.message || 'Cover regeneration failed')
+    }
+  }
+
   const platformsForOverride = selected.length ? selected : []
 
   return (
@@ -947,7 +1134,66 @@ export default function Generator() {
             </div>
           </div>
 
-          {/* Step 3 — Image Settings (global) */}
+          {/* Content Type */}
+          <div>
+            <label className="label">Content type</label>
+            <div className="flex flex-wrap gap-1.5">
+              {CONTENT_TYPE_ORDER.map((id) => {
+                const ct = CONTENT_TYPES[id]
+                const st = ctStates[id]
+                const enabled = st?.enabled
+                const active = contentType === id
+                return (
+                  <button
+                    type="button"
+                    key={id}
+                    disabled={!enabled}
+                    aria-pressed={active}
+                    title={enabled ? ct.label : st?.reason}
+                    onClick={() => enabled && setContentType(id)}
+                    className={`flex items-center gap-1 rounded-lg border px-2 py-1 text-xs font-medium transition ${
+                      active
+                        ? 'border-indigo-500 bg-indigo-500/15 text-indigo-300'
+                        : enabled
+                          ? 'border-slate-300 text-slate-500 hover:bg-slate-100 dark:border-white/10 dark:text-slate-300 dark:hover:bg-white/5'
+                          : 'cursor-not-allowed border-slate-200 text-slate-400 opacity-50 dark:border-white/5'
+                    }`}
+                  >
+                    <span>{enabled ? ct.icon : '🔒'}</span>
+                    {ct.label}
+                  </button>
+                )
+              })}
+            </div>
+
+            {/* Explanations for disabled types */}
+            {CONTENT_TYPE_ORDER.some((id) => !ctStates[id]?.enabled) && (
+              <div className="mt-2 space-y-1.5">
+                {CONTENT_TYPE_ORDER.filter((id) => !ctStates[id]?.enabled).map((id) => (
+                  <div
+                    key={id}
+                    className="flex flex-wrap items-center gap-2 rounded-lg bg-slate-100 px-2.5 py-1.5 text-xs text-slate-500 dark:bg-white/5 dark:text-slate-400"
+                  >
+                    <span>🔒</span>
+                    <span className="font-medium">{CONTENT_TYPES[id].label}:</span>
+                    <span className="min-w-0 flex-1">{ctStates[id].reason}</span>
+                    {id === 'article' && !isLinkedInOnly(selected) && (
+                      <button
+                        type="button"
+                        onClick={useLinkedInOnly}
+                        className="btn btn-primary btn-sm"
+                      >
+                        Switch to LinkedIn Only
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Step 3 — Image Settings (global) — hidden in Article mode */}
+          {contentType !== 'article' && (
           <div className="rounded-xl border border-slate-200 p-3 dark:border-white/10">
             <div className="flex items-center justify-between">
               <span className="text-sm font-semibold">Image Settings</span>
@@ -989,9 +1235,10 @@ export default function Generator() {
               </div>
             )}
           </div>
+          )}
 
           {/* Per-platform overrides */}
-          {platformsForOverride.length > 0 && (
+          {contentType !== 'article' && platformsForOverride.length > 0 && (
             <div className="space-y-2">
               <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">
                 Per-platform overrides
@@ -1163,13 +1410,44 @@ export default function Generator() {
           </div>
 
           {/* Step 5 — Generate */}
-          <button className="btn btn-primary w-full" disabled={loading}>
-            {loading ? 'Generating…' : '✦ Generate'}
+          <button className="btn btn-primary w-full" disabled={loading || articleBusy}>
+            {loading || articleBusy
+              ? 'Generating…'
+              : contentType === 'article'
+                ? '✦ Generate Article'
+                : '✦ Generate'}
           </button>
         </form>
 
         {/* ---- Output panel ---- */}
         <div className="space-y-4">
+          {/* Article mode renders a dedicated editor */}
+          {contentType === 'article' ? (
+            articleBusy ? (
+              <CardSkeleton />
+            ) : article ? (
+              <ArticleEditor
+                article={article}
+                onChange={updateArticle}
+                onRegenCover={regenerateCover}
+                onSave={saveArticleDraft}
+                onPublish={publishArticleLinkedIn}
+              />
+            ) : (
+              <div className="card grid place-items-center p-12 text-center text-slate-500">
+                <div>
+                  <div className="mb-3 text-5xl">📰</div>
+                  <div className="font-medium text-slate-600 dark:text-slate-300">
+                    Describe your idea and let AI write a LinkedIn article.
+                  </div>
+                  <div className="mt-1 text-sm text-slate-400">
+                    Title, cover, body, tags and SEO keywords — all editable.
+                  </div>
+                </div>
+              </div>
+            )
+          ) : (
+          <>
           {/* Global action bar (sticky) */}
           {drafts.length > 0 && (
             <div className="sticky top-2 z-10 flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white/85 px-3 py-2 shadow-sm backdrop-blur dark:border-white/10 dark:bg-slate-900/80">
@@ -1256,6 +1534,8 @@ export default function Generator() {
               onDuplicate={() => duplicatePlatform(i)}
             />
           ))}
+          </>
+          )}
         </div>
       </div>
 
@@ -1562,6 +1842,7 @@ function StatusChip({ status, error }) {
   const map = {
     publishing: { text: '⏳ Publishing…', cls: 'bg-sky-500/15 text-sky-500 dark:text-sky-300' },
     published: { text: '✓ Published', cls: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-300' },
+    saved: { text: '✓ Saved', cls: 'bg-slate-500/15 text-slate-500 dark:text-slate-300' },
     scheduled: { text: '🗓 Scheduled', cls: 'bg-amber-500/15 text-amber-600 dark:text-amber-300' },
     failed: { text: '❌ Failed', cls: 'bg-rose-500/15 text-rose-600 dark:text-rose-300' },
   }
@@ -1638,18 +1919,162 @@ function ConfirmModal({ modal, onCancel }) {
             ))}
           </ul>
         )}
-        <div className="mt-5 flex justify-end gap-2">
-          <button className="btn btn-ghost" onClick={onCancel}>
-            {modal.cancelLabel || 'Cancel'}
-          </button>
-          <button
-            className={`btn ${modal.danger ? 'btn-danger' : 'btn-primary'}`}
-            onClick={modal.onConfirm}
-          >
-            {modal.confirmLabel || 'Confirm'}
-          </button>
+        <div className="mt-5 flex flex-wrap justify-end gap-2">
+          {modal.actions ? (
+            modal.actions.map((a) => (
+              <button
+                key={a.label}
+                onClick={a.onClick}
+                className={`btn ${a.variant === 'primary' ? 'btn-primary' : a.variant === 'danger' ? 'btn-danger' : 'btn-ghost'}`}
+              >
+                {a.label}
+              </button>
+            ))
+          ) : (
+            <>
+              <button className="btn btn-ghost" onClick={onCancel}>
+                {modal.cancelLabel || 'Cancel'}
+              </button>
+              <button
+                className={`btn ${modal.danger ? 'btn-danger' : 'btn-primary'}`}
+                onClick={modal.onConfirm}
+              >
+                {modal.confirmLabel || 'Confirm'}
+              </button>
+            </>
+          )}
         </div>
       </div>
+    </div>
+  )
+}
+
+// LinkedIn Article editor — title, cover, rich body, tags, SEO, reading time.
+function ArticleEditor({ article, onChange, onRegenCover, onSave, onPublish }) {
+  const [showPreview, setShowPreview] = useState(false)
+  const words = article.body.trim() ? article.body.trim().split(/\s+/).length : 0
+  const readingTime = Math.max(1, Math.round(words / 200))
+
+  return (
+    <div className="card space-y-4 p-5">
+      <div className="flex items-center gap-2">
+        <PlatformIcon platform="linkedin" />
+        <span className="font-semibold">LinkedIn Article</span>
+        <StatusChip status={article.status} />
+        <span className="ml-auto text-xs text-slate-400">
+          {words} words · {readingTime} min read
+        </span>
+      </div>
+
+      {/* Cover image */}
+      <div>
+        {article.cover ? (
+          <figure className="group relative">
+            <SmartImage
+              candidates={[article.cover.url, ...(article.cover.fallbacks || [])]}
+              alt="Article cover"
+              aspectRatio="16:9"
+            />
+          </figure>
+        ) : (
+          <div className="grid aspect-[16/9] w-full place-items-center rounded-xl border border-dashed border-slate-300 text-sm text-slate-400 dark:border-white/10">
+            No cover image
+          </div>
+        )}
+        <button onClick={onRegenCover} className="btn btn-ghost btn-sm mt-2">
+          ↻ Regenerate Cover
+        </button>
+      </div>
+
+      {!showPreview ? (
+        <>
+          <div>
+            <label className="label">Title</label>
+            <input
+              className="input text-lg font-semibold"
+              value={article.title}
+              onChange={(e) => onChange({ title: e.target.value })}
+            />
+          </div>
+          <div>
+            <label className="label">Article body</label>
+            <textarea
+              className="input min-h-80 resize-y leading-relaxed"
+              value={article.body}
+              onChange={(e) => onChange({ body: e.target.value })}
+            />
+          </div>
+          <TagEditor label="Tags" tags={article.tags} onChange={(tags) => onChange({ tags })} />
+          <TagEditor
+            label="SEO keywords"
+            tags={article.seoKeywords}
+            onChange={(seoKeywords) => onChange({ seoKeywords })}
+          />
+        </>
+      ) : (
+        <article className="prose-sm max-w-none">
+          <h1 className="text-2xl font-bold">{article.title}</h1>
+          <div className="mt-1 text-xs text-slate-400">{readingTime} min read</div>
+          <div className="mt-3 whitespace-pre-wrap text-sm leading-relaxed">{article.body}</div>
+          {article.tags.length > 0 && (
+            <div className="mt-4 flex flex-wrap gap-1.5">
+              {article.tags.map((t) => (
+                <span key={t} className="badge bg-indigo-500/15 text-indigo-300">#{t}</span>
+              ))}
+            </div>
+          )}
+        </article>
+      )}
+
+      <div className="flex flex-wrap gap-2 border-t border-slate-200 pt-3 dark:border-white/10">
+        <button onClick={() => setShowPreview((p) => !p)} className="btn btn-ghost btn-sm">
+          {showPreview ? '✎ Edit' : '👁 Preview'}
+        </button>
+        <button onClick={onSave} className="btn btn-ghost btn-sm">Save Draft</button>
+        <button
+          onClick={onPublish}
+          disabled={article.status === 'publishing'}
+          className="btn btn-sm bg-[#0A66C2] text-white hover:brightness-110"
+        >
+          {article.status === 'publishing' ? 'Publishing…' : 'Publish to LinkedIn'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// Chip-style tag editor (Enter/comma to add, × to remove).
+function TagEditor({ label, tags, onChange }) {
+  const [draft, setDraft] = useState('')
+  function commit() {
+    const next = draft.split(/[\s,]+/).map((t) => t.replace(/^#/, '').trim()).filter(Boolean)
+    if (next.length) onChange(Array.from(new Set([...tags, ...next])))
+    setDraft('')
+  }
+  return (
+    <div>
+      <label className="label">{label}</label>
+      <div className="flex flex-wrap gap-1.5">
+        {tags.map((t) => (
+          <span key={t} className="badge bg-slate-500/15 text-slate-400">
+            {t}
+            <button onClick={() => onChange(tags.filter((x) => x !== t))} className="ml-1 hover:text-rose-400">×</button>
+          </span>
+        ))}
+      </div>
+      <input
+        className="input mt-2"
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ',') {
+            e.preventDefault()
+            commit()
+          }
+        }}
+        onBlur={commit}
+        placeholder={`Add ${label.toLowerCase()}…`}
+      />
     </div>
   )
 }

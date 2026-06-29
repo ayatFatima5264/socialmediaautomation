@@ -14,7 +14,12 @@ from app.schemas.post import (
     Platform,
     Tone,
 )
-from app.services.ai_service import assist_text, generate_carousel_outline, generate_posts
+from app.services.ai_service import (
+    assist_text,
+    generate_article,
+    generate_carousel_outline,
+    generate_posts,
+)
 from app.services.extract_service import ExtractError, extract_file, extract_url
 from app.services.image_service import (
     ASPECT_RATIOS,
@@ -208,6 +213,46 @@ async def extract_file_endpoint(file: UploadFile = File(...)) -> ExtractResponse
     except ExtractError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return ExtractResponse(**data)
+
+
+# ---------------------------------------------------------------------------
+# LinkedIn Article generation — long-form, no hashtags/short captions.
+# ---------------------------------------------------------------------------
+class GenerateArticleRequest(BaseModel):
+    topic: str = Field(..., min_length=2, max_length=8000)
+    audience: str | None = Field(default=None, max_length=200)
+    tone: Tone = Tone.professional
+    provider: str | None = None
+
+
+class GeneratedArticle(BaseModel):
+    title: str
+    body: str
+    tags: list[str] = []
+    seo_keywords: list[str] = []
+    reading_time_min: int
+    word_count: int
+    cover_image_prompt: str
+    provider: str
+    model: str
+
+
+@router.post("/generate-article", response_model=GeneratedArticle)
+async def generate_article_endpoint(req: GenerateArticleRequest) -> GeneratedArticle:
+    """Generate a full LinkedIn article from a topic."""
+    from app.services.providers import get_provider
+
+    try:
+        data = await generate_article(
+            req.topic, audience=req.audience, tone=req.tone.value,
+            provider_name=req.provider,
+        )
+        provider = get_provider(req.provider)
+    except ProviderConfigError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except ProviderError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return GeneratedArticle(provider=provider.name, model=provider.model, **data)
 
 
 # ---------------------------------------------------------------------------
