@@ -17,6 +17,7 @@ class Platform(str, Enum):
     twitter = "twitter"  # Twitter / X
     linkedin = "linkedin"
     threads = "threads"
+    pinterest = "pinterest"
 
 
 class Tone(str, Enum):

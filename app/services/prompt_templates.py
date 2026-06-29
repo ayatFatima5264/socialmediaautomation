@@ -86,6 +86,19 @@ PLATFORM_SPECS: dict[Platform, PlatformSpec] = {
             "Light and real. Almost no hashtags."
         ),
     ),
+    Platform.pinterest: PlatformSpec(
+        label="Pinterest",
+        char_limit=500,
+        min_chars=100,
+        sweet_spot="100–200 characters, keyword-rich and action-oriented",
+        hashtags="2–5 descriptive, keyword-style hashtags",
+        voice=(
+            "Inspirational and helpful, optimized for search. Lead with the "
+            "value or outcome, weave in natural keywords people would search "
+            "for, and end with a clear action (e.g. 'save this idea', 'tap to "
+            "learn more'). Upbeat but not hypey."
+        ),
+    ),
 }
 
 

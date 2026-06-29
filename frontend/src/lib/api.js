@@ -75,6 +75,7 @@ export const api = {
   meta: () => request('/api/meta', { auth: false }),
   generate: (body) => request('/api/generate-post', { method: 'POST', body }),
   generateImage: (body) => request('/api/generate-image', { method: 'POST', body, auth: false }),
+  generateImages: (body) => request('/api/generate-images', { method: 'POST', body, auth: false }),
 
   // instagram (Instagram Login API)
   instagramProfile: () => request('/instagram/profile', { auth: false }),

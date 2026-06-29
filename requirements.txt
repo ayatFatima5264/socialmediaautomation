@@ -13,3 +13,6 @@ PyJWT>=2.8
 bcrypt>=4.0
 python-multipart>=0.0.9     # OAuth2 form login
 email-validator>=2.0        # pydantic EmailStr
+
+# Dev / tests
+pytest>=8.0

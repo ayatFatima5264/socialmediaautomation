@@ -6,6 +6,7 @@ import { useTheme } from '../context/ThemeContext.jsx'
 const NAV = [
   { to: '/', label: 'Dashboard', icon: '◧', end: true },
   { to: '/generate', label: 'AI Generator', icon: '✦' },
+  { to: '/create', label: 'Create Post', icon: '✍' },
   { to: '/scheduler', label: 'Scheduler', icon: '◷' },
   { to: '/history', label: 'Post History', icon: '≡' },
   { to: '/accounts', label: 'Social Accounts', icon: '⬡' },

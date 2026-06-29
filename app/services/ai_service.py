@@ -48,6 +48,78 @@ async def generate_posts(req: GeneratePostRequest) -> GeneratePostResponse:
     )
 
 
+async def generate_carousel_outline(
+    topic: str,
+    slides: int,
+    *,
+    platform: Platform | None = None,
+    provider_name: str | None = None,
+) -> list[str]:
+    """Return exactly `slides` short, DISTINCT visual descriptions for a carousel.
+
+    Best-effort: if the LLM provider is unavailable (no API key) or returns
+    something unusable, fall back to deterministic per-slide labels so image
+    generation still produces visibly different slides — never identical images.
+    """
+    slides = max(1, min(slides, 10))
+    fallback = _fallback_outline(topic, slides)
+
+    try:
+        provider = get_provider(provider_name)
+    except Exception:  # noqa: BLE001 — provider not configured; use fallback
+        logger.info("Carousel outline: provider unavailable, using fallback labels.")
+        return fallback
+
+    system = (
+        "You design social media carousels. You always return ONLY valid JSON "
+        "matching the requested schema — no markdown, no commentary."
+    )
+    audience = f" for {platform.value}" if platform else ""
+    user = (
+        f"Create exactly {slides} carousel slides{audience} about this topic:\n"
+        f"TOPIC: {topic}\n\n"
+        "Each slide must cover a DIFFERENT aspect of the topic (e.g. cover, key "
+        "point, example, benefit, summary) so that no two slides look alike.\n"
+        'Return ONLY a JSON object: {"slides": ["short visual description", ...]} '
+        f"with exactly {slides} items, each 3-10 words, no numbering."
+    )
+    try:
+        raw = await provider.complete(
+            system=system,
+            user=user,
+            max_tokens=settings.ai_max_tokens,
+            temperature=0.7,
+            json_mode=True,
+            context={"carousel": True, "topic": topic, "slides": slides},
+        )
+        items = _parse_json(raw).get("slides")
+        cleaned = (
+            [str(s).strip() for s in items if str(s).strip()]
+            if isinstance(items, list)
+            else []
+        )
+    except Exception:  # noqa: BLE001 — best effort; keep going with the fallback
+        logger.warning("Carousel outline generation failed; using fallback labels.")
+        cleaned = []
+
+    if len(cleaned) < slides:
+        # Pad with fallback labels so we always return exactly `slides` items.
+        cleaned += fallback[len(cleaned):]
+    return cleaned[:slides]
+
+
+def _fallback_outline(topic: str, slides: int) -> list[str]:
+    """Deterministic distinct slide labels when the LLM can't be used."""
+    roles = [
+        "cover", "introduction", "key point", "example", "benefit",
+        "how it works", "pro tip", "common mistake", "insight", "summary",
+    ]
+    return [
+        f"{topic} — {roles[i] if i < len(roles) else f'point {i + 1}'}"
+        for i in range(slides)
+    ]
+
+
 async def _generate_one(
     provider: AIProvider, req: GeneratePostRequest, platform: Platform
 ) -> GeneratedPost:

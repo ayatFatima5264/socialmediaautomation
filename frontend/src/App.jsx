@@ -5,6 +5,7 @@ import Login from './pages/Login.jsx'
 import Register from './pages/Register.jsx'
 import Dashboard from './pages/Dashboard.jsx'
 import Generator from './pages/Generator.jsx'
+import CreatePost from './pages/CreatePost.jsx'
 import Scheduler from './pages/Scheduler.jsx'
 import History from './pages/History.jsx'
 import Accounts from './pages/Accounts.jsx'
@@ -34,6 +35,7 @@ export default function App() {
       >
         <Route path="/" element={<Dashboard />} />
         <Route path="/generate" element={<Generator />} />
+        <Route path="/create" element={<CreatePost />} />
         <Route path="/scheduler" element={<Scheduler />} />
         <Route path="/history" element={<History />} />
         <Route path="/accounts" element={<Accounts />} />
