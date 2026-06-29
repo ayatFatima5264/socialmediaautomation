@@ -13,6 +13,80 @@ const EMOJIS = ['😀', '😂', '🙌', '🔥', '✨', '🎉', '❤️', '👍',
 // Platforms that surface a dedicated "first comment" field in their UI.
 const FIRST_COMMENT_PLATFORMS = new Set(['instagram', 'linkedin'])
 
+// Optional "Import Content" sources. Each populates the editor (or media)
+// with existing content the user can then edit manually.
+const IMPORT_SOURCES = [
+  { id: 'text', label: 'Paste Text', icon: '🅣' },
+  { id: 'article', label: 'Article', icon: '📰' },
+  { id: 'blog', label: 'Blog URL', icon: '🔗' },
+  { id: 'website', label: 'Website URL', icon: '🌐' },
+  { id: 'product', label: 'Product Page', icon: '🛍' },
+  { id: 'existing', label: 'Existing Post', icon: '♺' },
+  { id: 'file', label: 'PDF / DOCX', icon: '📄' },
+  { id: 'image', label: 'Image', icon: '🖼' },
+]
+const IMPORT_URL_SOURCES = ['blog', 'website', 'product']
+const IMPORT_TEXT_SOURCES = ['text', 'article', 'existing']
+
+// Optional AI edits that transform the existing editor content.
+const ASSIST_ACTIONS = [
+  { id: 'improve', label: 'Improve Writing' },
+  { id: 'rewrite', label: 'Rewrite' },
+  { id: 'shorten', label: 'Shorten' },
+  { id: 'expand', label: 'Expand' },
+  { id: 'grammar', label: 'Fix Grammar' },
+  { id: 'tone', label: 'Change Tone', sub: 'tone' },
+  { id: 'hashtags', label: 'Generate Hashtags' },
+  { id: 'cta', label: 'Generate CTA' },
+  { id: 'translate', label: 'Translate', sub: 'language' },
+]
+const TONE_OPTIONS = ['Professional', 'Casual', 'Friendly', 'Bold', 'Funny', 'Inspirational']
+const LANGUAGE_OPTIONS = ['English', 'Spanish', 'French', 'German', 'Arabic', 'Hindi', 'Portuguese', 'Chinese']
+
+// Content types, always visible. Universal ones (post/image/video) work on
+// every platform; the rest are gated by platform capabilities below.
+const CONTENT_TYPES = {
+  post: { id: 'post', label: 'Social Post', icon: '📝' },
+  image: { id: 'image', label: 'Image Post', icon: '🖼' },
+  video: { id: 'video', label: 'Video Post', icon: '🎬' },
+  carousel: { id: 'carousel', label: 'Carousel', icon: '▦' },
+  link: { id: 'link', label: 'Link Post', icon: '🔗' },
+  article: { id: 'article', label: 'LinkedIn Article', icon: '📄' },
+}
+const CONTENT_TYPE_ORDER = ['post', 'image', 'video', 'carousel', 'link', 'article']
+const UNIVERSAL_TYPES = ['post', 'image', 'video']
+
+// Platform capabilities for the gated content types.
+const CAROUSEL_PLATFORMS = new Set(['instagram', 'facebook', 'linkedin', 'twitter', 'threads'])
+const LINK_PLATFORMS = new Set(['facebook', 'linkedin', 'twitter', 'threads', 'pinterest'])
+
+function isLinkedInOnly(selected) {
+  return selected.length === 1 && selected[0] === 'linkedin'
+}
+
+// Per-type { enabled, reason } for the current selection.
+function contentTypeStates(selected) {
+  const states = {}
+  for (const id of UNIVERSAL_TYPES) states[id] = { enabled: true }
+
+  const hasSel = selected.length > 0
+  const carouselOk = hasSel && selected.every((p) => CAROUSEL_PLATFORMS.has(p))
+  states.carousel = carouselOk
+    ? { enabled: true }
+    : { enabled: false, reason: 'Carousel posts are not supported across all selected platforms.' }
+
+  const linkOk = hasSel && selected.every((p) => LINK_PLATFORMS.has(p))
+  states.link = linkOk
+    ? { enabled: true }
+    : { enabled: false, reason: 'Link Posts are not fully supported on all selected platforms.' }
+
+  states.article = isLinkedInOnly(selected)
+    ? { enabled: true }
+    : { enabled: false, reason: 'LinkedIn Articles can only be published when LinkedIn is the only selected platform.' }
+
+  return states
+}
+
 function minLocal() {
   const d = new Date(Date.now() + 60_000)
   d.setSeconds(0, 0)
@@ -26,6 +100,9 @@ export default function CreatePost() {
   const { user } = useAuth()
 
   const [selected, setSelected] = useState(['instagram', 'facebook'])
+  const [contentType, setContentType] = useState('post')
+  const [articleTitle, setArticleTitle] = useState('')
+  const [confirm, setConfirm] = useState(null) // {title, message, onConfirm}
   const [content, setContent] = useState('')
   const [media, setMedia] = useState([]) // {id, url, type, name}
   const [link, setLink] = useState('')
@@ -43,6 +120,17 @@ export default function CreatePost() {
   const fileRef = useRef(null)
   const [emojiOpen, setEmojiOpen] = useState(false)
 
+  // Import Content (optional)
+  const [importOpen, setImportOpen] = useState(false)
+  const [importType, setImportType] = useState('text')
+  const [importText, setImportText] = useState('')
+  const [importUrl, setImportUrl] = useState('')
+  const [importBusy, setImportBusy] = useState(false)
+
+  // AI Assist
+  const [assistBusy, setAssistBusy] = useState(false)
+  const [assistUndo, setAssistUndo] = useState(null) // previous content for one-step undo
+
   const tz = Intl.DateTimeFormat().resolvedOptions().timeZone
 
   // Keep the preview tab on a platform that's actually selected.
@@ -56,8 +144,52 @@ export default function CreatePost() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  const ctStates = contentTypeStates(selected)
+
   function togglePlatform(p) {
+    const adding = !selected.includes(p)
+    // Adding any other platform while writing a LinkedIn Article must confirm,
+    // because the article can't be cross-posted.
+    if (contentType === 'article' && adding && p !== 'linkedin') {
+      setConfirm({
+        title: 'Content Type Not Supported',
+        message:
+          'LinkedIn Articles can only be published to LinkedIn. Choose how you would like to continue.',
+        actions: [
+          {
+            label: 'Keep LinkedIn Only',
+            variant: 'primary',
+            onClick: () => setConfirm(null), // ignore the add; stay in Article
+          },
+          {
+            label: 'Convert to Social Post',
+            variant: 'ghost',
+            onClick: () => {
+              setContentType('post') // preserve the text, drop article-only fields
+              setSelected((s) => [...s, p])
+              setConfirm(null)
+            },
+          },
+          { label: 'Cancel', variant: 'ghost', onClick: () => setConfirm(null) },
+        ],
+      })
+      return
+    }
     setSelected((s) => (s.includes(p) ? s.filter((x) => x !== p) : [...s, p]))
+  }
+
+  // If the active content type becomes unsupported (e.g. a platform that
+  // breaks carousel/link is added), fall back to Social Post but keep the text.
+  useEffect(() => {
+    if (contentType !== 'post' && !ctStates[contentType]?.enabled) {
+      setContentType('post')
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected])
+
+  function useLinkedInOnly() {
+    setSelected(['linkedin'])
+    setContentType('article')
   }
 
   // --- text editor helpers --------------------------------------------------
@@ -153,6 +285,79 @@ export default function CreatePost() {
     })
   }
 
+  // --- import content (optional) -------------------------------------------
+  // Imported text appends to existing content so nothing is lost.
+  function importToEditor(text) {
+    const clean = (text || '').trim()
+    if (!clean) return
+    setContent((c) => (c.trim() ? `${c.trim()}\n\n${clean}` : clean))
+    toast.success('Imported into the editor')
+    setImportOpen(false)
+  }
+
+  async function importFromUrl() {
+    const url = importUrl.trim()
+    if (!url) return toast.error('Enter a URL first')
+    setImportBusy(true)
+    try {
+      const res = await api.extractUrl(url)
+      importToEditor(res.text)
+    } catch (err) {
+      toast.error(err.message || 'Could not import that URL')
+    } finally {
+      setImportBusy(false)
+    }
+  }
+
+  async function importFromFile(file) {
+    if (!file) return
+    setImportBusy(true)
+    try {
+      const res = await api.extractFile(file)
+      importToEditor(res.text)
+    } catch (err) {
+      toast.error(err.message || 'Could not read that file')
+    } finally {
+      setImportBusy(false)
+    }
+  }
+
+  // --- AI assist (optional, transforms existing content) -------------------
+  async function runAssist(action, opts = {}) {
+    if (!content.trim()) return toast.error('Write or import some content first')
+    if (assistBusy) return
+    setAssistBusy(true)
+    try {
+      const { result } = await api.assist({ text: content, action, ...opts })
+      if (action === 'hashtags') {
+        const tags = result
+          .split(/[\s,]+/)
+          .map((t) => t.replace(/^#/, '').trim())
+          .filter(Boolean)
+        setHashtags((h) => Array.from(new Set([...h, ...tags])))
+        toast.success(`Added ${tags.length} hashtag(s)`)
+      } else if (action === 'cta') {
+        setAssistUndo(content)
+        setContent((c) => `${c.trim()}\n\n${result.trim()}`)
+        toast.success('CTA added')
+      } else {
+        setAssistUndo(content)
+        setContent(result)
+        toast.success('Content updated')
+      }
+    } catch (err) {
+      toast.error(err.message || 'AI assist failed')
+    } finally {
+      setAssistBusy(false)
+    }
+  }
+
+  function undoAssist() {
+    if (assistUndo == null) return
+    setContent(assistUndo)
+    setAssistUndo(null)
+  }
+
   // --- derived: per-platform warnings --------------------------------------
   const charCount = content.length
   const imageCount = media.filter((m) => m.type !== 'video').length
@@ -182,7 +387,21 @@ export default function CreatePost() {
     return out
   }, [selected, charCount, imageCount, content, hashtags])
 
-  const hasBlockingIssue = selected.some((p) => (warnings[p] || []).length > 0)
+  const videoCount = media.filter((m) => m.type === 'video').length
+
+  // Content-type requirements (global, not per-platform).
+  const typeWarnings = useMemo(() => {
+    const list = []
+    if (contentType === 'image' && imageCount === 0) list.push('Image Post needs at least one image')
+    if (contentType === 'video' && videoCount === 0) list.push('Video Post needs a video')
+    if (contentType === 'carousel' && imageCount < 2) list.push('Carousel needs at least 2 images')
+    if (contentType === 'link' && !link.trim()) list.push('Link Post needs a link')
+    if (contentType === 'article' && !articleTitle.trim()) list.push('LinkedIn Article needs a title')
+    return list
+  }, [contentType, imageCount, videoCount, link, articleTitle])
+
+  const hasBlockingIssue =
+    selected.some((p) => (warnings[p] || []).length > 0) || typeWarnings.length > 0
 
   // --- actions --------------------------------------------------------------
   function clearAll() {
@@ -194,14 +413,20 @@ export default function CreatePost() {
     setHashtagDraft('')
     setLocation('')
     setFirstComment('')
+    setArticleTitle('')
     setScheduleMode('now')
     setScheduleAt(minLocal())
   }
 
   async function submit(asDraft = false) {
     if (!selected.length) return toast.error('Select at least one platform')
+    // Article posts lead with their title.
+    const body =
+      contentType === 'article' && articleTitle.trim()
+        ? `${articleTitle.trim()}\n\n${content.trim()}`
+        : content.trim()
     // The backend stores text posts, so a caption (text or hashtags) is required.
-    const text = content.trim() || hashtags.map((t) => `#${t}`).join(' ')
+    const text = body || hashtags.map((t) => `#${t}`).join(' ')
     if (!text) return toast.error('Add a caption (text or hashtags) first')
     if (busy) return
 
@@ -302,11 +527,220 @@ export default function CreatePost() {
             </div>
           </section>
 
+          {/* Content Type */}
+          <section className="card p-5">
+            <h2 className="mb-3 text-sm font-semibold">Content type</h2>
+            <div className="flex flex-wrap gap-2">
+              {CONTENT_TYPE_ORDER.map((id) => {
+                const ct = CONTENT_TYPES[id]
+                const st = ctStates[id]
+                const enabled = st?.enabled
+                const active = contentType === id
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    disabled={!enabled}
+                    aria-pressed={active}
+                    title={enabled ? ct.label : st?.reason}
+                    onClick={() => enabled && setContentType(id)}
+                    className={`flex items-center gap-1.5 rounded-xl border px-3 py-2 text-sm font-medium transition ${
+                      active
+                        ? 'border-indigo-500 bg-indigo-500/15 text-indigo-300'
+                        : enabled
+                          ? 'border-slate-300 text-slate-500 hover:bg-slate-100 dark:border-white/10 dark:text-slate-300 dark:hover:bg-white/5'
+                          : 'cursor-not-allowed border-slate-200 text-slate-400 opacity-50 dark:border-white/5'
+                    }`}
+                  >
+                    <span>{enabled ? ct.icon : '🔒'}</span>
+                    {ct.label}
+                  </button>
+                )
+              })}
+            </div>
+
+            {/* Explanations for any disabled types */}
+            {CONTENT_TYPE_ORDER.some((id) => !ctStates[id]?.enabled) && (
+              <div className="mt-3 space-y-1.5">
+                {CONTENT_TYPE_ORDER.filter((id) => !ctStates[id]?.enabled).map((id) => (
+                  <div
+                    key={id}
+                    className="flex flex-wrap items-center gap-2 rounded-lg bg-slate-100 px-2.5 py-1.5 text-xs text-slate-500 dark:bg-white/5 dark:text-slate-400"
+                  >
+                    <span>🔒</span>
+                    <span className="font-medium">{CONTENT_TYPES[id].label}:</span>
+                    <span>{ctStates[id].reason}</span>
+                    {id === 'article' && !isLinkedInOnly(selected) && (
+                      <button
+                        type="button"
+                        onClick={useLinkedInOnly}
+                        className="btn btn-primary btn-sm ml-auto"
+                      >
+                        Switch to LinkedIn Only
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Article title (LinkedIn Article mode) — smooth reveal */}
+            <div
+              className={`grid overflow-hidden transition-all duration-300 ${
+                contentType === 'article' ? 'mt-4 grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'
+              }`}
+            >
+              <div className="min-h-0">
+                <label className="label" htmlFor="articleTitle">Article title</label>
+                <input
+                  id="articleTitle"
+                  className="input"
+                  value={articleTitle}
+                  onChange={(e) => setArticleTitle(e.target.value)}
+                  placeholder="Give your LinkedIn article a headline…"
+                />
+              </div>
+            </div>
+          </section>
+
+          {/* Import Content (optional) */}
+          <section className="card p-5">
+            <button
+              type="button"
+              onClick={() => setImportOpen((o) => !o)}
+              aria-expanded={importOpen}
+              className="flex w-full items-center justify-between"
+            >
+              <span className="text-sm font-semibold">
+                Import Content <span className="font-normal text-slate-400">(optional)</span>
+              </span>
+              <span className="text-slate-400">{importOpen ? '▲' : '▼'}</span>
+            </button>
+
+            {importOpen && (
+              <div className="mt-3 space-y-3">
+                <div className="flex flex-wrap gap-1.5">
+                  {IMPORT_SOURCES.map((s) => {
+                    const on = importType === s.id
+                    return (
+                      <button
+                        key={s.id}
+                        type="button"
+                        onClick={() => setImportType(s.id)}
+                        aria-pressed={on}
+                        className={`flex items-center gap-1 rounded-lg border px-2 py-1 text-xs font-medium transition ${
+                          on
+                            ? 'border-indigo-500 bg-indigo-500/15 text-indigo-300'
+                            : 'border-slate-300 text-slate-400 hover:bg-slate-100 dark:border-white/10 dark:hover:bg-white/5'
+                        }`}
+                      >
+                        <span>{s.icon}</span>
+                        {s.label}
+                      </button>
+                    )
+                  })}
+                </div>
+
+                {IMPORT_TEXT_SOURCES.includes(importType) && (
+                  <div>
+                    <textarea
+                      className="input min-h-28 resize-y"
+                      value={importText}
+                      onChange={(e) => setImportText(e.target.value)}
+                      placeholder={
+                        importType === 'existing'
+                          ? 'Paste your existing social media post…'
+                          : 'Paste the text to import…'
+                      }
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        importToEditor(importText)
+                        setImportText('')
+                      }}
+                      className="btn btn-ghost btn-sm mt-2"
+                    >
+                      Import to editor
+                    </button>
+                  </div>
+                )}
+
+                {IMPORT_URL_SOURCES.includes(importType) && (
+                  <div className="flex gap-2">
+                    <input
+                      className="input"
+                      value={importUrl}
+                      onChange={(e) => setImportUrl(e.target.value)}
+                      placeholder="https://…"
+                    />
+                    <button
+                      type="button"
+                      onClick={importFromUrl}
+                      disabled={importBusy}
+                      className="btn btn-ghost btn-sm whitespace-nowrap"
+                    >
+                      {importBusy ? 'Importing…' : 'Import Content'}
+                    </button>
+                  </div>
+                )}
+
+                {importType === 'file' && (
+                  <div>
+                    <input
+                      type="file"
+                      accept=".pdf,.docx,.txt,.md"
+                      className="block w-full text-sm text-slate-400 file:mr-3 file:rounded-lg file:border-0 file:bg-indigo-500/15 file:px-3 file:py-1.5 file:text-indigo-300"
+                      onChange={(e) => {
+                        importFromFile(e.target.files?.[0])
+                        e.target.value = ''
+                      }}
+                    />
+                    {importBusy && <div className="mt-2 text-xs text-slate-400">Reading document…</div>}
+                  </div>
+                )}
+
+                {importType === 'image' && (
+                  <div>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="block w-full text-sm text-slate-400 file:mr-3 file:rounded-lg file:border-0 file:bg-indigo-500/15 file:px-3 file:py-1.5 file:text-indigo-300"
+                      onChange={(e) => {
+                        if (e.target.files?.length) {
+                          addFiles(e.target.files)
+                          toast.success('Image added — write your caption below')
+                          setImportOpen(false)
+                        }
+                        e.target.value = ''
+                      }}
+                    />
+                    <p className="mt-1 text-xs text-slate-400">
+                      Your image is added to Media below; add your own caption in the editor.
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+          </section>
+
           {/* Content */}
           <section className="card p-5">
             <div className="mb-2 flex items-center justify-between">
               <h2 className="text-sm font-semibold">Post content</h2>
-              <CharCounter selected={selected} count={charCount} />
+              <div className="flex items-center gap-2">
+                {assistUndo != null && (
+                  <button
+                    type="button"
+                    onClick={undoAssist}
+                    className="text-xs text-slate-400 underline hover:text-indigo-400"
+                  >
+                    Undo
+                  </button>
+                )}
+                <AssistMenu busy={assistBusy} onRun={runAssist} />
+                <CharCounter selected={selected} count={charCount} />
+              </div>
             </div>
 
             <div className="relative mb-2 flex flex-wrap items-center gap-1">
@@ -543,9 +977,9 @@ export default function CreatePost() {
               <PlatformPreview platform={activeTab} data={previewData} />
             )}
 
-            {(warnings[activeTab] || []).length > 0 && (
+            {(typeWarnings.length > 0 || (warnings[activeTab] || []).length > 0) && (
               <div className="mt-3 space-y-1">
-                {warnings[activeTab].map((w) => (
+                {[...typeWarnings, ...(warnings[activeTab] || [])].map((w) => (
                   <div key={w} className="flex items-start gap-2 rounded-lg bg-amber-500/10 px-2.5 py-1.5 text-xs text-amber-600 dark:text-amber-300">
                     <span>⚠️</span>
                     {w}
@@ -558,6 +992,7 @@ export default function CreatePost() {
           {/* Publish summary */}
           <div className="card p-4 text-sm">
             <h3 className="mb-2 text-sm font-semibold">Summary</h3>
+            <SummaryRow label="Content type" value={CONTENT_TYPES[contentType].label} />
             <SummaryRow label="Platforms" value={selected.length ? selected.map((p) => PLATFORMS[p].label).join(', ') : '—'} />
             <SummaryRow label="When" value={scheduleMode === 'later' ? new Date(scheduleAt).toLocaleString() : 'Now'} />
             <SummaryRow label="Media" value={`${media.length} file(s)`} />
@@ -570,11 +1005,110 @@ export default function CreatePost() {
           </div>
         </div>
       </div>
+
+      <ConfirmDialog confirm={confirm} onClose={() => setConfirm(null)} />
+    </div>
+  )
+}
+
+// Multi-action confirmation dialog.
+function ConfirmDialog({ confirm, onClose }) {
+  if (!confirm) return null
+  return (
+    <div
+      className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div className="card w-full max-w-md p-5" onClick={(e) => e.stopPropagation()}>
+        <h3 className="mb-1 text-lg font-bold">{confirm.title}</h3>
+        <p className="text-sm text-slate-500 dark:text-slate-300">{confirm.message}</p>
+        <div className="mt-5 flex flex-wrap justify-end gap-2">
+          {confirm.actions.map((a) => (
+            <button
+              key={a.label}
+              onClick={a.onClick}
+              className={`btn ${a.variant === 'primary' ? 'btn-primary' : a.variant === 'danger' ? 'btn-danger' : 'btn-ghost'}`}
+            >
+              {a.label}
+            </button>
+          ))}
+        </div>
+      </div>
     </div>
   )
 }
 
 // ---------------------------------------------------------------------------
+// AI Assist dropdown — optional in-place edits for the editor content.
+function AssistMenu({ busy, onRun }) {
+  const [open, setOpen] = useState(false)
+  const [sub, setSub] = useState(null) // 'tone' | 'language'
+  const close = () => {
+    setOpen(false)
+    setSub(null)
+  }
+  const itemCls =
+    'block w-full rounded-lg px-3 py-2 text-left hover:bg-slate-100 dark:hover:bg-white/10'
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        disabled={busy}
+        onClick={() => setOpen((o) => !o)}
+        className="btn btn-ghost btn-sm"
+      >
+        {busy ? '✨ Working…' : '✨ AI Assist'}
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-10" onClick={close} />
+          <div className="card absolute right-0 z-20 mt-1 w-52 p-1 text-sm">
+            {!sub &&
+              ASSIST_ACTIONS.map((a) => (
+                <button
+                  key={a.id}
+                  onClick={() => {
+                    if (a.sub) setSub(a.sub)
+                    else {
+                      close()
+                      onRun(a.id)
+                    }
+                  }}
+                  className={`flex items-center justify-between ${itemCls}`}
+                >
+                  {a.label}
+                  {a.sub && <span className="text-slate-400">▸</span>}
+                </button>
+              ))}
+
+            {sub && (
+              <>
+                <button onClick={() => setSub(null)} className={`${itemCls} text-slate-400`}>
+                  ← Back
+                </button>
+                {(sub === 'tone' ? TONE_OPTIONS : LANGUAGE_OPTIONS).map((opt) => (
+                  <button
+                    key={opt}
+                    onClick={() => {
+                      close()
+                      if (sub === 'tone') onRun('tone', { tone: opt })
+                      else onRun('translate', { language: opt })
+                    }}
+                    className={itemCls}
+                  >
+                    {opt}
+                  </button>
+                ))}
+              </>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
 function ToolBtn({ onClick, title, children }) {
   return (
     <button

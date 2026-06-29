@@ -19,6 +19,37 @@ import ScheduleModal from '../components/ScheduleModal.jsx'
 
 const STORAGE_KEY = 'composer_state_v1'
 
+// "Create From" content sources. Each resolves to a source-text string that
+// feeds the same generation pipeline, so the output stays consistent.
+const SOURCE_TYPES = [
+  { id: 'prompt', label: 'Prompt', icon: '✎' },
+  { id: 'article', label: 'Article', icon: '📰' },
+  { id: 'blog', label: 'Blog URL', icon: '🔗' },
+  { id: 'website', label: 'Website URL', icon: '🌐' },
+  { id: 'product', label: 'Product Page', icon: '🛍' },
+  { id: 'existing', label: 'Existing Post', icon: '♺' },
+  { id: 'youtube', label: 'YouTube', icon: '▶' },
+  { id: 'file', label: 'PDF / DOCX', icon: '📄' },
+  { id: 'text', label: 'Plain Text', icon: '🅣' },
+  { id: 'image', label: 'Image', icon: '🖼' },
+]
+
+const URL_SOURCES = ['blog', 'website', 'product', 'youtube']
+const URL_LABELS = { blog: 'Blog', website: 'Website', product: 'Product page', youtube: 'YouTube video' }
+
+// Existing-post transforms — prepended as a directive to the pasted post.
+const TRANSFORMS = {
+  rewrite: 'Rewrite this social media post in a fresh way',
+  improve: 'Improve and polish this social media post',
+  expand: 'Expand this social media post with more detail',
+  shorten: 'Shorten this social media post while keeping the key message',
+  tone: 'Rewrite this social media post in a different tone',
+}
+const TRANSFORM_LABELS = {
+  rewrite: 'Rewrite', improve: 'Improve', expand: 'Expand',
+  shorten: 'Shorten', tone: 'Change Tone',
+}
+
 // --- session persistence ----------------------------------------------------
 function loadState() {
   try {
@@ -48,6 +79,17 @@ function resolveSettings(global, override) {
 
 export default function Generator() {
   const toast = useToast()
+
+  // "Create From" source selection + per-source inputs.
+  const [sourceType, setSourceType] = useState(SAVED?.sourceType ?? 'prompt')
+  const [sourceText, setSourceText] = useState(SAVED?.sourceText ?? '') // article / text / existing
+  const [sourceUrl, setSourceUrl] = useState(SAVED?.sourceUrl ?? '')
+  const [transform, setTransform] = useState(SAVED?.transform ?? 'rewrite')
+  const [extracted, setExtracted] = useState(null) // {title, text} from URL/file
+  const [extractBusy, setExtractBusy] = useState(false)
+  const [imageData, setImageData] = useState(null) // {dataUrl, name}
+  const [imageNote, setImageNote] = useState(SAVED?.imageNote ?? '')
+  const [activeSource, setActiveSource] = useState(SAVED?.activeSource ?? '') // text behind current results
 
   // Caption inputs (existing multi-platform behaviour, preserved).
   const [topic, setTopic] = useState(SAVED?.topic ?? '')
@@ -102,13 +144,15 @@ export default function Generator() {
     const payload = {
       topic, tone, audience, selected, includeHashtags, variants,
       img, overrides, meta, drafts: slim,
+      sourceType, sourceText, sourceUrl, transform, imageNote, activeSource,
     }
     try {
       sessionStorage.setItem(STORAGE_KEY, JSON.stringify(payload))
     } catch {
       /* quota / serialization issues are non-fatal */
     }
-  }, [topic, tone, audience, selected, includeHashtags, variants, img, overrides, meta, drafts])
+  }, [topic, tone, audience, selected, includeHashtags, variants, img, overrides, meta, drafts,
+    sourceType, sourceText, sourceUrl, transform, imageNote, activeSource])
 
   function togglePlatform(p) {
     setSelected((s) => (s.includes(p) ? s.filter((x) => x !== p) : [...s, p]))
@@ -160,9 +204,9 @@ export default function Generator() {
     return (arr || []).map((t) => `#${String(t).replace(/^#/, '')}`).join(' ')
   }
 
-  function captionBase() {
+  function captionBase(topicText) {
     return {
-      topic,
+      topic: topicText,
       tone,
       audience: audience || null,
       include_hashtags: includeHashtags,
@@ -170,11 +214,104 @@ export default function Generator() {
     }
   }
 
+  // --- "Create From" source handling ---------------------------------------
+  // Can we attempt a generation? (cheap, synchronous check — no network).
+  function sourceReady() {
+    switch (sourceType) {
+      case 'prompt': return !!topic.trim()
+      case 'article':
+      case 'text':
+      case 'existing': return !!sourceText.trim()
+      case 'file': return !!extracted?.text
+      case 'image': return !!imageData
+      default: return URL_SOURCES.includes(sourceType) ? !!sourceUrl.trim() : false
+    }
+  }
+
+  const SOURCE_HINTS = {
+    prompt: 'Please describe your idea first',
+    article: 'Paste the article text first',
+    text: 'Paste some text first',
+    existing: 'Paste the post you want to transform',
+    file: 'Upload a document first',
+    image: 'Upload an image first',
+  }
+
+  async function doExtractUrl() {
+    const url = sourceUrl.trim()
+    if (!url) throw new Error('Enter a URL first')
+    setExtractBusy(true)
+    try {
+      const res = await api.extractUrl(url)
+      const ex = { title: res.title, text: res.text }
+      setExtracted(ex)
+      return ex
+    } finally {
+      setExtractBusy(false)
+    }
+  }
+
+  function fetchUrl() {
+    doExtractUrl()
+      .then((ex) => toast.success(`Fetched ${ex.text.length} characters`))
+      .catch((err) => toast.error(err.message || 'Could not fetch that URL'))
+  }
+
+  async function handleDocFile(file) {
+    if (!file) return
+    setExtractBusy(true)
+    try {
+      const res = await api.extractFile(file)
+      setExtracted({ title: file.name, text: res.text })
+      toast.success(`Read ${res.text.length} characters from ${file.name}`)
+    } catch (err) {
+      setExtracted(null)
+      toast.error(err.message || 'Could not read that file')
+    } finally {
+      setExtractBusy(false)
+    }
+  }
+
+  function handleImageFile(file) {
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = () => setImageData({ dataUrl: reader.result, name: file.name })
+    reader.readAsDataURL(file)
+  }
+
+  // Resolve the selected source into { text, imageOverride } (may fetch).
+  async function resolveSource() {
+    switch (sourceType) {
+      case 'prompt':
+        return { text: topic.trim() }
+      case 'article':
+      case 'text':
+        return { text: sourceText.trim() }
+      case 'existing':
+        return { text: `${TRANSFORMS[transform]}:\n\n${sourceText.trim()}` }
+      case 'file':
+        if (!extracted?.text) throw new Error('Upload a document first')
+        return { text: extracted.text }
+      case 'image':
+        if (!imageData) throw new Error('Upload an image first')
+        return {
+          text: `A social media post about ${imageNote.trim() || 'this image'}.`,
+          imageOverride: imageData.dataUrl,
+        }
+      default: {
+        // URL sources — use the fetched content, or fetch now.
+        const ex = extracted || (await doExtractUrl())
+        if (!ex?.text) throw new Error('Fetch the content first')
+        return { text: ex.text }
+      }
+    }
+  }
+
   // --- generation -----------------------------------------------------------
   function generate(e) {
     e.preventDefault()
     if (busyRef.current) return
-    if (!topic.trim()) return toast.error('Please describe your idea first')
+    if (!sourceReady()) return toast.error(SOURCE_HINTS[sourceType] || 'Add a source first')
     // Protect unsaved generated content before replacing it.
     if (hasUnsaved) {
       setConfirmModal({
@@ -197,10 +334,29 @@ export default function Generator() {
   async function runGenerate() {
     busyRef.current = true
     setLoading(true)
+
+    // Resolve the chosen source first (URLs/files may fetch). Don't clear
+    // existing results until we know we have usable source text.
+    let resolved
+    try {
+      resolved = await resolveSource()
+    } catch (err) {
+      setLoading(false)
+      busyRef.current = false
+      return toast.error(err.message || 'Could not read that source')
+    }
+    const sourceText = (resolved.text || '').trim()
+    if (sourceText.length < 2) {
+      setLoading(false)
+      busyRef.current = false
+      return toast.error('Not enough content to generate from')
+    }
+
+    setActiveSource(sourceText)
     setDrafts([])
     try {
       const platforms = selected.length ? selected : PLATFORM_KEYS
-      const base = captionBase()
+      const base = captionBase(sourceText)
 
       // 1. Captions — one request per platform (existing multi-platform flow).
       const responses = await Promise.all(
@@ -211,9 +367,12 @@ export default function Generator() {
           platform: res.platform,
           content: res.text,
           hashtags: formatHashtags(res.hashtags),
-          imagePrompt: topic, // base prompt for image (re)generation
+          imagePrompt: sourceText, // base prompt for image (re)generation
           settings: resolveSettings(img, overrides[res.platform]),
-          images: [],
+          // Image source: use the uploaded image directly instead of AI gen.
+          images: resolved.imageOverride
+            ? [{ url: resolved.imageOverride, label: null }]
+            : [],
           imgLoading: false,
           imgError: null,
           capLoading: false,
@@ -224,10 +383,12 @@ export default function Generator() {
       setMeta({ provider: responses[0]?.provider, model: responses[0]?.model })
       toast.success(`Generated ${cards.length} caption(s)`)
 
-      // 2. Images — independent per card, so a failure never loses captions.
-      cards.forEach((c, i) => {
-        if (c.settings.aiImage) generateCardImages(i, c)
-      })
+      // 2. Images — independent per card; skipped when the user supplied one.
+      if (!resolved.imageOverride) {
+        cards.forEach((c, i) => {
+          if (c.settings.aiImage) generateCardImages(i, c)
+        })
+      }
     } catch (err) {
       toast.error(err.message || 'Generation failed')
     } finally {
@@ -264,7 +425,10 @@ export default function Generator() {
     const c = drafts[i]
     updateDraft(i, { capLoading: true })
     try {
-      const r = await api.generate({ ...captionBase(), platform: c.platform })
+      const r = await api.generate({
+        ...captionBase(c.imagePrompt || activeSource),
+        platform: c.platform,
+      })
       const res = r.results[0]
       updateDraft(i, {
         content: res.text,
@@ -580,19 +744,164 @@ export default function Generator() {
       <div className="grid gap-6 lg:grid-cols-[380px_1fr]">
         {/* ---- Input panel ---- */}
         <form onSubmit={generate} className="card h-fit space-y-5 p-5">
-          {/* Step 1 — Prompt */}
+          {/* Step 0 — Create From */}
           <div>
-            <label className="label" htmlFor="topic">
-              Describe your idea
-            </label>
-            <textarea
-              id="topic"
-              className="input min-h-24 resize-y"
-              value={topic}
-              onChange={(e) => setTopic(e.target.value)}
-              placeholder="e.g. A post about the launch of our new eco-friendly coffee beans"
-            />
+            <label className="label">Create from</label>
+            <div className="flex flex-wrap gap-1.5">
+              {SOURCE_TYPES.map((s) => {
+                const on = sourceType === s.id
+                return (
+                  <button
+                    type="button"
+                    key={s.id}
+                    aria-pressed={on}
+                    onClick={() => {
+                      setSourceType(s.id)
+                      setExtracted(null) // sources don't share fetched content
+                    }}
+                    className={`flex items-center gap-1 rounded-lg border px-2 py-1 text-xs font-medium transition ${
+                      on
+                        ? 'border-indigo-500 bg-indigo-500/15 text-indigo-300'
+                        : 'border-slate-300 text-slate-400 hover:bg-slate-100 dark:border-white/10 dark:hover:bg-white/5'
+                    }`}
+                  >
+                    <span>{s.icon}</span>
+                    {s.label}
+                  </button>
+                )
+              })}
+            </div>
           </div>
+
+          {/* Step 1 — Source input (only the relevant field shows) */}
+          {sourceType === 'prompt' && (
+            <div>
+              <label className="label" htmlFor="topic">Describe your idea</label>
+              <textarea
+                id="topic"
+                className="input min-h-24 resize-y"
+                value={topic}
+                onChange={(e) => setTopic(e.target.value)}
+                placeholder="e.g. A post about the launch of our new eco-friendly coffee beans"
+              />
+            </div>
+          )}
+
+          {(sourceType === 'article' || sourceType === 'text') && (
+            <div>
+              <label className="label">
+                {sourceType === 'article' ? 'Paste article' : 'Plain text'}
+              </label>
+              <textarea
+                className="input min-h-36 resize-y"
+                value={sourceText}
+                onChange={(e) => setSourceText(e.target.value)}
+                placeholder="Paste the text to turn into platform-ready posts…"
+              />
+              <div className="mt-1 text-right text-xs text-slate-400">
+                {sourceText.length.toLocaleString()} chars
+              </div>
+            </div>
+          )}
+
+          {sourceType === 'existing' && (
+            <div className="space-y-2">
+              <div>
+                <label className="label">Existing post</label>
+                <textarea
+                  className="input min-h-28 resize-y"
+                  value={sourceText}
+                  onChange={(e) => setSourceText(e.target.value)}
+                  placeholder="Paste your existing social media post…"
+                />
+              </div>
+              <div>
+                <label className="label">Action</label>
+                <select
+                  className="input"
+                  value={transform}
+                  onChange={(e) => setTransform(e.target.value)}
+                >
+                  {Object.keys(TRANSFORMS).map((k) => (
+                    <option key={k} value={k}>{TRANSFORM_LABELS[k]}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          )}
+
+          {URL_SOURCES.includes(sourceType) && (
+            <div>
+              <label className="label">{URL_LABELS[sourceType]} URL</label>
+              <div className="flex gap-2">
+                <input
+                  className="input"
+                  value={sourceUrl}
+                  onChange={(e) => {
+                    setSourceUrl(e.target.value)
+                    setExtracted(null)
+                  }}
+                  placeholder={sourceType === 'youtube' ? 'https://youtube.com/watch?v=…' : 'https://…'}
+                />
+                <button
+                  type="button"
+                  onClick={fetchUrl}
+                  disabled={extractBusy}
+                  className="btn btn-ghost btn-sm whitespace-nowrap"
+                >
+                  {extractBusy ? 'Fetching…' : 'Fetch Content'}
+                </button>
+              </div>
+              {extracted && <ExtractedPreview extracted={extracted} onClear={() => setExtracted(null)} />}
+            </div>
+          )}
+
+          {sourceType === 'file' && (
+            <div>
+              <label className="label">Upload PDF, DOCX or TXT</label>
+              <input
+                type="file"
+                accept=".pdf,.docx,.txt,.md"
+                className="block w-full text-sm text-slate-400 file:mr-3 file:rounded-lg file:border-0 file:bg-indigo-500/15 file:px-3 file:py-1.5 file:text-indigo-300"
+                onChange={(e) => handleDocFile(e.target.files?.[0])}
+              />
+              {extractBusy && <div className="mt-2 text-xs text-slate-400">Reading document…</div>}
+              {extracted && <ExtractedPreview extracted={extracted} onClear={() => setExtracted(null)} />}
+            </div>
+          )}
+
+          {sourceType === 'image' && (
+            <div className="space-y-2">
+              <div>
+                <label className="label">Upload image</label>
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="block w-full text-sm text-slate-400 file:mr-3 file:rounded-lg file:border-0 file:bg-indigo-500/15 file:px-3 file:py-1.5 file:text-indigo-300"
+                  onChange={(e) => handleImageFile(e.target.files?.[0])}
+                />
+                {imageData && (
+                  <img
+                    src={imageData.dataUrl}
+                    alt={imageData.name}
+                    className="mt-2 max-h-40 rounded-xl object-cover"
+                  />
+                )}
+              </div>
+              <div>
+                <label className="label">What's it about? (optional)</label>
+                <input
+                  className="input"
+                  value={imageNote}
+                  onChange={(e) => setImageNote(e.target.value)}
+                  placeholder="e.g. our new product launch photo"
+                />
+                <p className="mt-1 text-xs text-slate-400">
+                  Your image becomes the post visual; add a note to steer the caption.
+                </p>
+              </div>
+            </div>
+          )}
 
           <div>
             <label className="label" htmlFor="tone">
@@ -1341,6 +1650,29 @@ function ConfirmModal({ modal, onCancel }) {
           </button>
         </div>
       </div>
+    </div>
+  )
+}
+
+// Small preview of text extracted from a URL or document.
+function ExtractedPreview({ extracted, onClear }) {
+  return (
+    <div className="mt-2 rounded-xl border border-slate-200 bg-slate-50 p-2.5 text-xs dark:border-white/10 dark:bg-white/5">
+      <div className="mb-1 flex items-center justify-between gap-2">
+        <span className="truncate font-medium text-slate-600 dark:text-slate-300">
+          ✓ {extracted.title || 'Extracted content'} · {extracted.text.length.toLocaleString()} chars
+        </span>
+        <button
+          type="button"
+          onClick={onClear}
+          className="shrink-0 text-slate-400 hover:text-rose-400"
+        >
+          Clear
+        </button>
+      </div>
+      <p className="line-clamp-3 text-slate-500 dark:text-slate-400">
+        {extracted.text.slice(0, 240)}…
+      </p>
     </div>
   )
 }

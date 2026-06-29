@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import random
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, File, HTTPException, UploadFile
 
 from pydantic import BaseModel, Field
 
@@ -14,7 +14,8 @@ from app.schemas.post import (
     Platform,
     Tone,
 )
-from app.services.ai_service import generate_carousel_outline, generate_posts
+from app.services.ai_service import assist_text, generate_carousel_outline, generate_posts
+from app.services.extract_service import ExtractError, extract_file, extract_url
 from app.services.image_service import (
     ASPECT_RATIOS,
     IMAGE_QUALITIES,
@@ -170,6 +171,75 @@ async def generate_images_endpoint(req: ComposeImagesRequest) -> ComposeImagesRe
         images=images, aspect_ratio=req.aspect_ratio,
         width=width, height=height, carousel=req.carousel,
     )
+
+
+# ---------------------------------------------------------------------------
+# "Create From" content extraction — URLs, YouTube, and document uploads all
+# reduce to a plain-text source that feeds the normal generation prompt.
+# ---------------------------------------------------------------------------
+class ExtractUrlRequest(BaseModel):
+    url: str = Field(..., min_length=3, max_length=2000)
+
+
+class ExtractResponse(BaseModel):
+    title: str | None = None
+    text: str
+    source: str | None = None
+
+
+@router.post("/extract", response_model=ExtractResponse)
+async def extract_endpoint(req: ExtractUrlRequest) -> ExtractResponse:
+    """Extract readable text from a web page or YouTube link."""
+    try:
+        data = await extract_url(req.url)
+    except ExtractError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return ExtractResponse(**data)
+
+
+@router.post("/extract-file", response_model=ExtractResponse)
+async def extract_file_endpoint(file: UploadFile = File(...)) -> ExtractResponse:
+    """Extract text from an uploaded PDF / DOCX / TXT document."""
+    raw = await file.read()
+    if len(raw) > 10 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="File too large (max 10 MB).")
+    try:
+        data = extract_file(file.filename or "", raw)
+    except ExtractError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return ExtractResponse(**data)
+
+
+# ---------------------------------------------------------------------------
+# AI Assist — optional in-place edits for the manual composer. Transforms the
+# user's existing text instead of generating a brand-new post.
+# ---------------------------------------------------------------------------
+class AssistRequest(BaseModel):
+    text: str = Field(..., min_length=1, max_length=8000)
+    action: str = Field(..., description="improve|rewrite|shorten|expand|grammar|"
+                                         "tone|hashtags|cta|translate")
+    tone: str | None = None       # for action=tone
+    language: str | None = None   # for action=translate
+
+
+class AssistResponse(BaseModel):
+    result: str
+
+
+@router.post("/assist", response_model=AssistResponse)
+async def assist_endpoint(req: AssistRequest) -> AssistResponse:
+    """Apply an optional AI edit to existing text (Improve, Rewrite, Translate…)."""
+    try:
+        result = await assist_text(
+            req.text, req.action, tone=req.tone, language=req.language
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except ProviderConfigError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except ProviderError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return AssistResponse(result=result)
 
 
 @router.get("/meta")

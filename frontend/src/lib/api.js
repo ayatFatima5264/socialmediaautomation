@@ -30,10 +30,13 @@ function extractDetail(data, fallback) {
   return fallback
 }
 
-async function request(path, { method = 'GET', body, form, auth = true, headers = {} } = {}) {
+async function request(path, { method = 'GET', body, form, formData, auth = true, headers = {} } = {}) {
   const opts = { method, headers: { ...headers } }
 
-  if (form) {
+  if (formData) {
+    // Let the browser set the multipart boundary; don't set Content-Type.
+    opts.body = formData
+  } else if (form) {
     opts.body = new URLSearchParams(form)
     opts.headers['Content-Type'] = 'application/x-www-form-urlencoded'
   } else if (body !== undefined) {
@@ -76,6 +79,17 @@ export const api = {
   generate: (body) => request('/api/generate-post', { method: 'POST', body }),
   generateImage: (body) => request('/api/generate-image', { method: 'POST', body, auth: false }),
   generateImages: (body) => request('/api/generate-images', { method: 'POST', body, auth: false }),
+
+  // AI text assist (in-place edits for the manual composer)
+  assist: (body) => request('/api/assist', { method: 'POST', body, auth: false }),
+
+  // "Create From" content extraction
+  extractUrl: (url) => request('/api/extract', { method: 'POST', body: { url }, auth: false }),
+  extractFile: (file) => {
+    const fd = new FormData()
+    fd.append('file', file)
+    return request('/api/extract-file', { method: 'POST', formData: fd, auth: false })
+  },
 
   // instagram (Instagram Login API)
   instagramProfile: () => request('/instagram/profile', { auth: false }),

@@ -32,8 +32,10 @@ class Tone(str, Enum):
 
 
 class GeneratePostRequest(BaseModel):
-    topic: str = Field(..., min_length=2, max_length=500,
-                       description="What the post is about.")
+    # Accepts a short prompt OR longer source text extracted from an article,
+    # web page or document (the "Create From" sources).
+    topic: str = Field(..., min_length=2, max_length=8000,
+                       description="What the post is about, or source text.")
     tone: Tone = Tone.professional
     # A specific platform, or omit / pass null to generate for ALL platforms.
     platform: Platform | None = Field(

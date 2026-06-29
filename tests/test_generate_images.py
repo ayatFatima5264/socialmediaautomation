@@ -131,6 +131,67 @@ def test_every_platform_has_a_caption_spec():
     assert not missing, f"Platforms missing a spec: {missing}"
 
 
+def test_extract_file_reads_plain_text():
+    from app.services.extract_service import extract_file
+
+    out = extract_file("notes.txt", b"Eco-friendly coffee beans, small-batch roasted.")
+    assert "coffee beans" in out["text"]
+    assert out["source"] == "file"
+
+
+def test_extract_file_reads_docx():
+    import io
+    import zipfile
+
+    from app.services.extract_service import extract_file
+
+    # Minimal DOCX: a zip whose word/document.xml holds <w:t> runs.
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        z.writestr(
+            "word/document.xml",
+            "<w:document><w:body><w:p><w:r><w:t>Hello</w:t></w:r>"
+            "<w:r><w:t> world</w:t></w:r></w:p></w:body></w:document>",
+        )
+    out = extract_file("doc.docx", buf.getvalue())
+    assert "Hello world" in out["text"]
+
+
+def test_extract_file_rejects_unknown_type():
+    from app.services.extract_service import ExtractError, extract_file
+
+    try:
+        extract_file("archive.zip", b"PK\x03\x04whatever")
+    except ExtractError as exc:
+        assert "Unsupported" in str(exc)
+    else:
+        raise AssertionError("expected ExtractError for unsupported type")
+
+
+def test_extract_url_requires_a_url():
+    r = client.post("/api/extract", json={"url": ""})
+    assert r.status_code == 422  # min_length on the field
+
+
+def test_assist_rejects_unknown_action():
+    # Validation happens before any provider/network call.
+    r = client.post("/api/assist", json={"text": "hello world", "action": "bogus"})
+    assert r.status_code == 422
+
+
+def test_assist_requires_text():
+    r = client.post("/api/assist", json={"text": "", "action": "improve"})
+    assert r.status_code == 422
+
+
+def test_assist_action_set_is_complete():
+    from app.services.ai_service import ASSIST_INSTRUCTIONS
+
+    for action in ("improve", "rewrite", "shorten", "expand", "grammar",
+                   "tone", "hashtags", "cta", "translate"):
+        assert action in ASSIST_INSTRUCTIONS
+
+
 def test_pinterest_is_available_end_to_end():
     # Exposed to the frontend...
     assert "pinterest" in client.get("/api/meta").json()["platforms"]

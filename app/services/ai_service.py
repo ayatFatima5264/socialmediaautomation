@@ -108,6 +108,60 @@ async def generate_carousel_outline(
     return cleaned[:slides]
 
 
+# Optional, in-place text edits for the manual composer ("AI Assist"). Each
+# transforms the user's existing text rather than generating a new post.
+ASSIST_INSTRUCTIONS: dict[str, str] = {
+    "improve": "Improve the writing so it is clearer, more engaging and polished. Keep the same meaning and the same language.",
+    "rewrite": "Rewrite the text in a fresh way while preserving its meaning and language.",
+    "shorten": "Make the text shorter and more concise while keeping the key message.",
+    "expand": "Expand the text with more relevant detail and depth, keeping the same voice.",
+    "grammar": "Correct all spelling, grammar and punctuation mistakes. Keep the wording and language otherwise unchanged.",
+    "tone": "Rewrite the text in a {tone} tone.",
+    "hashtags": "Generate 5 to 10 relevant hashtags (a mix of popular and niche) for the text. Each must start with # and be separated by spaces. Return only the hashtags.",
+    "cta": "Write one short, compelling call-to-action line for the text. Return only that line.",
+    "translate": "Translate the text into {language}. Return only the translation.",
+}
+
+
+async def assist_text(
+    text: str,
+    action: str,
+    *,
+    tone: str | None = None,
+    language: str | None = None,
+    provider_name: str | None = None,
+) -> str:
+    """Apply an in-place AI edit (improve/rewrite/translate/…) to `text`."""
+    instruction = ASSIST_INSTRUCTIONS.get(action)
+    if instruction is None:
+        raise ValueError(f"Unknown assist action: {action!r}")
+    if action == "tone":
+        instruction = instruction.format(tone=tone or "professional")
+    if action == "translate":
+        instruction = instruction.format(language=language or "English")
+
+    provider = get_provider(provider_name)
+    system = (
+        "You are an expert social media copy editor. You ALWAYS return only a "
+        'JSON object {"result": "..."} with no markdown, no code fences and no '
+        "commentary."
+    )
+    user = (
+        f"{instruction}\n\nTEXT:\n{text}\n\n"
+        'Return ONLY a JSON object: {"result": "the edited text"}.'
+    )
+    raw = await provider.complete(
+        system=system,
+        user=user,
+        max_tokens=settings.ai_max_tokens,
+        temperature=0.7,
+        json_mode=True,
+        context={"assist": action},
+    )
+    result = str(_parse_json(raw).get("result", "")).strip()
+    return result or text
+
+
 def _fallback_outline(topic: str, slides: int) -> list[str]:
     """Deterministic distinct slide labels when the LLM can't be used."""
     roles = [
