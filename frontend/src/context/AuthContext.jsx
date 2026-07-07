@@ -37,8 +37,16 @@ export function AuthProvider({ children }) {
     setUser(null)
   }
 
+  // Merge fields into the current user (e.g. after finishing onboarding), so
+  // the UI updates without a full refetch.
+  function updateUser(patch) {
+    setUser((u) => (u ? { ...u, ...patch } : u))
+  }
+
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, logout }}>
+    <AuthContext.Provider
+      value={{ user, loading, login, register, logout, updateUser }}
+    >
       {children}
     </AuthContext.Provider>
   )

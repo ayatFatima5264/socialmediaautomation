@@ -3,11 +3,16 @@ from __future__ import annotations
 
 import random
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 
 from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
 
 from app.config import settings
+from app.core.deps import get_current_user_optional
+from app.database import get_db
+from app.models.user import User
+from app.services import business_profile_service
 from app.schemas.post import (
     GeneratePostRequest,
     GeneratePostResponse,
@@ -37,10 +42,22 @@ router = APIRouter(prefix="/api", tags=["posts"])
 
 
 @router.post("/generate-post", response_model=GeneratePostResponse)
-async def generate_post(req: GeneratePostRequest) -> GeneratePostResponse:
-    """Generate optimized post copy for one platform, or all platforms."""
+async def generate_post(
+    req: GeneratePostRequest,
+    db: Session = Depends(get_db),
+    user: User | None = Depends(get_current_user_optional),
+) -> GeneratePostResponse:
+    """Generate optimized post copy for one platform, or all platforms.
+
+    When a user is signed in, their saved business profile (if any) is added as
+    context so posts are on-brand. Skipped/empty fields are ignored, and no
+    profile — or even no login — is required.
+    """
+    business_context = (
+        business_profile_service.context_for_user(db, user.id) if user else None
+    )
     try:
-        return await generate_posts(req)
+        return await generate_posts(req, business_context=business_context)
     except ProviderConfigError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except ProviderError as exc:
@@ -238,14 +255,21 @@ class GeneratedArticle(BaseModel):
 
 
 @router.post("/generate-article", response_model=GeneratedArticle)
-async def generate_article_endpoint(req: GenerateArticleRequest) -> GeneratedArticle:
-    """Generate a full LinkedIn article from a topic."""
+async def generate_article_endpoint(
+    req: GenerateArticleRequest,
+    db: Session = Depends(get_db),
+    user: User | None = Depends(get_current_user_optional),
+) -> GeneratedArticle:
+    """Generate a full LinkedIn article from a topic (with business context)."""
     from app.services.providers import get_provider
 
+    business_context = (
+        business_profile_service.context_for_user(db, user.id) if user else None
+    )
     try:
         data = await generate_article(
             req.topic, audience=req.audience, tone=req.tone.value,
-            provider_name=req.provider,
+            provider_name=req.provider, business_context=business_context,
         )
         provider = get_provider(req.provider)
     except ProviderConfigError as exc:

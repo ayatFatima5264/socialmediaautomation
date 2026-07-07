@@ -1,182 +1,301 @@
 import { useEffect, useState } from 'react'
-import { PLATFORMS, PLATFORM_KEYS } from '../lib/constants'
+import { PLATFORM_KEYS, PLATFORMS } from '../lib/constants'
 import { useToast } from '../context/ToastContext.jsx'
-import PlatformIcon from '../components/PlatformIcon.jsx'
 import { api, ApiError } from '../lib/api'
+import AccountCard from '../components/AccountCard.jsx'
+import ConnectionSummary from '../components/ConnectionSummary.jsx'
+import AccountSelectModal from '../components/AccountSelectModal.jsx'
 
-// Instagram connects for real via the Meta Graph API (backend). The other
-// platforms remain simulated (local toggle) until their adapters are added.
-const SIM_KEY = 'ss_connected'
-
-function loadSimulated() {
-  try {
-    return JSON.parse(localStorage.getItem(SIM_KEY)) || {}
-  } catch {
-    return {}
-  }
-}
+// Empty per-platform summary used while the first load is in flight, so the
+// summary strip and layout don't jump once data arrives.
+const EMPTY_SUMMARY = PLATFORM_KEYS.map((p) => ({
+  platform: p,
+  connected: false,
+  status: 'not_connected',
+}))
 
 export default function Accounts() {
   const toast = useToast()
-  const [accounts, setAccounts] = useState([]) // real, from backend
-  const [simulated, setSimulated] = useState(loadSimulated)
-  const [igForm, setIgForm] = useState(false)
-  const [token, setToken] = useState('')
-  const [pageId, setPageId] = useState('')
-  const [busy, setBusy] = useState(false)
+  const [overview, setOverview] = useState(null) // null = loading
+  const [busy, setBusy] = useState({}) // { [platform]: true }
+  // Multi-account picker: { platform, pendingId, candidates } or null.
+  const [selection, setSelection] = useState(null)
+  const [selecting, setSelecting] = useState(false)
+  // Persistent connect error banner: { platform, message } or null.
+  const [connectError, setConnectError] = useState(null)
 
-  async function refresh() {
+  async function load() {
     try {
-      setAccounts(await api.listAccounts())
+      setOverview(await api.accountsOverview())
     } catch {
-      /* not logged in / backend down — leave empty */
+      // Not logged in / backend down — show an empty (but usable) page.
+      setOverview({
+        accounts: [],
+        summary: EMPTY_SUMMARY,
+        connected_count: 0,
+        total_platforms: PLATFORM_KEYS.length,
+      })
+    }
+  }
+
+  async function openSelection(platform, pendingId) {
+    try {
+      const data = await api.pendingConnection(pendingId)
+      setSelection({ platform, pendingId, candidates: data.candidates })
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'Selection expired')
     }
   }
 
   useEffect(() => {
-    refresh()
-    // Handle the OAuth redirect coming back to /accounts.
+    load()
+    // Handle the OAuth redirect landing back on /accounts.
     const params = new URLSearchParams(window.location.search)
-    if (params.get('connected') === 'instagram') {
-      toast.success('Instagram connected!')
+    const connected = params.get('connected')
+    const select = params.get('select')
+    const pending = params.get('pending')
+    const error = params.get('error')
+    if (connected) {
+      const label = PLATFORMS[connected]?.label || connected
+      toast.success(`${label} connected!`)
       window.history.replaceState({}, '', '/accounts')
-    } else if (params.get('error')) {
-      toast.error(`Instagram connect failed: ${params.get('error')}`)
+    } else if (select && pending) {
+      // Several accounts to choose from — open the picker.
+      openSelection(select, pending)
+      window.history.replaceState({}, '', '/accounts')
+    } else if (error) {
+      // Show a persistent banner (not just a fleeting toast) with the reason.
+      setConnectError({ platform: params.get('platform'), message: error })
       window.history.replaceState({}, '', '/accounts')
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const real = Object.fromEntries(accounts.map((a) => [a.platform, a]))
-
-  async function connectInstagram(e) {
-    e.preventDefault()
-    setBusy(true)
+  async function confirmSelection(accountId) {
+    if (!selection) return
+    setSelecting(true)
     try {
-      const acc = await api.connectInstagram({
-        access_token: token.trim(),
-        page_id: pageId.trim() || null,
-      })
-      toast.success(`Instagram connected as @${acc.username || acc.account_id}`)
-      setIgForm(false)
-      setToken('')
-      setPageId('')
-      refresh()
+      await api.selectAccount(selection.pendingId, accountId)
+      toast.success(`${PLATFORMS[selection.platform]?.label || 'Account'} connected!`)
+      setSelection(null)
+      await load()
     } catch (err) {
-      const msg = err instanceof ApiError ? err.message : 'Connect failed'
-      toast.error(msg)
+      toast.error(err instanceof ApiError ? err.message : 'Could not connect account')
     } finally {
-      setBusy(false)
+      setSelecting(false)
+    }
+  }
+
+  const setBusyFor = (platform, value) =>
+    setBusy((b) => ({ ...b, [platform]: value }))
+
+  async function connect(platform) {
+    setBusyFor(platform, true)
+    try {
+      const res = await api.connectAccount(platform)
+      // Real OAuth: bounce the browser to the provider's consent screen.
+      if (res.authorize_url) {
+        window.location.href = res.authorize_url
+        return
+      }
+      // Inline (dev) connect completed — refresh from the server.
+      toast.success(res.message || `${PLATFORMS[platform].label} connected`)
+      await load()
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'Connect failed')
+    } finally {
+      setBusyFor(platform, false)
     }
   }
 
   async function disconnect(platform) {
+    setBusyFor(platform, true)
+    // Optimistic: drop the account immediately, roll back on failure.
+    const prev = overview
+    setOverview((o) => applyRemoval(o, platform))
     try {
       await api.disconnectAccount(platform)
       toast.success(`${PLATFORMS[platform].label} disconnected`)
-      refresh()
-    } catch {
-      toast.error('Disconnect failed')
+      await load()
+    } catch (err) {
+      setOverview(prev) // roll back
+      toast.error(err instanceof ApiError ? err.message : 'Disconnect failed')
+    } finally {
+      setBusyFor(platform, false)
     }
   }
 
-  function toggleSim(p) {
-    const next = { ...simulated, [p]: !simulated[p] }
-    setSimulated(next)
-    localStorage.setItem(SIM_KEY, JSON.stringify(next))
-    toast.success(`${PLATFORMS[p].label} ${next[p] ? 'connected' : 'disconnected'} (simulated)`)
+  async function refresh(platform) {
+    setBusyFor(platform, true)
+    try {
+      const res = await api.refreshAccount(platform)
+      toast.success(res.message || `${PLATFORMS[platform].label} refreshed`)
+      await load()
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'Refresh failed')
+    } finally {
+      setBusyFor(platform, false)
+    }
   }
+
+  const loading = overview === null
+  const accountsByPlatform = Object.fromEntries(
+    (overview?.accounts || []).map((a) => [a.platform, a]),
+  )
+  const noneConnected = !loading && overview.connected_count === 0
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold">Social Accounts</h1>
-        <p className="text-sm text-slate-400">
-          <span className="font-semibold text-emerald-400">Instagram</span> connects for real
-          via the Meta Graph API. Other platforms are{' '}
-          <span className="font-semibold text-amber-400">simulated</span> until their adapters
-          are added.
+        <p className="text-sm text-slate-500 dark:text-slate-400">
+          Connect one account per platform to publish across all of them from one place.
         </p>
       </div>
 
+      {connectError && (
+        <ConnectErrorBanner
+          platform={connectError.platform}
+          message={connectError.message}
+          onDismiss={() => setConnectError(null)}
+        />
+      )}
+
+      {loading ? (
+        <SummarySkeleton />
+      ) : (
+        <ConnectionSummary
+          summary={overview.summary}
+          connectedCount={overview.connected_count}
+          total={overview.total_platforms}
+        />
+      )}
+
+      {noneConnected && <EmptyState />}
+
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {PLATFORM_KEYS.map((p) => {
-          const isInstagram = p === 'instagram'
-          const account = real[p]
-          const on = isInstagram ? !!account : !!simulated[p]
-          return (
-            <div key={p} className="card flex flex-col gap-4 p-5">
-              <div className="flex items-center gap-3">
-                <PlatformIcon platform={p} size={40} />
-                <div>
-                  <div className="font-semibold">{PLATFORMS[p].label}</div>
-                  <div className={`text-xs ${on ? 'text-emerald-400' : 'text-slate-400'}`}>
-                    {on
-                      ? isInstagram
-                        ? `● @${account.username || account.account_id}`
-                        : '● Connected'
-                      : '○ Not connected'}
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between text-xs text-slate-400">
-                <span>Token status</span>
-                <span className={on ? 'text-emerald-400' : 'text-slate-500'}>
-                  {on ? (isInstagram ? 'Active (real)' : 'Active (simulated)') : 'None'}
-                </span>
-              </div>
-
-              {isInstagram ? (
-                on ? (
-                  <button onClick={() => disconnect(p)} className="btn btn-ghost w-full">
-                    Disconnect
-                  </button>
-                ) : igForm ? (
-                  <form onSubmit={connectInstagram} className="flex flex-col gap-2">
-                    <input
-                      className="input text-xs"
-                      placeholder="Access token"
-                      value={token}
-                      onChange={(e) => setToken(e.target.value)}
-                      required
-                    />
-                    <input
-                      className="input text-xs"
-                      placeholder="Facebook Page ID (optional)"
-                      value={pageId}
-                      onChange={(e) => setPageId(e.target.value)}
-                    />
-                    <div className="flex gap-2">
-                      <button type="submit" disabled={busy} className="btn btn-primary flex-1">
-                        {busy ? 'Connecting…' : 'Connect'}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setIgForm(false)}
-                        className="btn btn-ghost"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </form>
-                ) : (
-                  <button onClick={() => setIgForm(true)} className="btn btn-primary w-full">
-                    Connect
-                  </button>
-                )
-              ) : (
-                <button
-                  onClick={() => toggleSim(p)}
-                  className={`btn w-full ${on ? 'btn-ghost' : 'btn-primary'}`}
-                >
-                  {on ? 'Disconnect' : 'Connect'}
-                </button>
-              )}
-            </div>
-          )
-        })}
+        {loading
+          ? PLATFORM_KEYS.map((p) => <CardSkeleton key={p} />)
+          : PLATFORM_KEYS.map((p) => (
+              <AccountCard
+                key={p}
+                platform={p}
+                account={accountsByPlatform[p] || null}
+                busy={!!busy[p]}
+                onConnect={() => connect(p)}
+                onDisconnect={() => disconnect(p)}
+                onRefresh={() => refresh(p)}
+              />
+            ))}
       </div>
+
+      {selection && (
+        <AccountSelectModal
+          platform={selection.platform}
+          candidates={selection.candidates}
+          busy={selecting}
+          onSelect={confirmSelection}
+          onClose={() => setSelection(null)}
+        />
+      )}
+    </div>
+  )
+}
+
+function applyRemoval(overview, platform) {
+  if (!overview) return overview
+  const accounts = overview.accounts.filter((a) => a.platform !== platform)
+  return {
+    ...overview,
+    accounts,
+    connected_count: accounts.length,
+    summary: overview.summary.map((s) =>
+      s.platform === platform
+        ? { ...s, connected: false, status: 'not_connected' }
+        : s,
+    ),
+  }
+}
+
+// Persistent, dismissible banner explaining why a connect attempt failed.
+// Facebook's own "You've connected… Got it" dialog only means permission was
+// granted on Facebook — this banner reports whether the account actually linked.
+function ConnectErrorBanner({ platform, message, onDismiss }) {
+  const label = PLATFORMS[platform]?.label || 'Account'
+  const isInstagram = platform === 'instagram'
+  return (
+    <div className="card border border-rose-500/30 bg-rose-500/10 p-5">
+      <div className="flex items-start gap-3">
+        <div className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-rose-500/20 text-lg">
+          ⚠️
+        </div>
+        <div className="min-w-0 flex-1">
+          <h3 className="font-semibold text-rose-700 dark:text-rose-300">
+            {label} was not connected
+          </h3>
+          <p className="mt-1 text-sm text-slate-700 dark:text-slate-200">{message}</p>
+
+          {isInstagram && (
+            <div className="mt-3 rounded-xl bg-white/60 p-3 text-xs text-slate-600 dark:bg-black/20 dark:text-slate-300">
+              <p className="mb-1 font-semibold">To fix this:</p>
+              <ol className="list-decimal space-y-1 pl-4">
+                <li>Make your Instagram a <b>Professional</b> account (Business or Creator).</li>
+                <li>Link it to a <b>Facebook Page</b> you manage (Meta Business Suite → Settings → Instagram accounts).</li>
+                <li>Click <b>Connect Instagram</b> again and grant that Page.</li>
+              </ol>
+              <p className="mt-2 text-slate-500 dark:text-slate-400">
+                Note: Facebook's "You've connected… Got it" popup only confirms
+                permission was granted — it doesn't mean the Instagram account linked here.
+              </p>
+            </div>
+          )}
+        </div>
+        <button
+          onClick={onDismiss}
+          className="shrink-0 rounded-lg px-2 py-1 text-sm text-slate-500 hover:bg-black/5 dark:text-slate-400 dark:hover:bg-white/10"
+          aria-label="Dismiss"
+        >
+          ✕
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function EmptyState() {
+  return (
+    <div className="card flex flex-col items-center gap-3 p-10 text-center">
+      <div className="grid h-16 w-16 place-items-center rounded-2xl bg-indigo-500/10 text-3xl">
+        🔗
+      </div>
+      <h3 className="text-lg font-semibold">No social accounts connected yet.</h3>
+      <p className="max-w-md text-sm text-slate-500 dark:text-slate-400">
+        Connect your social media accounts to start publishing posts across
+        multiple platforms from one place.
+      </p>
+    </div>
+  )
+}
+
+function SummarySkeleton() {
+  return <div className="skeleton h-28 w-full rounded-2xl" />
+}
+
+function CardSkeleton() {
+  return (
+    <div className="card flex h-full flex-col gap-4 p-5">
+      <div className="flex items-center gap-3">
+        <div className="skeleton h-11 w-11 rounded-lg" />
+        <div className="flex-1 space-y-2">
+          <div className="skeleton h-3 w-24" />
+          <div className="skeleton h-2.5 w-16" />
+        </div>
+      </div>
+      <div className="space-y-2">
+        <div className="skeleton h-2.5 w-full" />
+        <div className="skeleton h-2.5 w-2/3" />
+      </div>
+      <div className="skeleton mt-auto h-9 w-full rounded-xl" />
     </div>
   )
 }

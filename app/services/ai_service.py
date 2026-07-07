@@ -30,15 +30,28 @@ logger = logging.getLogger(__name__)
 _JSON_OBJECT_RE = re.compile(r"\{.*\}", re.DOTALL)
 
 
-async def generate_posts(req: GeneratePostRequest) -> GeneratePostResponse:
-    """Generate optimized post(s). One platform, or all when none specified."""
+async def generate_posts(
+    req: GeneratePostRequest,
+    business_context: str | None = None,
+    extra_instructions: str | None = None,
+) -> GeneratePostResponse:
+    """Generate optimized post(s). One platform, or all when none specified.
+
+    `business_context` (from the user's business profile) is woven into each
+    prompt when present; it's optional so generation works without a profile.
+    `extra_instructions` appends ad-hoc guidance (e.g. the Content Planner's
+    "avoid these hashtags/CTAs" diversity rules) — optional and additive.
+    """
     provider = get_provider(req.provider)
 
     targets = [req.platform] if req.platform else list(Platform)
 
     # Fan out across platforms concurrently — fast and cheap.
     posts = await asyncio.gather(
-        *(_generate_one(provider, req, p) for p in targets)
+        *(
+            _generate_one(provider, req, p, business_context, extra_instructions)
+            for p in targets
+        )
     )
 
     return GeneratePostResponse(
@@ -54,6 +67,7 @@ async def generate_article(
     audience: str | None = None,
     tone: str = "professional",
     provider_name: str | None = None,
+    business_context: str | None = None,
 ) -> dict:
     """Generate a LinkedIn article (title, body, tags, SEO keywords, cover prompt).
 
@@ -67,9 +81,15 @@ async def generate_article(
         "matching the requested schema — no markdown, no code fences, no commentary."
     )
     audience_line = f"\nTARGET AUDIENCE: {audience}" if audience else ""
+    context_line = (
+        f"\nBUSINESS CONTEXT (make it relevant and on-brand; ignore missing "
+        f"fields):\n{business_context}"
+        if business_context
+        else ""
+    )
     user = (
         f"Write a {tone} LinkedIn article about this topic:\n"
-        f"TOPIC: {topic}{audience_line}\n\n"
+        f"TOPIC: {topic}{audience_line}{context_line}\n\n"
         "Requirements:\n"
         "- A compelling, specific title (max ~80 characters).\n"
         "- A body of roughly 400-800 words in clear paragraphs separated by "
@@ -248,11 +268,15 @@ def _fallback_outline(topic: str, slides: int) -> list[str]:
 
 
 async def _generate_one(
-    provider: AIProvider, req: GeneratePostRequest, platform: Platform
+    provider: AIProvider,
+    req: GeneratePostRequest,
+    platform: Platform,
+    business_context: str | None = None,
+    extra_instructions: str | None = None,
 ) -> GeneratedPost:
     spec = PLATFORM_SPECS[platform]
     system = build_system_prompt()
-    user = build_user_prompt(req, platform)
+    user = build_user_prompt(req, platform, business_context, extra_instructions)
 
     context = {
         "platform": platform.value,

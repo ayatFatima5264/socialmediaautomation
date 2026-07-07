@@ -6,12 +6,15 @@ by setting DATABASE_URL in .env.
 """
 from __future__ import annotations
 
+import logging
 from collections.abc import Generator
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from app.config import settings
+
+logger = logging.getLogger(__name__)
 
 # SQLite needs check_same_thread disabled for FastAPI's threadpool; Postgres
 # and others take no special connect args.
@@ -53,3 +56,62 @@ def init_db() -> None:
     import app.models  # noqa: F401  (registers models)
 
     Base.metadata.create_all(bind=engine)
+    _run_lightweight_migrations()
+
+
+# Columns added to a table after its first release. `create_all` only creates
+# missing *tables*, never alters existing ones, so we add any missing columns in
+# place — idempotent and safe on both SQLite and Postgres. Only ever *adds*
+# nullable columns, so it can never lose data.
+# (table -> {column -> SQL type used in `ALTER TABLE ... ADD COLUMN`}.)
+_ADDED_COLUMNS: dict[str, dict[str, str]] = {
+    "social_accounts": {
+        "refresh_token": "TEXT",
+        "display_name": "VARCHAR(255)",
+        "profile_picture": "TEXT",
+        "status": "VARCHAR(20) DEFAULT 'connected'",
+        "connected_at": "TIMESTAMP",
+        "last_synced_at": "TIMESTAMP",
+    },
+    "users": {
+        "onboarding_completed": "BOOLEAN",
+        "timezone": "VARCHAR(64) DEFAULT 'UTC'",
+    },
+    # Content Planner fields — added to the existing posts table.
+    "posts": {
+        "plan_id": "INTEGER",
+        "content_type": "VARCHAR(40)",
+        "topic": "VARCHAR(300)",
+        "approval_status": "VARCHAR(20)",
+        "media": "JSON",
+    },
+    # Strategy theme/rationale added after the plan table's first release.
+    "content_plans": {
+        "theme": "VARCHAR(200)",
+        "summary": "TEXT",
+    },
+}
+
+
+def _run_lightweight_migrations() -> None:
+    """Add columns introduced after a table's initial release. Runs on startup."""
+    inspector = inspect(engine)
+    tables = set(inspector.get_table_names())
+
+    with engine.begin() as conn:
+        for table, columns in _ADDED_COLUMNS.items():
+            if table not in tables:
+                continue
+            existing = {col["name"] for col in inspector.get_columns(table)}
+            for name, ddl in columns.items():
+                if name in existing:
+                    continue
+                conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}"))
+                logger.info("Migrated %s: added column %r", table, name)
+                # Pre-existing users predate onboarding — mark them completed so
+                # only brand-new users ever see the wizard.
+                if table == "users" and name == "onboarding_completed":
+                    conn.execute(
+                        text("UPDATE users SET onboarding_completed = TRUE")
+                    )
+                    logger.info("Marked existing users as onboarding-completed")

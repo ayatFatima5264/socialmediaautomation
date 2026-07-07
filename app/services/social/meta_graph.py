@@ -81,66 +81,78 @@ async def exchange_for_long_lived_token(short_token: str) -> tuple[str, int | No
     return data["access_token"], data.get("expires_in")
 
 
-async def resolve_instagram_account(
-    access_token: str, page_id: str | None = None
-) -> dict:
-    """Find the Instagram Business account reachable with this token.
+async def list_instagram_accounts(access_token: str) -> list[dict]:
+    """Return EVERY Instagram Business account linked to the user's Pages.
 
-    Returns {"account_id", "page_id", "username", "page_name"}.
-    When page_id is given, uses that Page; otherwise scans the user's Pages and
-    picks the first one with a linked Instagram account.
+    Each item: {account_id, page_id, page_name, username, name,
+    profile_picture_url}. Empty list if none are linked. This is what powers the
+    "choose which Instagram account to connect" step (Buffer/Hootsuite style).
     """
+    accounts: list[dict] = []
     async with httpx.AsyncClient(timeout=settings.ai_request_timeout) as client:
-        candidates: list[dict] = []
-        if page_id:
-            page = await _get(
-                client,
-                page_id,
-                {"fields": "name,instagram_business_account", "access_token": access_token},
-            )
-            candidates = [page]
-        else:
-            data = await _get(
-                client,
-                "me/accounts",
-                {"fields": "name,instagram_business_account", "access_token": access_token},
-            )
-            candidates = data.get("data", [])
+        # Page through the user's Pages (100 at a time).
+        url = "me/accounts"
+        params: dict = {
+            # Check both linkage fields: the classic `instagram_business_account`
+            # and the newer `connected_instagram_account` some setups use.
+            "fields": "name,instagram_business_account,connected_instagram_account",
+            "access_token": access_token,
+            "limit": 100,
+        }
+        pages: list[dict] = []
+        while True:
+            data = await _get(client, url, params)
+            pages.extend(data.get("data", []))
+            nxt = (data.get("paging") or {}).get("next")
+            if not nxt or len(pages) >= 500:  # sane cap
+                break
+            # `next` is a full URL; strip the base so _get can reuse it.
+            url = nxt.replace(f"{_base()}/", "")
+            params = {}
 
-        for page in candidates:
-            iga = page.get("instagram_business_account")
-            if iga and iga.get("id"):
-                ig_id = iga["id"]
-                profile = await _get(
-                    client,
-                    ig_id,
-                    {"fields": "username", "access_token": access_token},
-                )
-                return {
+        for page in pages:
+            iga = page.get("instagram_business_account") or page.get(
+                "connected_instagram_account"
+            )
+            if not (iga and iga.get("id")):
+                continue
+            ig_id = iga["id"]
+            profile = await _get(
+                client,
+                ig_id,
+                {
+                    "fields": "username,name,profile_picture_url",
+                    "access_token": access_token,
+                },
+            )
+            accounts.append(
+                {
                     "account_id": ig_id,
                     "page_id": page.get("id"),
-                    "username": profile.get("username"),
                     "page_name": page.get("name"),
+                    "username": profile.get("username"),
+                    "name": profile.get("name"),
+                    "profile_picture_url": profile.get("profile_picture_url"),
                 }
-
-    raise GraphAPIError(
-        "No Instagram Business account found for this token. Make sure your "
-        "Instagram account is a Business/Creator account linked to a Facebook "
-        "Page, and that the token has instagram_basic + instagram_content_publish "
-        "+ pages_show_list permissions."
-    )
+            )
+    return accounts
 
 
 # --------------------------------------------------------------------------
 # Publishing (Content Publishing API)
 # --------------------------------------------------------------------------
+_MEDIA_POLL_ATTEMPTS = 20
+_MEDIA_POLL_INTERVAL = 2.0  # seconds
+
+
 async def publish_image(
     *, ig_account_id: str, access_token: str, image_url: str, caption: str
 ) -> str:
     """Publish a single image post. Returns the published media id.
 
-    Two-step per Meta's API: create a media container, then publish it. The
-    image must be at a publicly reachable URL — Instagram fetches it server-side.
+    Three steps per Meta's API: create a media container, wait for Instagram to
+    finish ingesting the image, then publish it. The image must be at a publicly
+    reachable URL — Instagram fetches it server-side.
     """
     async with httpx.AsyncClient(timeout=settings.ai_request_timeout) as client:
         container = await _post(
@@ -151,6 +163,10 @@ async def publish_image(
         creation_id = container.get("id")
         if not creation_id:
             raise GraphAPIError("Graph API did not return a media container id.")
+
+        # Publishing before the container is FINISHED fails ("Media ID is not
+        # available"), so poll until Instagram has ingested the image.
+        await _await_container_ready(client, creation_id, access_token)
 
         published = await _post(
             client,
@@ -163,39 +179,27 @@ async def publish_image(
         return media_id
 
 
-def oauth_login_url(state: str) -> str:
-    """Build the Facebook Login dialog URL for the OAuth redirect flow."""
-    from urllib.parse import urlencode
+async def _await_container_ready(
+    client: httpx.AsyncClient, creation_id: str, access_token: str
+) -> None:
+    """Poll a media container until Instagram reports it FINISHED."""
+    import asyncio
 
-    scopes = [
-        "instagram_basic",
-        "instagram_content_publish",
-        "pages_show_list",
-        "pages_read_engagement",
-    ]
-    params = {
-        "client_id": settings.meta_app_id or "",
-        "redirect_uri": settings.meta_oauth_redirect_uri,
-        "scope": ",".join(scopes),
-        "response_type": "code",
-        "state": state,
-    }
-    return f"https://www.facebook.com/{settings.meta_graph_version}/dialog/oauth?{urlencode(params)}"
-
-
-async def exchange_code_for_token(code: str) -> str:
-    """Exchange an OAuth `code` (from the redirect) for a user access token."""
-    if not (settings.meta_app_id and settings.meta_app_secret):
-        raise GraphAPIError("META_APP_ID / META_APP_SECRET must be set for OAuth login.")
-    async with httpx.AsyncClient(timeout=settings.ai_request_timeout) as client:
-        data = await _get(
+    for _ in range(_MEDIA_POLL_ATTEMPTS):
+        status = await _get(
             client,
-            "oauth/access_token",
-            {
-                "client_id": settings.meta_app_id,
-                "client_secret": settings.meta_app_secret,
-                "redirect_uri": settings.meta_oauth_redirect_uri,
-                "code": code,
-            },
+            creation_id,
+            {"fields": "status_code", "access_token": access_token},
         )
-    return data["access_token"]
+        code = status.get("status_code")
+        if code == "FINISHED":
+            return
+        if code in ("ERROR", "EXPIRED"):
+            raise GraphAPIError(
+                f"Instagram could not process the image (status: {code}). "
+                "Check the image URL is public and a supported format/size."
+            )
+        await asyncio.sleep(_MEDIA_POLL_INTERVAL)
+    raise GraphAPIError(
+        "Timed out waiting for Instagram to process the image. Try again."
+    )

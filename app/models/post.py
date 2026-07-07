@@ -38,6 +38,23 @@ class Post(Base):
         String(20), default=PostStatus.draft.value, index=True, nullable=False
     )
 
+    # ---- Content Planner fields (all nullable so standalone posts are unaffected)
+    # When a post belongs to an AI Content Plan, this links back to it.
+    plan_id: Mapped[int | None] = mapped_column(
+        ForeignKey("content_plans.id", ondelete="CASCADE"), index=True, default=None
+    )
+    # The planned content type (e.g. "Educational", "Promotional") and topic.
+    content_type: Mapped[str | None] = mapped_column(String(40), default=None)
+    topic: Mapped[str | None] = mapped_column(String(300), default=None)
+    # Approval gate for planner posts: "pending" until the user approves, then
+    # the post is promoted to status=scheduled. None for non-planner posts.
+    approval_status: Mapped[str | None] = mapped_column(
+        String(20), index=True, default=None
+    )
+    # Optional attached visuals (image / carousel), stored as JSON. Forward-
+    # compatible with the AI Visuals step; empty for text-only posts.
+    media: Mapped[list | None] = mapped_column(JSON, default=None)
+
     # Naive UTC (see app.core.timeutils).
     scheduled_time: Mapped[datetime | None] = mapped_column(
         DateTime, index=True, default=None

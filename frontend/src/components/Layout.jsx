@@ -1,10 +1,11 @@
 import { useState } from 'react'
-import { NavLink, Outlet, useNavigate } from 'react-router-dom'
+import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
 import { useTheme } from '../context/ThemeContext.jsx'
 
 const NAV = [
-  { to: '/', label: 'Dashboard', icon: '◧', end: true },
+  { to: '/dashboard', label: 'Dashboard', icon: '◧', end: true },
+  { to: '/planner', label: 'Content Planner', icon: '🗓️' },
   { to: '/generate', label: 'AI Generator', icon: '✦' },
   { to: '/create', label: 'Create Post', icon: '✍' },
   { to: '/scheduler', label: 'Scheduler', icon: '◷' },
@@ -25,7 +26,7 @@ export default function Layout() {
     <div className="app-bg flex min-h-screen">
       {/* Sidebar */}
       <aside className="sticky top-0 hidden h-screen w-64 shrink-0 flex-col border-r border-slate-200 bg-white/70 p-4 backdrop-blur-xl dark:border-white/10 dark:bg-slate-900/40 md:flex">
-        <div className="mb-8 flex items-center gap-2 px-2">
+        <Link to="/dashboard" className="mb-8 flex items-center gap-2 px-2">
           <div className="grid h-9 w-9 place-items-center rounded-xl bg-gradient-to-br from-indigo-500 to-violet-500 text-lg font-black text-white">
             A
           </div>
@@ -33,7 +34,7 @@ export default function Layout() {
             <div className="text-sm font-bold leading-tight">AutoSocial AI</div>
             <div className="text-xs text-slate-400">AI Post Studio</div>
           </div>
-        </div>
+        </Link>
 
         <nav className="flex flex-col gap-1">
           {NAV.map((item) => (
@@ -92,7 +93,7 @@ export default function Layout() {
               </button>
               {menuOpen && (
                 <div
-                  className="card absolute right-0 mt-2 w-48 overflow-hidden p-1 text-sm"
+                  className="absolute right-0 z-50 mt-2 w-48 overflow-hidden rounded-2xl border border-slate-200 bg-white p-1 text-sm shadow-xl dark:border-white/10 dark:bg-slate-900"
                   onMouseLeave={() => setMenuOpen(false)}
                 >
                   <div className="truncate px-3 py-2 text-xs text-slate-400">
@@ -108,7 +109,11 @@ export default function Layout() {
                     Settings
                   </button>
                   <button
-                    onClick={logout}
+                    onClick={() => {
+                      setMenuOpen(false)
+                      logout()
+                      navigate('/') // back to the public marketing site
+                    }}
                     className="nav-link w-full text-rose-500 hover:text-rose-400"
                   >
                     Log out

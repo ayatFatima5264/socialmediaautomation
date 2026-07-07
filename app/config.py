@@ -78,21 +78,52 @@ class Settings(BaseSettings):
     meta_app_secret: str | None = None
     meta_graph_version: str = "v21.0"
 
-    # ---- Instagram Login API (graph.instagram.com) -----------------------
-    # The newer Instagram API with Instagram Login. Tokens start with "IGAA…"
-    # and talk to graph.instagram.com directly (no Facebook Page needed). This
-    # is what the connected Business/Creator account here uses.
-    instagram_app_id: str | None = None
-    instagram_app_secret: str | None = None
-    instagram_access_token: str | None = None
-    instagram_graph_base: str = "https://graph.instagram.com"
-    # Registered in the Meta app as a valid OAuth redirect URI.
-    meta_oauth_redirect_uri: str = "http://localhost:8000/api/accounts/instagram/callback"
+    # Exact OAuth redirect URIs registered in the developer portals. If left
+    # unset they default to the standard {backend_url}/api/auth/{platform}/callback
+    # form; set them explicitly when the registered value must match to the letter.
+    meta_redirect_uri: str | None = None
+    instagram_redirect_uri: str | None = None
     # Where the OAuth callback sends the browser back to after connecting.
     frontend_url: str = "http://localhost:5173"
 
+    # ---- Social Accounts: OAuth 2.0 per platform -------------------------
+    # Public base URL of THIS backend. Callback URLs are derived from it as
+    #   {backend_url}/api/auth/{platform}/callback
+    # so every provider's redirect URI is stable and documented (see
+    # docs/OAUTH_CALLBACKS.md) — register those exact URLs in each portal.
+    # In production set this to your https domain.
+    backend_url: str = "http://localhost:8000"
+
+    # Client credentials, one pair per platform. Create an app in each
+    # developer portal, register the matching callback URL, and paste the
+    # id/secret here (or in .env). A platform with no credentials is reported
+    # as "not configured" instead of offering a broken Connect flow.
+    #
+    # Facebook & Instagram are the exception: both use the Meta app credentials
+    # (META_APP_ID / META_APP_SECRET) — Instagram connects via Facebook Login and
+    # the user picks a linked Instagram Business account.
+    linkedin_client_id: str | None = None
+    linkedin_client_secret: str | None = None
+    x_client_id: str | None = None
+    x_client_secret: str | None = None
+    pinterest_client_id: str | None = None
+    pinterest_client_secret: str | None = None
+    threads_client_id: str | None = None
+    threads_client_secret: str | None = None
+
     # ---- CORS (React frontend dev server) --------------------------------
     cors_origins: list[str] = ["http://localhost:5173", "http://localhost:3000"]
+
+    def oauth_credentials(self, platform: str) -> tuple[str | None, str | None]:
+        """Return (client_id, client_secret) for a platform, or (None, None)."""
+        return (
+            getattr(self, f"{platform}_client_id", None),
+            getattr(self, f"{platform}_client_secret", None),
+        )
+
+    def callback_url(self, platform: str) -> str:
+        """The exact redirect URI to register in the platform's portal."""
+        return f"{self.backend_url}/api/auth/{platform}/callback"
 
 
 @lru_cache

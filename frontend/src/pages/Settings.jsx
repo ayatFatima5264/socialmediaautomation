@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
 import { useTheme } from '../context/ThemeContext.jsx'
 import { formatDateTime } from '../lib/datetime'
@@ -19,6 +20,19 @@ export default function Settings() {
           <Row label="Account ID" value={`#${user?.id}`} />
         </dl>
       </section>
+
+      <Link
+        to="/business-profile"
+        className="card flex items-center justify-between p-5 transition hover:-translate-y-0.5 hover:shadow-lg dark:hover:shadow-black/30"
+      >
+        <div>
+          <h2 className="font-semibold">Business Profile</h2>
+          <p className="text-sm text-slate-500 dark:text-slate-400">
+            Tell the AI about your business for more personalized content.
+          </p>
+        </div>
+        <span className="text-slate-400">→</span>
+      </Link>
 
       <section className="card p-5">
         <h2 className="mb-4 font-semibold">Appearance</h2>

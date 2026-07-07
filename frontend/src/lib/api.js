@@ -93,7 +93,7 @@ export const api = {
   },
 
   // instagram (Instagram Login API)
-  instagramProfile: () => request('/instagram/profile', { auth: false }),
+  instagramProfile: () => request('/instagram/profile'),
   publishInstagram: (body) =>
     request('/instagram/publish', { method: 'POST', body }),
 
@@ -106,10 +106,59 @@ export const api = {
   publishPost: (id) => request(`/api/posts/${id}/publish`, { method: 'POST' }),
   cancelPost: (id) => request(`/api/posts/${id}/cancel`, { method: 'POST' }),
 
-  // connected social accounts
-  listAccounts: () => request('/api/accounts'),
-  connectInstagram: (body) =>
-    request('/api/accounts/instagram/connect', { method: 'POST', body }),
+  // connected social accounts (Social Accounts module)
+  accountsOverview: () => request('/api/social/accounts'),
+  getAccount: (platform) => request(`/api/social/${platform}`),
+  connectAccount: (platform) =>
+    request(`/api/social/${platform}/connect`, { method: 'POST' }),
   disconnectAccount: (platform) =>
-    request(`/api/accounts/${platform}`, { method: 'DELETE' }),
+    request(`/api/social/${platform}`, { method: 'DELETE' }),
+  refreshAccount: (platform) =>
+    request(`/api/social/${platform}/refresh`, { method: 'POST' }),
+  // Multi-account selection (e.g. choosing one Instagram Business account).
+  pendingConnection: (pendingId) =>
+    request(`/api/social/connections/pending/${pendingId}`),
+  selectAccount: (pendingId, accountId) =>
+    request('/api/social/connections/select', {
+      method: 'POST',
+      body: { pending_id: pendingId, account_id: accountId },
+    }),
+
+  // marketing contact form (public). Backend endpoint POST /api/contact is
+  // not implemented yet — gated behind VITE_CONTACT_API in the Contact page.
+  contact: (body) => request('/api/contact', { method: 'POST', body, auth: false }),
+
+  // AI Content Planner
+  plannerSettings: () => request('/api/planner/settings'),
+  updatePlannerSettings: (body) =>
+    request('/api/planner/settings', { method: 'PUT', body }),
+  createStrategy: (body) =>
+    request('/api/planner/strategy', { method: 'POST', body }),
+  quickGenerate: () => request('/api/planner/quick-generate', { method: 'POST' }),
+  listPlans: () => request('/api/planner'),
+  getPlan: (id) => request(`/api/planner/${id}`),
+  updatePlanTopics: (id, topics) =>
+    request(`/api/planner/${id}/topics`, { method: 'PATCH', body: { topics } }),
+  regeneratePlanTopic: (id, topicId) =>
+    request(`/api/planner/${id}/topics/regenerate`, {
+      method: 'POST',
+      body: { topic_id: topicId },
+    }),
+  generatePlan: (id) =>
+    request(`/api/planner/${id}/generate`, { method: 'POST', body: {} }),
+  updatePlannerPost: (postId, body) =>
+    request(`/api/planner/posts/${postId}`, { method: 'PATCH', body }),
+  regeneratePlannerPost: (postId) =>
+    request(`/api/planner/posts/${postId}/regenerate`, { method: 'POST' }),
+  deletePlannerPost: (postId) =>
+    request(`/api/planner/posts/${postId}`, { method: 'DELETE' }),
+  approvePlan: (id, body) =>
+    request(`/api/planner/${id}/approve`, { method: 'POST', body }),
+  deletePlan: (id) => request(`/api/planner/${id}`, { method: 'DELETE' }),
+
+  // business profile + onboarding
+  getBusinessProfile: () => request('/api/business-profile'),
+  updateBusinessProfile: (body) =>
+    request('/api/business-profile', { method: 'PUT', body }),
+  completeOnboarding: () => request('/api/onboarding/complete', { method: 'POST' }),
 }

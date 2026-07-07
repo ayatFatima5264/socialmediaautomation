@@ -1172,16 +1172,20 @@ export default function Generator() {
                 {CONTENT_TYPE_ORDER.filter((id) => !ctStates[id]?.enabled).map((id) => (
                   <div
                     key={id}
-                    className="flex flex-wrap items-center gap-2 rounded-lg bg-slate-100 px-2.5 py-1.5 text-xs text-slate-500 dark:bg-white/5 dark:text-slate-400"
+                    className="rounded-lg bg-slate-100 px-2.5 py-1.5 text-xs text-slate-500 dark:bg-white/5 dark:text-slate-400"
                   >
-                    <span>🔒</span>
-                    <span className="font-medium">{CONTENT_TYPES[id].label}:</span>
-                    <span className="min-w-0 flex-1">{ctStates[id].reason}</span>
+                    <div className="flex items-start gap-1.5">
+                      <span className="mt-px shrink-0">🔒</span>
+                      <p className="min-w-0">
+                        <span className="font-medium">{CONTENT_TYPES[id].label}:</span>{' '}
+                        {ctStates[id].reason}
+                      </p>
+                    </div>
                     {id === 'article' && !isLinkedInOnly(selected) && (
                       <button
                         type="button"
                         onClick={useLinkedInOnly}
-                        className="btn btn-primary btn-sm"
+                        className="btn btn-primary btn-sm mt-2"
                       >
                         Switch to LinkedIn Only
                       </button>

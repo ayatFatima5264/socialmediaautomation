@@ -1,0 +1,16 @@
+# AutoSocial AI — robots.txt
+User-agent: *
+Allow: /
+
+# Keep the authenticated application out of search indexes.
+Disallow: /dashboard
+Disallow: /generate
+Disallow: /create
+Disallow: /scheduler
+Disallow: /history
+Disallow: /accounts
+Disallow: /settings
+Disallow: /business-profile
+Disallow: /onboarding
+
+Sitemap: https://autosocial.ai/sitemap.xml

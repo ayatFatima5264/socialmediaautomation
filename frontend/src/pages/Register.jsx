@@ -13,7 +13,7 @@ export default function Register() {
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
 
-  if (user) return <Navigate to="/" replace />
+  if (user) return <Navigate to="/dashboard" replace />
 
   async function submit(e) {
     e.preventDefault()
@@ -25,7 +25,7 @@ export default function Register() {
     try {
       await register(email, password, fullName)
       toast.success('Account created!')
-      navigate('/')
+      navigate('/dashboard')
     } catch (err) {
       toast.error(err.message || 'Registration failed')
     } finally {

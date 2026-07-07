@@ -23,6 +23,15 @@ class User(Base):
     full_name: Mapped[str | None] = mapped_column(String(255), default=None)
     hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    # IANA timezone (e.g. "America/New_York"). Used by the Content Planner to
+    # schedule posts at the right local time. Defaults to UTC.
+    timezone: Mapped[str] = mapped_column(String(64), default="UTC", nullable=False)
+    # Has the user finished (or dismissed) the business-onboarding wizard? New
+    # users start False and see the wizard once; existing users are migrated to
+    # True so they never see it. Set True on wizard finish.
+    onboarding_completed: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

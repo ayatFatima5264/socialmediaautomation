@@ -1,4 +1,11 @@
-"""Instagram (Instagram Login API) endpoints — quick profile check + publish."""
+
+"""Instagram publish endpoints — target the user's connected Business account.
+
+Publishing goes through the Meta Graph API using the Instagram Business account
+connected via Social Accounts (Instagram Business Login). There is no longer a
+hard-coded personal-account token: connect an Instagram account first, then
+publish to it.
+"""
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -9,26 +16,41 @@ from app.core.deps import get_current_user
 from app.core.timeutils import utcnow
 from app.database import get_db
 from app.models.post import Post
+from app.models.social_account import SocialAccount
 from app.models.user import User
+from app.repositories import SocialAccountRepository
 from app.schemas.post import Platform, PostStatus
 from app.services.image_service import ImageError
 from app.services.image_service import generate as generate_image
-from app.services.instagram_service import (
-    InstagramError,
-    get_instagram_profile,
-    publish_image,
-)
+from app.services.social import meta_graph
 
 router = APIRouter(prefix="/instagram", tags=["Instagram"])
 
 
+def _connected_account(db: Session, user: User) -> SocialAccount:
+    """The user's connected Instagram Business account, or a 400 if none."""
+    account = SocialAccountRepository(db).get(user.id, Platform.instagram)
+    if account is None:
+        raise HTTPException(
+            status_code=400,
+            detail="No Instagram account connected. Connect one in Social Accounts first.",
+        )
+    return account
+
+
 @router.get("/profile")
-async def profile() -> dict:
-    """Return the connected account's profile — verifies the token works."""
-    try:
-        return await get_instagram_profile()
-    except InstagramError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+async def profile(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict:
+    """Return the connected Business account's basic profile."""
+    account = _connected_account(db, user)
+    return {
+        "account_id": account.account_id,
+        "username": account.username,
+        "page_id": account.page_id,
+        "display_name": account.display_name,
+    }
 
 
 class PublishRequest(BaseModel):
@@ -49,10 +71,12 @@ async def publish(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> dict:
-    """Publish an image post and record it in History.
+    """Publish an image post to the connected Instagram Business account.
 
     Supply image_url, or image_prompt to AI-generate one.
     """
+    account = _connected_account(db, user)
+
     image_url = req.image_url
     if not image_url:
         if not req.image_prompt:
@@ -80,8 +104,13 @@ async def publish(
     db.refresh(post)
 
     try:
-        media_id = await publish_image(image_url=image_url, caption=req.caption)
-    except InstagramError as exc:
+        media_id = await meta_graph.publish_image(
+            ig_account_id=account.account_id,
+            access_token=account.access_token,
+            image_url=image_url,
+            caption=req.caption,
+        )
+    except meta_graph.GraphAPIError as exc:
         post.status = PostStatus.failed.value
         post.error = str(exc)
         db.commit()

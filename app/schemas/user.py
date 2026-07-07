@@ -19,6 +19,7 @@ class UserRead(BaseModel):
     email: EmailStr
     full_name: str | None
     is_active: bool
+    onboarding_completed: bool
     created_at: datetime
 
 

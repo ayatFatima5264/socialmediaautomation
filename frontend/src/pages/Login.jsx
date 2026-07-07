@@ -11,7 +11,7 @@ export default function Login() {
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
 
-  if (user) return <Navigate to="/" replace />
+  if (user) return <Navigate to="/dashboard" replace />
 
   async function submit(e) {
     e.preventDefault()
@@ -19,7 +19,7 @@ export default function Login() {
     try {
       await login(email, password)
       toast.success('Welcome back!')
-      navigate('/')
+      navigate('/dashboard')
     } catch (err) {
       toast.error(err.message || 'Login failed')
     } finally {
@@ -56,12 +56,12 @@ export function AuthShell({ title, subtitle, children }) {
   return (
     <div className="app-bg grid min-h-screen place-items-center p-4">
       <div className="w-full max-w-md">
-        <div className="mb-6 flex items-center justify-center gap-2">
+        <Link to="/" className="mb-6 flex items-center justify-center gap-2">
           <div className="grid h-10 w-10 place-items-center rounded-xl bg-gradient-to-br from-indigo-500 to-violet-500 text-xl font-black text-white">
             A
           </div>
           <span className="text-xl font-bold">AutoSocial AI</span>
-        </div>
+        </Link>
         <div className="card p-7">
           <h1 className="text-2xl font-bold">{title}</h1>
           <p className="mb-6 mt-1 text-sm text-slate-400">{subtitle}</p>

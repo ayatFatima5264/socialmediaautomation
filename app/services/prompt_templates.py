@@ -112,7 +112,12 @@ def build_system_prompt() -> str:
     )
 
 
-def build_user_prompt(req: GeneratePostRequest, platform: Platform) -> str:
+def build_user_prompt(
+    req: GeneratePostRequest,
+    platform: Platform,
+    business_context: str | None = None,
+    extra_instructions: str | None = None,
+) -> str:
     spec = PLATFORM_SPECS[platform]
 
     # Describe the exact JSON object we want back.
@@ -134,6 +139,13 @@ def build_user_prompt(req: GeneratePostRequest, platform: Platform) -> str:
         "",
         f"TOPIC: {req.topic}",
     ]
+    if business_context:
+        lines += [
+            "",
+            "BUSINESS CONTEXT (use it to make the post relevant and on-brand; "
+            "ignore any field that is missing):",
+            business_context,
+        ]
     if req.audience:
         lines.append(f"TARGET AUDIENCE: {req.audience}")
     lines += [
@@ -149,6 +161,9 @@ def build_user_prompt(req: GeneratePostRequest, platform: Platform) -> str:
         lines.append(f"HASHTAGS: {spec.hashtags}.")
     else:
         lines.append("HASHTAGS: do not include any hashtags.")
+
+    if extra_instructions:
+        lines += ["", extra_instructions]
 
     lines += [
         "",
