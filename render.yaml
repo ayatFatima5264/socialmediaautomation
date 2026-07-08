@@ -1,0 +1,80 @@
+# ---------------------------------------------------------------------------
+# Render Blueprint for the AutoSocial AI backend + managed PostgreSQL.
+# Deploy: push to GitHub, then Render Dashboard → New → Blueprint → pick this repo.
+#
+# Secrets are NOT stored here. Anything marked `sync: false` must be filled in
+# from the Render dashboard (Environment tab) after the first deploy. See
+# .env.production.example for the full list and the exact values to use.
+# ---------------------------------------------------------------------------
+services:
+  - type: web
+    name: autosocial-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    # Free web services sleep after ~15 min idle — the background scheduler
+    # would stop and scheduled posts publish late. Use an always-on paid plan
+    # for reliable auto-publishing. Keep to ONE instance (no distributed lock).
+    plan: starter
+    branch: main
+    healthCheckPath: /
+    autoDeploy: true
+    envVars:
+      # --- Database: auto-injected from the managed Postgres below ----------
+      - key: DATABASE_URL
+        fromDatabase:
+          name: autosocial-db
+          property: connectionString
+      # --- Auth: let Render generate a strong secret once -------------------
+      - key: JWT_SECRET
+        generateValue: true
+      - key: ACCESS_TOKEN_EXPIRE_MINUTES
+        value: "1440"
+      # --- AI provider ------------------------------------------------------
+      - key: AI_PROVIDER
+        value: gemini
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      # --- Scheduler --------------------------------------------------------
+      - key: SCHEDULER_POLL_SECONDS
+        value: "30"
+      # --- Public URLs (set to your real domains) ---------------------------
+      - key: BACKEND_URL          # e.g. https://api.yourdomain.com
+        sync: false
+      - key: FRONTEND_URL         # e.g. https://app.yourdomain.com
+        sync: false
+      # pydantic parses this as a JSON list, e.g. ["https://app.yourdomain.com"]
+      - key: CORS_ORIGINS
+        sync: false
+      # --- Meta (Facebook + Instagram) OAuth --------------------------------
+      - key: META_APP_ID
+        sync: false
+      - key: META_APP_SECRET
+        sync: false
+      - key: META_REDIRECT_URI    # https://api.yourdomain.com/api/auth/facebook/callback
+        sync: false
+      - key: INSTAGRAM_REDIRECT_URI
+        sync: false
+      # --- Other social platform OAuth (optional per platform) --------------
+      - key: LINKEDIN_CLIENT_ID
+        sync: false
+      - key: LINKEDIN_CLIENT_SECRET
+        sync: false
+      - key: X_CLIENT_ID
+        sync: false
+      - key: X_CLIENT_SECRET
+        sync: false
+      - key: PINTEREST_CLIENT_ID
+        sync: false
+      - key: PINTEREST_CLIENT_SECRET
+        sync: false
+      - key: THREADS_CLIENT_ID
+        sync: false
+      - key: THREADS_CLIENT_SECRET
+        sync: false
+
+databases:
+  - name: autosocial-db
+    plan: basic-256mb   # smallest paid tier; "free" Postgres expires after 90 days
+    postgresMajorVersion: "16"

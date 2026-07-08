@@ -16,16 +16,29 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 
+# Managed Postgres providers (Render, Railway, Heroku, Neon, Supabase) hand out
+# connection strings with a bare "postgres://" or "postgresql://" scheme, which
+# SQLAlchemy maps to the psycopg2 driver. We ship psycopg (v3), so normalize the
+# scheme to "postgresql+psycopg://" — no change needed to the env var itself.
+def _normalize_db_url(url: str) -> str:
+    for prefix in ("postgresql://", "postgres://"):
+        if url.startswith(prefix):
+            return "postgresql+psycopg://" + url[len(prefix):]
+    return url
+
+
+DATABASE_URL = _normalize_db_url(settings.database_url)
+
 # SQLite needs check_same_thread disabled for FastAPI's threadpool; Postgres
 # and others take no special connect args.
 _connect_args = (
     {"check_same_thread": False}
-    if settings.database_url.startswith("sqlite")
+    if DATABASE_URL.startswith("sqlite")
     else {}
 )
 
 engine = create_engine(
-    settings.database_url,
+    DATABASE_URL,
     connect_args=_connect_args,
     pool_pre_ping=True,  # transparently recover dropped Postgres connections
     future=True,

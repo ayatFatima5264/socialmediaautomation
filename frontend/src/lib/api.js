@@ -1,5 +1,12 @@
 // Tiny fetch wrapper around the FastAPI backend.
-// Calls go to /api and /auth (proxied to :8000 by Vite in dev).
+//
+// Base URL resolution:
+//   • Dev  — VITE_API_URL is unset, so API_BASE is "" and calls hit relative
+//     paths like /auth and /api, which the Vite dev server proxies to :8000.
+//   • Prod — set VITE_API_URL to the backend's public origin (e.g.
+//     https://api.yourdomain.com) at build time; calls become absolute and go
+//     straight to the backend. No trailing slash (it's stripped either way).
+const API_BASE = (import.meta.env.VITE_API_URL || '').replace(/\/+$/, '')
 
 const TOKEN_KEY = 'ss_token'
 
@@ -51,9 +58,9 @@ async function request(path, { method = 'GET', body, form, formData, auth = true
 
   let res
   try {
-    res = await fetch(path, opts)
+    res = await fetch(`${API_BASE}${path}`, opts)
   } catch {
-    throw new ApiError('Network error — is the backend running on :8000?', 0, null)
+    throw new ApiError('Network error — could not reach the API server.', 0, null)
   }
 
   if (res.status === 204) return null
