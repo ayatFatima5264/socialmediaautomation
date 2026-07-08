@@ -7,10 +7,10 @@ import PlatformIcon from '../components/PlatformIcon.jsx'
 import StatusBadge from '../components/StatusBadge.jsx'
 
 const STAT_CARDS = [
-  { key: 'total', label: 'Total Posts', accent: 'from-indigo-500 to-violet-500' },
-  { key: 'scheduled', label: 'Scheduled', accent: 'from-amber-400 to-orange-500' },
-  { key: 'published', label: 'Published', accent: 'from-emerald-400 to-teal-500' },
-  { key: 'failed', label: 'Failed', accent: 'from-rose-400 to-pink-500' },
+  { key: 'total', label: 'Total Posts', accent: 'bg-accent' },
+  { key: 'scheduled', label: 'Scheduled', accent: 'bg-amber-400' },
+  { key: 'published', label: 'Published', accent: 'bg-emerald-400' },
+  { key: 'failed', label: 'Failed', accent: 'bg-rose-400' },
 ]
 
 export default function Dashboard() {
@@ -51,7 +51,7 @@ export default function Dashboard() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold">Dashboard</h1>
-          <p className="text-sm text-slate-400">Your content at a glance</p>
+          <p className="text-sm text-muted">Your content at a glance</p>
         </div>
         <button onClick={() => navigate('/generate')} className="btn btn-primary">
           ✦ Generate Post with AI
@@ -62,11 +62,11 @@ export default function Dashboard() {
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         {STAT_CARDS.map((c) => (
           <div key={c.key} className="card p-5">
-            <div className={`mb-3 h-1.5 w-10 rounded-full bg-gradient-to-r ${c.accent}`} />
+            <div className={`mb-3 h-1.5 w-10 rounded-full ${c.accent}`} />
             <div className="text-3xl font-extrabold">
               {loading ? <span className="skeleton inline-block h-8 w-10" /> : stats[c.key]}
             </div>
-            <div className="mt-1 text-sm text-slate-400">{c.label}</div>
+            <div className="mt-1 text-sm text-muted">{c.label}</div>
           </div>
         ))}
       </div>
@@ -76,7 +76,7 @@ export default function Dashboard() {
         <div className="card p-5">
           <div className="mb-4 flex items-center justify-between">
             <h2 className="font-semibold">📅 Upcoming Schedule</h2>
-            <button onClick={() => navigate('/scheduler')} className="text-sm text-indigo-400 hover:text-indigo-300">
+            <button onClick={() => navigate('/scheduler')} className="text-sm link-accent">
               View all
             </button>
           </div>
@@ -111,11 +111,11 @@ export default function Dashboard() {
               {recent.map((p) => (
                 <li key={p.id} className="flex items-center gap-3">
                   <PlatformIcon platform={p.platform} size={28} />
-                  <span className="min-w-0 flex-1 truncate text-sm text-slate-300">
+                  <span className="min-w-0 flex-1 truncate text-sm text-body">
                     {p.content}
                   </span>
                   <StatusBadge status={p.status} />
-                  <span className="hidden shrink-0 text-xs text-slate-500 sm:block">
+                  <span className="hidden shrink-0 text-xs text-muted sm:block">
                     {formatRelative(p.created_at)}
                   </span>
                 </li>
@@ -139,5 +139,5 @@ function SkeletonRows() {
 }
 
 function Empty({ text }) {
-  return <p className="py-6 text-center text-sm text-slate-500">{text}</p>
+  return <p className="py-6 text-center text-sm text-muted">{text}</p>
 }

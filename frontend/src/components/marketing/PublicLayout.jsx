@@ -8,7 +8,7 @@ import { trackPageView } from '../../lib/analytics'
 function Brand() {
   return (
     <Link to="/" className="flex items-center gap-2">
-      <div className="grid h-9 w-9 place-items-center rounded-xl bg-gradient-to-br from-indigo-500 to-violet-500 text-lg font-black text-white">
+      <div className="grid h-9 w-9 place-items-center rounded-xl bg-accent text-lg font-black text-accent-contrast">
         A
       </div>
       <span className="text-lg font-bold">{SITE.name}</span>
@@ -40,21 +40,21 @@ function UserMenu() {
     <div className="relative" ref={ref}>
       <button
         onClick={() => setOpen((o) => !o)}
-        className="flex items-center gap-2 rounded-full border border-slate-200 py-1 pl-1 pr-3 transition hover:bg-slate-100 dark:border-white/10 dark:hover:bg-white/5"
+        className="flex items-center gap-2 rounded-full border border-line py-1 pl-1 pr-3 transition hover:bg-inset"
       >
-        <span className="grid h-7 w-7 place-items-center rounded-full bg-gradient-to-br from-indigo-500 to-violet-500 text-xs font-bold text-white">
+        <span className="grid h-7 w-7 place-items-center rounded-full bg-accent text-xs font-bold text-accent-contrast">
           {initial}
         </span>
         <span className="hidden max-w-[10rem] truncate text-sm font-medium sm:block">
           {user?.full_name || user?.email}
         </span>
-        <span className="text-xs text-slate-400">▾</span>
+        <span className="text-xs text-muted">▾</span>
       </button>
       {open && (
-        <div className="absolute right-0 z-50 mt-2 w-56 overflow-hidden rounded-2xl border border-slate-200 bg-white p-1 text-sm shadow-xl dark:border-white/10 dark:bg-slate-900">
-          <div className="border-b border-slate-200 px-3 py-2 dark:border-white/10">
+        <div className="absolute right-0 z-50 mt-2 w-56 overflow-hidden rounded-2xl border border-line bg-surface p-1 text-sm shadow-sm">
+          <div className="border-b border-line px-3 py-2">
             <div className="truncate font-medium">{user?.full_name || 'Signed in'}</div>
-            <div className="truncate text-xs text-slate-400">{user?.email}</div>
+            <div className="truncate text-xs text-muted">{user?.email}</div>
           </div>
           <button onClick={() => { setOpen(false); navigate('/dashboard') }} className="nav-link w-full">
             <span className="w-5 text-center">◧</span> Go to Dashboard
@@ -106,7 +106,7 @@ export default function PublicLayout() {
   return (
     <div className="app-bg flex min-h-screen flex-col">
       {/* Top navigation */}
-      <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/70 backdrop-blur-xl dark:border-white/10 dark:bg-slate-900/40">
+      <header className="sticky top-0 z-30 border-b border-line bg-sidebar backdrop-blur-xl">
         <div className="mx-auto flex max-w-6xl items-center gap-4 px-4 py-3 md:px-6">
           <Brand />
 
@@ -141,7 +141,7 @@ export default function PublicLayout() {
 
         {/* Mobile menu */}
         {menuOpen && (
-          <div className="border-t border-slate-200 px-4 py-3 dark:border-white/10 md:hidden">
+          <div className="border-t border-line px-4 py-3 md:hidden">
             <nav className="flex flex-col gap-1">
               {MARKETING_NAV.map((item) => (
                 <NavLink
@@ -176,7 +176,7 @@ function FooterLink({ link, className }) {
     <>
       {link.label}
       {link.badge && (
-        <span className="ml-1.5 rounded-full bg-indigo-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-500 dark:text-indigo-300">
+        <span className="ml-1.5 rounded-full bg-accent-soft px-1.5 py-0.5 text-[10px] font-semibold text-accent">
           {link.badge}
         </span>
       )}
@@ -196,20 +196,20 @@ function FooterLink({ link, className }) {
 
 function PublicFooter() {
   const linkCls =
-    'inline-flex items-center text-slate-500 transition hover:text-indigo-500 dark:text-slate-400 dark:hover:text-indigo-300'
+    'inline-flex items-center text-muted transition hover:text-accent'
   return (
-    <footer className="border-t border-slate-200 bg-white/50 dark:border-white/10 dark:bg-slate-900/30">
+    <footer className="border-t border-line bg-surface">
       <div className="mx-auto grid max-w-6xl gap-8 px-4 py-12 md:grid-cols-5 md:px-6">
         <div className="md:col-span-1">
           <Brand />
-          <p className="mt-3 max-w-xs text-sm text-slate-500 dark:text-slate-400">
+          <p className="mt-3 max-w-xs text-sm text-muted">
             Generate, schedule, and publish on-brand social content with AI —
             across every platform, from one studio.
           </p>
         </div>
         {FOOTER_COLUMNS.map((col) => (
           <div key={col.title}>
-            <div className="mb-3 text-sm font-semibold text-slate-700 dark:text-slate-200">
+            <div className="mb-3 text-sm font-semibold text-body">
               {col.title}
             </div>
             <ul className="space-y-2 text-sm">
@@ -222,9 +222,9 @@ function PublicFooter() {
           </div>
         ))}
       </div>
-      <div className="border-t border-slate-200 dark:border-white/10">
+      <div className="border-t border-line">
         <div className="mx-auto flex max-w-6xl flex-col-reverse items-center justify-between gap-4 px-4 py-6 md:flex-row md:px-6">
-          <p className="text-xs text-slate-400">
+          <p className="text-xs text-muted">
             © 2026 {SITE.name}. All rights reserved.
           </p>
           <SocialIcons />
@@ -236,7 +236,7 @@ function PublicFooter() {
 
 function SocialIcons() {
   const cls =
-    'grid h-9 w-9 place-items-center rounded-lg border border-slate-200 text-slate-500 transition hover:border-indigo-500/40 hover:text-indigo-500 dark:border-white/10 dark:text-slate-400 dark:hover:text-indigo-300'
+    'grid h-9 w-9 place-items-center rounded-lg border border-line text-muted transition hover:border-accent-line hover:text-accent'
   return (
     <div className="flex items-center gap-2">
       <a href={SITE.socials.facebook} aria-label="Facebook" className={cls} target="_blank" rel="noreferrer">

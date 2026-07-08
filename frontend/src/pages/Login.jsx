@@ -43,9 +43,9 @@ export default function Login() {
         {busy ? 'Signing in…' : 'Sign in'}
       </button>
     </form>
-    <p className="mt-6 text-center text-sm text-slate-400">
+    <p className="mt-6 text-center text-sm text-muted">
       No account?{' '}
-      <Link to="/register" className="font-semibold text-indigo-400 hover:text-indigo-300">
+      <Link to="/register" className="font-semibold link-accent">
         Create one
       </Link>
     </p>
@@ -57,14 +57,14 @@ export function AuthShell({ title, subtitle, children }) {
     <div className="app-bg grid min-h-screen place-items-center p-4">
       <div className="w-full max-w-md">
         <Link to="/" className="mb-6 flex items-center justify-center gap-2">
-          <div className="grid h-10 w-10 place-items-center rounded-xl bg-gradient-to-br from-indigo-500 to-violet-500 text-xl font-black text-white">
+          <div className="grid h-10 w-10 place-items-center rounded-xl bg-accent text-xl font-black text-accent-contrast">
             A
           </div>
           <span className="text-xl font-bold">AutoSocial AI</span>
         </Link>
         <div className="card p-7">
           <h1 className="text-2xl font-bold">{title}</h1>
-          <p className="mb-6 mt-1 text-sm text-slate-400">{subtitle}</p>
+          <p className="mb-6 mt-1 text-sm text-muted">{subtitle}</p>
           {children}
         </div>
       </div>

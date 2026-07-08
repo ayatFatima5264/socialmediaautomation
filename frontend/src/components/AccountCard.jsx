@@ -14,7 +14,7 @@ function AccountAvatar({ platform, account }) {
           alt=""
           className="h-11 w-11 rounded-full object-cover"
         />
-        <span className="absolute -bottom-1 -right-1 rounded-md ring-2 ring-white dark:ring-slate-900">
+        <span className="absolute -bottom-1 -right-1 rounded-md ring-2 ring-surface">
           <PlatformIcon platform={platform} size={18} />
         </span>
       </span>
@@ -46,7 +46,7 @@ export default function AccountCard({
   const needsReconnect = status === 'token_expired' || status === 'error'
 
   return (
-    <div className="card flex h-full flex-col gap-4 p-5 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg dark:hover:shadow-black/30">
+    <div className="card flex h-full flex-col gap-4 p-5 transition-all duration-200 hover:-translate-y-0.5">
       {/* Header */}
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-3">
@@ -54,11 +54,11 @@ export default function AccountCard({
           <div>
             <div className="font-semibold leading-tight">{meta.label}</div>
             {account?.username ? (
-              <div className="text-xs text-slate-500 dark:text-slate-400">
+              <div className="text-xs text-muted">
                 @{account.username}
               </div>
             ) : (
-              <div className="text-xs text-slate-400 dark:text-slate-500">
+              <div className="text-xs text-muted">
                 Not linked
               </div>
             )}
@@ -68,22 +68,22 @@ export default function AccountCard({
       </div>
 
       {/* Details */}
-      <dl className="space-y-1.5 text-xs text-slate-500 dark:text-slate-400">
+      <dl className="space-y-1.5 text-xs text-muted">
         <div className="flex items-center justify-between gap-2">
           <dt>Display name</dt>
-          <dd className="truncate font-medium text-slate-700 dark:text-slate-200">
+          <dd className="truncate font-medium text-body">
             {account?.display_name || '—'}
           </dd>
         </div>
         <div className="flex items-center justify-between gap-2">
           <dt>Connected</dt>
-          <dd className="font-medium text-slate-700 dark:text-slate-200">
+          <dd className="font-medium text-body">
             {account?.connected_at ? formatDateTime(account.connected_at) : '—'}
           </dd>
         </div>
         <div className="flex items-center justify-between gap-2">
           <dt>Last sync</dt>
-          <dd className="font-medium text-slate-700 dark:text-slate-200">
+          <dd className="font-medium text-body">
             {account?.last_synced_at ? formatRelative(account.last_synced_at) : '—'}
           </dd>
         </div>

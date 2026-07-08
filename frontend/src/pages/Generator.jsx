@@ -22,6 +22,7 @@ import {
 } from '../lib/contentTypes'
 import PlatformIcon from '../components/PlatformIcon.jsx'
 import ScheduleModal from '../components/ScheduleModal.jsx'
+import { SourceDropdown, Accordion } from '../components/FormControls.jsx'
 
 const STORAGE_KEY = 'composer_state_v1'
 
@@ -115,6 +116,9 @@ export default function Generator() {
   const [img, setImg] = useState({ ...DEFAULT_IMAGE_SETTINGS, ...(SAVED?.img || {}) })
   const [overrides, setOverrides] = useState(SAVED?.overrides ?? {})
   const [showAdvanced, setShowAdvanced] = useState(false)
+  // Advanced option groups are collapsed by default to keep the form compact.
+  const [imgOpen, setImgOpen] = useState(false)
+  const [ovOpen, setOvOpen] = useState(false)
 
   const [loading, setLoading] = useState(false)
   const [drafts, setDrafts] = useState(() =>
@@ -923,7 +927,7 @@ export default function Generator() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold">AI Generator</h1>
-        <p className="text-sm text-slate-400">
+        <p className="text-sm text-muted">
           Describe an idea — get platform-optimized captions and AI images you control.
         </p>
       </div>
@@ -931,33 +935,17 @@ export default function Generator() {
       <div className="grid gap-6 lg:grid-cols-[380px_1fr]">
         {/* ---- Input panel ---- */}
         <form onSubmit={generate} className="card h-fit space-y-5 p-5">
-          {/* Step 0 — Create From */}
+          {/* Step 0 — Create From (single dropdown, was a 10-pill grid) */}
           <div>
             <label className="label">Create from</label>
-            <div className="flex flex-wrap gap-1.5">
-              {SOURCE_TYPES.map((s) => {
-                const on = sourceType === s.id
-                return (
-                  <button
-                    type="button"
-                    key={s.id}
-                    aria-pressed={on}
-                    onClick={() => {
-                      setSourceType(s.id)
-                      setExtracted(null) // sources don't share fetched content
-                    }}
-                    className={`flex items-center gap-1 rounded-lg border px-2 py-1 text-xs font-medium transition ${
-                      on
-                        ? 'border-indigo-500 bg-indigo-500/15 text-indigo-300'
-                        : 'border-slate-300 text-slate-400 hover:bg-slate-100 dark:border-white/10 dark:hover:bg-white/5'
-                    }`}
-                  >
-                    <span>{s.icon}</span>
-                    {s.label}
-                  </button>
-                )
-              })}
-            </div>
+            <SourceDropdown
+              options={SOURCE_TYPES}
+              value={sourceType}
+              onChange={(id) => {
+                setSourceType(id)
+                setExtracted(null) // sources don't share fetched content
+              }}
+            />
           </div>
 
           {/* Step 1 — Source input (only the relevant field shows) */}
@@ -985,7 +973,7 @@ export default function Generator() {
                 onChange={(e) => setSourceText(e.target.value)}
                 placeholder="Paste the text to turn into platform-ready posts…"
               />
-              <div className="mt-1 text-right text-xs text-slate-400">
+              <div className="mt-1 text-right text-xs text-muted">
                 {sourceText.length.toLocaleString()} chars
               </div>
             </div>
@@ -1005,7 +993,7 @@ export default function Generator() {
               <div>
                 <label className="label">Action</label>
                 <select
-                  className="input"
+                  className="select"
                   value={transform}
                   onChange={(e) => setTransform(e.target.value)}
                 >
@@ -1049,10 +1037,10 @@ export default function Generator() {
               <input
                 type="file"
                 accept=".pdf,.docx,.txt,.md"
-                className="block w-full text-sm text-slate-400 file:mr-3 file:rounded-lg file:border-0 file:bg-indigo-500/15 file:px-3 file:py-1.5 file:text-indigo-300"
+                className="block w-full text-sm text-muted file:mr-3 file:rounded-lg file:border-0 file:bg-accent-soft file:px-3 file:py-1.5 file:text-accent"
                 onChange={(e) => handleDocFile(e.target.files?.[0])}
               />
-              {extractBusy && <div className="mt-2 text-xs text-slate-400">Reading document…</div>}
+              {extractBusy && <div className="mt-2 text-xs text-muted">Reading document…</div>}
               {extracted && <ExtractedPreview extracted={extracted} onClear={() => setExtracted(null)} />}
             </div>
           )}
@@ -1064,7 +1052,7 @@ export default function Generator() {
                 <input
                   type="file"
                   accept="image/*"
-                  className="block w-full text-sm text-slate-400 file:mr-3 file:rounded-lg file:border-0 file:bg-indigo-500/15 file:px-3 file:py-1.5 file:text-indigo-300"
+                  className="block w-full text-sm text-muted file:mr-3 file:rounded-lg file:border-0 file:bg-accent-soft file:px-3 file:py-1.5 file:text-accent"
                   onChange={(e) => handleImageFile(e.target.files?.[0])}
                 />
                 {imageData && (
@@ -1083,7 +1071,7 @@ export default function Generator() {
                   onChange={(e) => setImageNote(e.target.value)}
                   placeholder="e.g. our new product launch photo"
                 />
-                <p className="mt-1 text-xs text-slate-400">
+                <p className="mt-1 text-xs text-muted">
                   Your image becomes the post visual; add a note to steer the caption.
                 </p>
               </div>
@@ -1096,7 +1084,7 @@ export default function Generator() {
             </label>
             <select
               id="tone"
-              className="input"
+              className="select"
               value={tone}
               onChange={(e) => setTone(e.target.value)}
             >
@@ -1108,7 +1096,7 @@ export default function Generator() {
             </select>
           </div>
 
-          {/* Step 2 — Platforms */}
+          {/* Step 2 — Platforms (icon-only circular toggles) */}
           <div>
             <label className="label">Platforms (none = all)</label>
             <div className="flex flex-wrap gap-2">
@@ -1119,25 +1107,26 @@ export default function Generator() {
                     type="button"
                     key={p}
                     aria-pressed={on}
+                    aria-label={PLATFORMS[p].label}
+                    title={PLATFORMS[p].label}
                     onClick={() => togglePlatform(p)}
-                    className={`flex items-center gap-1.5 rounded-xl border px-2.5 py-1.5 text-xs font-medium transition ${
+                    className={`grid h-8 w-8 shrink-0 place-items-center rounded-full border transition ${
                       on
-                        ? 'border-indigo-500 bg-indigo-500/15 text-indigo-300'
-                        : 'border-slate-300 text-slate-400 dark:border-white/10'
+                        ? 'border-accent bg-accent-soft ring-1 ring-accent'
+                        : 'border-line text-muted hover:bg-inset'
                     }`}
                   >
                     <PlatformIcon platform={p} size={18} />
-                    {PLATFORMS[p].label}
                   </button>
                 )
               })}
             </div>
           </div>
 
-          {/* Content Type */}
+          {/* Content Type — segmented control */}
           <div>
             <label className="label">Content type</label>
-            <div className="flex flex-wrap gap-1.5">
+            <div className="flex flex-wrap gap-1 rounded-xl border border-line bg-inset p-1">
               {CONTENT_TYPE_ORDER.map((id) => {
                 const ct = CONTENT_TYPES[id]
                 const st = ctStates[id]
@@ -1151,12 +1140,12 @@ export default function Generator() {
                     aria-pressed={active}
                     title={enabled ? ct.label : st?.reason}
                     onClick={() => enabled && setContentType(id)}
-                    className={`flex items-center gap-1 rounded-lg border px-2 py-1 text-xs font-medium transition ${
+                    className={`flex min-w-[84px] flex-1 items-center justify-center gap-1 rounded-lg px-2 py-1.5 text-xs font-medium transition ${
                       active
-                        ? 'border-indigo-500 bg-indigo-500/15 text-indigo-300'
+                        ? 'bg-accent text-accent-contrast'
                         : enabled
-                          ? 'border-slate-300 text-slate-500 hover:bg-slate-100 dark:border-white/10 dark:text-slate-300 dark:hover:bg-white/5'
-                          : 'cursor-not-allowed border-slate-200 text-slate-400 opacity-50 dark:border-white/5'
+                          ? 'text-muted hover:bg-surface'
+                          : 'cursor-not-allowed text-muted opacity-50'
                     }`}
                   >
                     <span>{enabled ? ct.icon : '🔒'}</span>
@@ -1166,88 +1155,73 @@ export default function Generator() {
               })}
             </div>
 
-            {/* Explanations for disabled types */}
-            {CONTENT_TYPE_ORDER.some((id) => !ctStates[id]?.enabled) && (
-              <div className="mt-2 space-y-1.5">
-                {CONTENT_TYPE_ORDER.filter((id) => !ctStates[id]?.enabled).map((id) => (
-                  <div
-                    key={id}
-                    className="rounded-lg bg-slate-100 px-2.5 py-1.5 text-xs text-slate-500 dark:bg-white/5 dark:text-slate-400"
-                  >
-                    <div className="flex items-start gap-1.5">
-                      <span className="mt-px shrink-0">🔒</span>
-                      <p className="min-w-0">
-                        <span className="font-medium">{CONTENT_TYPES[id].label}:</span>{' '}
-                        {ctStates[id].reason}
-                      </p>
-                    </div>
-                    {id === 'article' && !isLinkedInOnly(selected) && (
-                      <button
-                        type="button"
-                        onClick={useLinkedInOnly}
-                        className="btn btn-primary btn-sm mt-2"
-                      >
-                        Switch to LinkedIn Only
-                      </button>
-                    )}
-                  </div>
-                ))}
-              </div>
+            {/* Actionable affordance for the locked LinkedIn Article type
+                (the per-type "why" now lives in each segment's tooltip). */}
+            {ctStates.article && !ctStates.article.enabled && !isLinkedInOnly(selected) && !article && (
+              <button
+                type="button"
+                onClick={useLinkedInOnly}
+                className="btn btn-primary btn-sm mt-2"
+              >
+                🔒 LinkedIn Article — switch to LinkedIn only
+              </button>
             )}
           </div>
 
-          {/* Step 3 — Image Settings (global) — hidden in Article mode */}
+          {/* Step 3 — Image Settings (collapsible) — hidden in Article mode */}
           {contentType !== 'article' && (
-          <div className="rounded-xl border border-slate-200 p-3 dark:border-white/10">
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-semibold">Image Settings</span>
-              <label className="flex items-center gap-2 text-xs text-slate-400">
-                AI Image
+            <Accordion
+              title="Image Settings"
+              open={imgOpen}
+              onToggle={() => setImgOpen((v) => !v)}
+            >
+              <label className="flex items-center justify-between text-sm">
+                <span>AI Image</span>
                 <Switch
                   checked={img.aiImage}
                   onChange={(v) => updateImg({ aiImage: v })}
                   label="AI Image"
                 />
               </label>
-            </div>
-
-            {img.aiImage && (
-              <div className="mt-3 space-y-3">
-                <SettingsGrid
-                  aspectRatio={img.aspectRatio}
-                  carousel={img.carousel}
-                  slides={img.slides}
-                  onChange={updateImg}
-                />
-                <div>
-                  <label className="label" htmlFor="style">
-                    Image Style
-                  </label>
-                  <select
-                    id="style"
-                    className="input"
-                    value={img.style}
-                    onChange={(e) => updateImg({ style: e.target.value })}
-                  >
-                    {IMAGE_STYLES.map((s) => (
-                      <option key={s.value} value={s.value}>
-                        {s.label}
-                      </option>
-                    ))}
-                  </select>
+              {img.aiImage && (
+                <div className="mt-3 space-y-3">
+                  <SettingsGrid
+                    aspectRatio={img.aspectRatio}
+                    carousel={img.carousel}
+                    slides={img.slides}
+                    onChange={updateImg}
+                  />
+                  <div>
+                    <label className="label" htmlFor="style">
+                      Image Style
+                    </label>
+                    <select
+                      id="style"
+                      className="select"
+                      value={img.style}
+                      onChange={(e) => updateImg({ style: e.target.value })}
+                    >
+                      {IMAGE_STYLES.map((s) => (
+                        <option key={s.value} value={s.value}>
+                          {s.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
-              </div>
-            )}
-          </div>
+              )}
+            </Accordion>
           )}
 
-          {/* Per-platform overrides */}
+          {/* Per-platform overrides (collapsible) */}
           {contentType !== 'article' && platformsForOverride.length > 0 && (
-            <div className="space-y-2">
-              <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-                Per-platform overrides
-              </div>
-              <p className="text-xs text-slate-400">
+            <Accordion
+              title="Per-platform overrides"
+              open={ovOpen}
+              onToggle={() => setOvOpen((v) => !v)}
+            >
+              <div className="space-y-2">
+              <p className="text-xs text-muted">
                 Override a platform to turn its image on/off or change its shape —
                 e.g. images for some platforms, caption-only for others.
               </p>
@@ -1259,13 +1233,13 @@ export default function Generator() {
                 return (
                   <div
                     key={p}
-                    className="rounded-xl border border-slate-200 p-3 text-sm dark:border-white/10"
+                    className="rounded-xl border border-line p-3 text-sm"
                   >
                     <div className="flex items-center justify-between">
                       <span className="flex items-center gap-2 font-medium">
                         <PlatformIcon platform={p} size={18} />
                         {PLATFORMS[p].label}
-                        <span className="text-[11px] font-normal text-slate-400">
+                        <span className="text-[11px] font-normal text-muted">
                           {eff.aiImage
                             ? `image · ${eff.aspectRatio}${eff.carousel ? ` · ${eff.slides} slides` : ''}`
                             : 'caption only'}
@@ -1282,8 +1256,8 @@ export default function Generator() {
                         }
                         className={`rounded-lg border px-2.5 py-1 text-xs font-medium transition ${
                           on
-                            ? 'border-indigo-500 bg-indigo-500/15 text-indigo-300'
-                            : 'border-slate-300 text-slate-400 hover:bg-slate-100 dark:border-white/10 dark:hover:bg-white/5'
+                            ? 'border-accent bg-accent-soft text-accent'
+                            : 'border-line text-muted hover:bg-inset'
                         }`}
                       >
                         {on ? '✓ Custom' : '+ Override'}
@@ -1307,7 +1281,7 @@ export default function Generator() {
                             onChange={(patch) => updateOverride(p, patch)}
                           />
                         ) : (
-                          <p className="text-xs text-slate-400">
+                          <p className="text-xs text-muted">
                             Caption only — no image for {PLATFORMS[p].label}.
                           </p>
                         )}
@@ -1316,11 +1290,12 @@ export default function Generator() {
                   </div>
                 )
               })}
-            </div>
+              </div>
+            </Accordion>
           )}
 
           {/* Step 4 — Advanced (collapsed) */}
-          <div className="rounded-xl border border-slate-200 dark:border-white/10">
+          <div className="rounded-xl border border-line">
             <button
               type="button"
               onClick={() => setShowAdvanced((v) => !v)}
@@ -1328,10 +1303,10 @@ export default function Generator() {
               className="flex w-full items-center justify-between px-3 py-2 text-sm font-medium"
             >
               Advanced Settings
-              <span className="text-slate-400">{showAdvanced ? '▲' : '▼'}</span>
+              <span className="text-muted">{showAdvanced ? '▲' : '▼'}</span>
             </button>
             {showAdvanced && (
-              <div className="space-y-3 border-t border-slate-200 p-3 dark:border-white/10">
+              <div className="space-y-3 border-t border-line p-3">
                 <div>
                   <label className="label" htmlFor="audience">
                     Audience (optional)
@@ -1363,7 +1338,7 @@ export default function Generator() {
 
                 {img.aiImage && (
                   <>
-                    <div className="border-t border-slate-200 pt-3 dark:border-white/10">
+                    <div className="border-t border-line pt-3">
                       <label className="flex items-center gap-2 text-sm">
                         <input
                           type="checkbox"
@@ -1379,7 +1354,7 @@ export default function Generator() {
                       </label>
                       <select
                         id="quality"
-                        className="input"
+                        className="select"
                         value={img.quality}
                         onChange={(e) => updateImg({ quality: e.target.value })}
                       >
@@ -1402,8 +1377,8 @@ export default function Generator() {
                         placeholder="e.g. text, watermark, humans"
                       />
                     </div>
-                    <div className="flex items-center gap-2 text-xs text-slate-400">
-                      <span className="rounded-md border border-dashed border-slate-300 px-2 py-1 dark:border-white/10">
+                    <div className="flex items-center gap-2 text-xs text-muted">
+                      <span className="rounded-md border border-dashed border-line px-2 py-1">
                         Brand Kit · coming soon
                       </span>
                     </div>
@@ -1438,13 +1413,13 @@ export default function Generator() {
                 onPublish={publishArticleLinkedIn}
               />
             ) : (
-              <div className="card grid place-items-center p-12 text-center text-slate-500">
+              <div className="card grid place-items-center p-12 text-center text-muted">
                 <div>
                   <div className="mb-3 text-5xl">📰</div>
-                  <div className="font-medium text-slate-600 dark:text-slate-300">
+                  <div className="font-medium text-muted">
                     Describe your idea and let AI write a LinkedIn article.
                   </div>
-                  <div className="mt-1 text-sm text-slate-400">
+                  <div className="mt-1 text-sm text-muted">
                     Title, cover, body, tags and SEO keywords — all editable.
                   </div>
                 </div>
@@ -1454,13 +1429,13 @@ export default function Generator() {
           <>
           {/* Global action bar (sticky) */}
           {drafts.length > 0 && (
-            <div className="sticky top-2 z-10 flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white/85 px-3 py-2 shadow-sm backdrop-blur dark:border-white/10 dark:bg-slate-900/80">
-              <span className="text-xs text-slate-400">
+            <div className="sticky top-2 z-10 flex flex-wrap items-center gap-2 rounded-xl border border-line bg-surface px-3 py-2 shadow-sm backdrop-blur">
+              <span className="text-xs text-muted">
                 {drafts.length} platform{drafts.length > 1 ? 's' : ''}
                 {meta && (
                   <>
                     {' · '}
-                    <span className="font-semibold text-indigo-400">{meta.provider}</span>
+                    <span className="font-semibold text-accent">{meta.provider}</span>
                   </>
                 )}
               </span>
@@ -1496,13 +1471,13 @@ export default function Generator() {
           {loading && <CardSkeleton />}
 
           {!loading && drafts.length === 0 && (
-            <div className="card grid place-items-center p-12 text-center text-slate-500">
+            <div className="card grid place-items-center p-12 text-center text-muted">
               <div>
                 <div className="mb-3 text-5xl">✦</div>
-                <div className="font-medium text-slate-600 dark:text-slate-300">
+                <div className="font-medium text-muted">
                   Describe your idea and let AI generate platform-ready content.
                 </div>
-                <div className="mt-1 text-sm text-slate-400">
+                <div className="mt-1 text-sm text-muted">
                   Your captions and images will appear here.
                 </div>
               </div>
@@ -1571,7 +1546,7 @@ function SettingsGrid({ aspectRatio, carousel, slides, onChange }) {
       <div>
         <label className="label">Aspect Ratio</label>
         <select
-          className="input"
+          className="select"
           value={aspectRatio}
           onChange={(e) => onChange({ aspectRatio: e.target.value })}
         >
@@ -1594,7 +1569,7 @@ function SettingsGrid({ aspectRatio, carousel, slides, onChange }) {
         <div>
           <label className="label">Slides</label>
           <select
-            className="input"
+            className="select"
             value={slides}
             onChange={(e) => onChange({ slides: Number(e.target.value) })}
           >
@@ -1628,14 +1603,14 @@ function PostCard({
         <PlatformIcon platform={c.platform} />
         <span className="font-semibold">{label}</span>
         {c.settings.aiImage && (
-          <span className="badge bg-slate-500/15 text-slate-400">
+          <span className="badge bg-inset text-muted">
             {c.settings.aspectRatio}
             {c.settings.carousel ? ` · ${c.settings.slides} slides` : ''}
           </span>
         )}
         <StatusChip status={c.status} error={c.publishError} />
         <div className="ml-auto flex items-center gap-2">
-          <span className={`text-xs ${over ? 'text-rose-400' : 'text-slate-400'}`}>
+          <span className={`text-xs ${over ? 'text-rose-400' : 'text-muted'}`}>
             {c.content.length} / {limit}
           </span>
           <MoreMenu
@@ -1668,7 +1643,7 @@ function PostCard({
       {c.settings.aiImage && (
         <div className="mt-4">
           {c.imgLoading && (
-            <div className="flex items-center gap-2 text-sm text-slate-400">
+            <div className="flex items-center gap-2 text-sm text-muted">
               <span className="skeleton h-4 w-4 rounded-full" />
               Generating images…
             </div>
@@ -1702,13 +1677,13 @@ function PostCard({
                       onResolved={(url) => onImageResolved(idx, url)}
                     />
                     {isCarousel && (
-                      <figcaption className="mt-1 flex items-center justify-between gap-1 text-[11px] text-slate-400">
+                      <figcaption className="mt-1 flex items-center justify-between gap-1 text-[11px] text-muted">
                         <span className="truncate">
                           {idx + 1}. {im.label}
                         </span>
                         <button
                           onClick={() => onRegenSlide(idx)}
-                          className="shrink-0 underline hover:text-indigo-400"
+                          className="shrink-0 underline hover:text-accent"
                           title="Regenerate this slide"
                         >
                           ↻
@@ -1810,7 +1785,7 @@ function SmartImage({ candidates, alt, aspectRatio, onResolved }) {
   if (failed) {
     return (
       <div
-        className="grid place-items-center rounded-xl border border-dashed border-slate-300 text-center text-xs text-slate-400 dark:border-white/10"
+        className="grid place-items-center rounded-xl border border-dashed border-line text-center text-xs text-muted"
         style={{ aspectRatio: ratio }}
       >
         <div>
@@ -1818,7 +1793,7 @@ function SmartImage({ candidates, alt, aspectRatio, onResolved }) {
           <button
             type="button"
             onClick={() => setReloadKey((k) => k + 1)}
-            className="mt-1 underline hover:text-indigo-400"
+            className="mt-1 underline hover:text-accent"
           >
             Retry
           </button>
@@ -1846,7 +1821,7 @@ function StatusChip({ status, error }) {
   const map = {
     publishing: { text: '⏳ Publishing…', cls: 'bg-sky-500/15 text-sky-500 dark:text-sky-300' },
     published: { text: '✓ Published', cls: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-300' },
-    saved: { text: '✓ Saved', cls: 'bg-slate-500/15 text-slate-500 dark:text-slate-300' },
+    saved: { text: '✓ Saved', cls: 'bg-inset text-muted' },
     scheduled: { text: '🗓 Scheduled', cls: 'bg-amber-500/15 text-amber-600 dark:text-amber-300' },
     failed: { text: '❌ Failed', cls: 'bg-rose-500/15 text-rose-600 dark:text-rose-300' },
   }
@@ -1869,7 +1844,7 @@ function MoreMenu({ items }) {
         onClick={() => setOpen((o) => !o)}
         aria-label="More actions"
         aria-haspopup="menu"
-        className="grid h-7 w-7 place-items-center rounded-lg text-lg text-slate-400 hover:bg-slate-200 dark:hover:bg-white/10"
+        className="grid h-7 w-7 place-items-center rounded-lg text-lg text-muted hover:bg-inset"
       >
         ⋮
       </button>
@@ -1888,7 +1863,7 @@ function MoreMenu({ items }) {
                   setOpen(false)
                   it.onClick?.()
                 }}
-                className={`block w-full rounded-lg px-3 py-2 text-left hover:bg-slate-100 dark:hover:bg-white/10 ${
+                className={`block w-full rounded-lg px-3 py-2 text-left hover:bg-inset ${
                   it.danger ? 'text-rose-500' : ''
                 }`}
               >
@@ -1912,9 +1887,9 @@ function ConfirmModal({ modal, onCancel }) {
     >
       <div className="card w-full max-w-md p-5" onClick={(e) => e.stopPropagation()}>
         <h3 className="mb-1 text-lg font-bold">{modal.title}</h3>
-        <p className="text-sm text-slate-500 dark:text-slate-300">{modal.message}</p>
+        <p className="text-sm text-muted">{modal.message}</p>
         {modal.list && (
-          <ul className="mt-3 space-y-1 rounded-xl border border-slate-200 p-3 text-sm dark:border-white/10">
+          <ul className="mt-3 space-y-1 rounded-xl border border-line p-3 text-sm">
             {modal.list.map((item) => (
               <li key={item} className="flex items-center gap-2">
                 <span className="text-emerald-500">✔</span>
@@ -1965,7 +1940,7 @@ function ArticleEditor({ article, onChange, onRegenCover, onSave, onPublish }) {
         <PlatformIcon platform="linkedin" />
         <span className="font-semibold">LinkedIn Article</span>
         <StatusChip status={article.status} />
-        <span className="ml-auto text-xs text-slate-400">
+        <span className="ml-auto text-xs text-muted">
           {words} words · {readingTime} min read
         </span>
       </div>
@@ -1981,7 +1956,7 @@ function ArticleEditor({ article, onChange, onRegenCover, onSave, onPublish }) {
             />
           </figure>
         ) : (
-          <div className="grid aspect-[16/9] w-full place-items-center rounded-xl border border-dashed border-slate-300 text-sm text-slate-400 dark:border-white/10">
+          <div className="grid aspect-[16/9] w-full place-items-center rounded-xl border border-dashed border-line text-sm text-muted">
             No cover image
           </div>
         )}
@@ -2018,19 +1993,19 @@ function ArticleEditor({ article, onChange, onRegenCover, onSave, onPublish }) {
       ) : (
         <article className="prose-sm max-w-none">
           <h1 className="text-2xl font-bold">{article.title}</h1>
-          <div className="mt-1 text-xs text-slate-400">{readingTime} min read</div>
+          <div className="mt-1 text-xs text-muted">{readingTime} min read</div>
           <div className="mt-3 whitespace-pre-wrap text-sm leading-relaxed">{article.body}</div>
           {article.tags.length > 0 && (
             <div className="mt-4 flex flex-wrap gap-1.5">
               {article.tags.map((t) => (
-                <span key={t} className="badge bg-indigo-500/15 text-indigo-300">#{t}</span>
+                <span key={t} className="badge bg-accent-soft text-accent">#{t}</span>
               ))}
             </div>
           )}
         </article>
       )}
 
-      <div className="flex flex-wrap gap-2 border-t border-slate-200 pt-3 dark:border-white/10">
+      <div className="flex flex-wrap gap-2 border-t border-line pt-3">
         <button onClick={() => setShowPreview((p) => !p)} className="btn btn-ghost btn-sm">
           {showPreview ? '✎ Edit' : '👁 Preview'}
         </button>
@@ -2060,7 +2035,7 @@ function TagEditor({ label, tags, onChange }) {
       <label className="label">{label}</label>
       <div className="flex flex-wrap gap-1.5">
         {tags.map((t) => (
-          <span key={t} className="badge bg-slate-500/15 text-slate-400">
+          <span key={t} className="badge bg-inset text-muted">
             {t}
             <button onClick={() => onChange(tags.filter((x) => x !== t))} className="ml-1 hover:text-rose-400">×</button>
           </span>
@@ -2086,20 +2061,20 @@ function TagEditor({ label, tags, onChange }) {
 // Small preview of text extracted from a URL or document.
 function ExtractedPreview({ extracted, onClear }) {
   return (
-    <div className="mt-2 rounded-xl border border-slate-200 bg-slate-50 p-2.5 text-xs dark:border-white/10 dark:bg-white/5">
+    <div className="mt-2 rounded-xl border border-line bg-inset p-2.5 text-xs">
       <div className="mb-1 flex items-center justify-between gap-2">
-        <span className="truncate font-medium text-slate-600 dark:text-slate-300">
+        <span className="truncate font-medium text-muted">
           ✓ {extracted.title || 'Extracted content'} · {extracted.text.length.toLocaleString()} chars
         </span>
         <button
           type="button"
           onClick={onClear}
-          className="shrink-0 text-slate-400 hover:text-rose-400"
+          className="shrink-0 text-muted hover:text-rose-400"
         >
           Clear
         </button>
       </div>
-      <p className="line-clamp-3 text-slate-500 dark:text-slate-400">
+      <p className="line-clamp-3 text-muted">
         {extracted.text.slice(0, 240)}…
       </p>
     </div>
@@ -2116,7 +2091,7 @@ function Switch({ checked, onChange, label }) {
       aria-label={label}
       onClick={() => onChange(!checked)}
       className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition ${
-        checked ? 'bg-indigo-500' : 'bg-slate-300 dark:bg-white/15'
+        checked ? 'bg-accent' : 'bg-inset'
       }`}
     >
       <span

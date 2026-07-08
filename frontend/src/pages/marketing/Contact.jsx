@@ -64,7 +64,7 @@ export default function Contact() {
               {CHANNELS.map((c) => (
                 <div key={c.label} className="card p-5">
                   <div className="flex items-center gap-3">
-                    <div className="grid h-10 w-10 place-items-center rounded-xl bg-gradient-to-br from-indigo-500/15 to-violet-500/15 text-lg">
+                    <div className="grid h-10 w-10 place-items-center rounded-xl bg-accent-soft text-lg">
                       {c.icon}
                     </div>
                     <div>
@@ -72,12 +72,12 @@ export default function Contact() {
                       {c.href ? (
                         <a
                           href={c.href}
-                          className="text-sm text-indigo-500 hover:text-indigo-400 dark:text-indigo-300"
+                          className="text-sm link-accent"
                         >
                           {c.value}
                         </a>
                       ) : (
-                        <div className="text-sm text-slate-500 dark:text-slate-400">
+                        <div className="text-sm text-muted">
                           {c.value}
                         </div>
                       )}
@@ -132,25 +132,25 @@ export default function Contact() {
           {/* Support section */}
           <div className="mt-12">
             <h2 className="text-center text-2xl font-bold">Looking for support?</h2>
-            <p className="mx-auto mt-2 max-w-xl text-center text-sm text-slate-500 dark:text-slate-400">
+            <p className="mx-auto mt-2 max-w-xl text-center text-sm text-muted">
               Already using AutoSocial AI? Here's where to find help — and what's on
               the way.
             </p>
             <div className="mt-6 grid gap-5 md:grid-cols-3">
               {SUPPORT.map((s) => (
                 <div key={s.title} className="card p-6">
-                  <div className="mb-3 grid h-10 w-10 place-items-center rounded-xl bg-gradient-to-br from-indigo-500/15 to-violet-500/15 text-lg">
+                  <div className="mb-3 grid h-10 w-10 place-items-center rounded-xl bg-accent-soft text-lg">
                     {s.icon}
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
                     <h3 className="font-bold">{s.title}</h3>
                     {s.badge && (
-                      <span className="rounded-full bg-indigo-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-indigo-500 dark:text-indigo-300">
+                      <span className="rounded-full bg-accent-soft px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-accent">
                         {s.badge}
                       </span>
                     )}
                   </div>
-                  <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">{s.body}</p>
+                  <p className="mt-2 text-sm text-muted">{s.body}</p>
                 </div>
               ))}
             </div>

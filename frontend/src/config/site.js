@@ -17,7 +17,7 @@ export const SITE = {
   slogan: 'Create. Design. Schedule. Publish. All Powered by AI.',
   // Default meta description used when a page doesn't provide its own.
   description:
-    'AutoSocial AI is an AI-powered social media platform that helps businesses, agencies, and creators write content, generate images, schedule posts, and publish across every network — from one dashboard.',
+    'AutoSocial AI is an AI-powered social media platform. Use AI Planner to generate and auto-schedule an entire 7, 15, or 30-day content plan, generate images, and publish across every network — all from one dashboard.',
   url: SITE_URL,
   // Social sharing image (Open Graph / Twitter). Lives in /public.
   ogImage: `${SITE_URL}/og-image.png`,
@@ -47,6 +47,7 @@ export const FOOTER_COLUMNS = [
   {
     title: 'Product',
     links: [
+      { to: '/features', label: 'AI Planner', badge: 'New' },
       { to: '/features', label: 'Features' },
       { to: '/pricing', label: 'Pricing' },
       { to: '/about', label: 'Roadmap' },

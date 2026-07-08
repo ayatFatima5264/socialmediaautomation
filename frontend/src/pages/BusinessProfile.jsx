@@ -96,11 +96,11 @@ export default function BusinessProfile() {
   return (
     <div className="max-w-2xl space-y-6">
       <div>
-        <Link to="/settings" className="text-sm text-slate-400 hover:text-slate-200">
+        <Link to="/settings" className="text-sm text-muted hover:text-body">
           ← Settings
         </Link>
         <h1 className="mt-1 text-2xl font-bold">Business Profile</h1>
-        <p className="text-sm text-slate-500 dark:text-slate-400">
+        <p className="text-sm text-muted">
           AutoSocial AI uses this to generate more relevant, on-brand content.
           Every field is optional.
         </p>
@@ -118,7 +118,7 @@ export default function BusinessProfile() {
 
         <Field label="Industry">
           <select
-            className="input"
+            className="select"
             value={form.industry}
             onChange={(e) => set({ industry: e.target.value })}
           >
@@ -202,7 +202,7 @@ function Field({ label, hint, children }) {
     <div>
       <label className="label mb-2 flex items-center justify-between">
         <span>{label}</span>
-        {hint && <span className="text-xs font-normal text-slate-400">{hint}</span>}
+        {hint && <span className="text-xs font-normal text-muted">{hint}</span>}
       </label>
       {children}
     </div>

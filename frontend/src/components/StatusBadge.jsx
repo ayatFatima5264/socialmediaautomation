@@ -1,7 +1,7 @@
 import { STATUS_STYLES } from '../lib/constants'
 
 const DOT = {
-  draft: 'bg-slate-400',
+  draft: 'bg-muted',
   scheduled: 'bg-amber-400',
   publishing: 'bg-sky-400',
   published: 'bg-emerald-400',

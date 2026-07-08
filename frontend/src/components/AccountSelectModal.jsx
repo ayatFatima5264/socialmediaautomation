@@ -16,7 +16,7 @@ export default function AccountSelectModal({ platform, candidates, busy, onSelec
           <PlatformIcon platform={platform} size={28} />
           <h2 className="text-lg font-bold">Choose an {label} account</h2>
         </div>
-        <p className="mb-4 text-sm text-slate-500 dark:text-slate-400">
+        <p className="mb-4 text-sm text-muted">
           Your login has access to several {label} accounts. Select the one to connect.
         </p>
 
@@ -29,8 +29,8 @@ export default function AccountSelectModal({ platform, candidates, busy, onSelec
                 onClick={() => setSelected(c.account_id)}
                 className={`flex w-full items-center gap-3 rounded-xl border p-3 text-left transition ${
                   on
-                    ? 'border-indigo-500 bg-indigo-500/10'
-                    : 'border-slate-200 hover:bg-slate-100 dark:border-white/10 dark:hover:bg-white/5'
+                    ? 'border-accent bg-accent-soft'
+                    : 'border-line hover:bg-inset'
                 }`}
               >
                 {c.profile_picture ? (
@@ -40,7 +40,7 @@ export default function AccountSelectModal({ platform, candidates, busy, onSelec
                     className="h-10 w-10 shrink-0 rounded-full object-cover"
                   />
                 ) : (
-                  <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-slate-200 text-sm font-semibold dark:bg-white/10">
+                  <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-inset text-sm font-semibold">
                     {(c.username || '?')[0].toUpperCase()}
                   </div>
                 )}
@@ -49,14 +49,14 @@ export default function AccountSelectModal({ platform, candidates, busy, onSelec
                     @{c.username || c.account_id}
                   </div>
                   {c.page_name && (
-                    <div className="truncate text-xs text-slate-500 dark:text-slate-400">
+                    <div className="truncate text-xs text-muted">
                       via {c.page_name}
                     </div>
                   )}
                 </div>
                 <span
                   className={`h-4 w-4 shrink-0 rounded-full border-2 ${
-                    on ? 'border-indigo-500 bg-indigo-500' : 'border-slate-300 dark:border-white/20'
+                    on ? 'border-accent bg-accent' : 'border-line'
                   }`}
                 />
               </button>

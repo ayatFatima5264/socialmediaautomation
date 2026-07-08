@@ -148,7 +148,7 @@ export default function Accounts() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold">Social Accounts</h1>
-        <p className="text-sm text-slate-500 dark:text-slate-400">
+        <p className="text-sm text-muted">
           Connect one account per platform to publish across all of them from one place.
         </p>
       </div>
@@ -233,17 +233,17 @@ function ConnectErrorBanner({ platform, message, onDismiss }) {
           <h3 className="font-semibold text-rose-700 dark:text-rose-300">
             {label} was not connected
           </h3>
-          <p className="mt-1 text-sm text-slate-700 dark:text-slate-200">{message}</p>
+          <p className="mt-1 text-sm text-body">{message}</p>
 
           {isInstagram && (
-            <div className="mt-3 rounded-xl bg-white/60 p-3 text-xs text-slate-600 dark:bg-black/20 dark:text-slate-300">
+            <div className="mt-3 rounded-xl bg-inset p-3 text-xs text-muted">
               <p className="mb-1 font-semibold">To fix this:</p>
               <ol className="list-decimal space-y-1 pl-4">
                 <li>Make your Instagram a <b>Professional</b> account (Business or Creator).</li>
                 <li>Link it to a <b>Facebook Page</b> you manage (Meta Business Suite → Settings → Instagram accounts).</li>
                 <li>Click <b>Connect Instagram</b> again and grant that Page.</li>
               </ol>
-              <p className="mt-2 text-slate-500 dark:text-slate-400">
+              <p className="mt-2 text-muted">
                 Note: Facebook's "You've connected… Got it" popup only confirms
                 permission was granted — it doesn't mean the Instagram account linked here.
               </p>
@@ -252,7 +252,7 @@ function ConnectErrorBanner({ platform, message, onDismiss }) {
         </div>
         <button
           onClick={onDismiss}
-          className="shrink-0 rounded-lg px-2 py-1 text-sm text-slate-500 hover:bg-black/5 dark:text-slate-400 dark:hover:bg-white/10"
+          className="shrink-0 rounded-lg px-2 py-1 text-sm text-muted hover:bg-inset"
           aria-label="Dismiss"
         >
           ✕
@@ -265,11 +265,11 @@ function ConnectErrorBanner({ platform, message, onDismiss }) {
 function EmptyState() {
   return (
     <div className="card flex flex-col items-center gap-3 p-10 text-center">
-      <div className="grid h-16 w-16 place-items-center rounded-2xl bg-indigo-500/10 text-3xl">
+      <div className="grid h-16 w-16 place-items-center rounded-2xl bg-accent-soft text-3xl">
         🔗
       </div>
       <h3 className="text-lg font-semibold">No social accounts connected yet.</h3>
-      <p className="max-w-md text-sm text-slate-500 dark:text-slate-400">
+      <p className="max-w-md text-sm text-muted">
         Connect your social media accounts to start publishing posts across
         multiple platforms from one place.
       </p>

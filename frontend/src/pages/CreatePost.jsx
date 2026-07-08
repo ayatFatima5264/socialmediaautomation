@@ -12,6 +12,7 @@ import {
 } from '../lib/contentTypes'
 import { localInputToISO } from '../lib/datetime'
 import PlatformIcon from '../components/PlatformIcon.jsx'
+import { SourceDropdown } from '../components/FormControls.jsx'
 
 const EMOJIS = ['😀', '😂', '🙌', '🔥', '✨', '🎉', '❤️', '👍', '🚀', '💡',
   '📈', '🙏', '😎', '🤝', '📢', '🌟', '✅', '💪', '👀', '🎯']
@@ -458,7 +459,7 @@ export default function CreatePost() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold">Create Post</h1>
-        <p className="text-sm text-slate-400">
+        <p className="text-sm text-muted">
           Write your own content, add media, and publish across platforms.
         </p>
       </div>
@@ -466,10 +467,10 @@ export default function CreatePost() {
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,440px)]">
         {/* ---- Left: Composer ---- */}
         <div className="space-y-5">
-          {/* Platforms */}
+          {/* Platforms — icon-only circular toggles */}
           <section className="card p-5">
             <h2 className="mb-3 text-sm font-semibold">Select platforms</h2>
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+            <div className="flex flex-wrap gap-2">
               {PLATFORM_KEYS.map((p) => {
                 const on = selected.includes(p)
                 return (
@@ -478,14 +479,15 @@ export default function CreatePost() {
                     type="button"
                     onClick={() => togglePlatform(p)}
                     aria-pressed={on}
-                    className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-sm font-medium transition ${
+                    aria-label={PLATFORMS[p].label}
+                    title={PLATFORMS[p].label}
+                    className={`grid h-8 w-8 shrink-0 place-items-center rounded-full border transition ${
                       on
-                        ? 'border-indigo-500 bg-indigo-500/15 text-indigo-300'
-                        : 'border-slate-300 text-slate-500 hover:bg-slate-100 dark:border-white/10 dark:text-slate-300 dark:hover:bg-white/5'
+                        ? 'border-accent bg-accent-soft ring-1 ring-accent'
+                        : 'border-line text-muted hover:bg-inset'
                     }`}
                   >
-                    <PlatformIcon platform={p} size={20} />
-                    {PLATFORMS[p].label}
+                    <PlatformIcon platform={p} size={18} />
                   </button>
                 )
               })}
@@ -495,7 +497,7 @@ export default function CreatePost() {
           {/* Content Type */}
           <section className="card p-5">
             <h2 className="mb-3 text-sm font-semibold">Content type</h2>
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap gap-1 rounded-xl border border-line bg-inset p-1">
               {CONTENT_TYPE_ORDER.map((id) => {
                 const ct = CONTENT_TYPES[id]
                 const st = ctStates[id]
@@ -509,12 +511,12 @@ export default function CreatePost() {
                     aria-pressed={active}
                     title={enabled ? ct.label : st?.reason}
                     onClick={() => enabled && setContentType(id)}
-                    className={`flex items-center gap-1.5 rounded-xl border px-3 py-2 text-sm font-medium transition ${
+                    className={`flex min-w-[92px] flex-1 items-center justify-center gap-1 rounded-lg px-2 py-1.5 text-xs font-medium transition ${
                       active
-                        ? 'border-indigo-500 bg-indigo-500/15 text-indigo-300'
+                        ? 'bg-accent text-accent-contrast'
                         : enabled
-                          ? 'border-slate-300 text-slate-500 hover:bg-slate-100 dark:border-white/10 dark:text-slate-300 dark:hover:bg-white/5'
-                          : 'cursor-not-allowed border-slate-200 text-slate-400 opacity-50 dark:border-white/5'
+                          ? 'text-muted hover:bg-surface'
+                          : 'cursor-not-allowed text-muted opacity-50'
                     }`}
                   >
                     <span>{enabled ? ct.icon : '🔒'}</span>
@@ -524,33 +526,16 @@ export default function CreatePost() {
               })}
             </div>
 
-            {/* Explanations for any disabled types */}
-            {CONTENT_TYPE_ORDER.some((id) => !ctStates[id]?.enabled) && (
-              <div className="mt-3 space-y-1.5">
-                {CONTENT_TYPE_ORDER.filter((id) => !ctStates[id]?.enabled).map((id) => (
-                  <div
-                    key={id}
-                    className="rounded-lg bg-slate-100 px-2.5 py-1.5 text-xs text-slate-500 dark:bg-white/5 dark:text-slate-400"
-                  >
-                    <div className="flex items-start gap-1.5">
-                      <span className="mt-px shrink-0">🔒</span>
-                      <p className="min-w-0">
-                        <span className="font-medium">{CONTENT_TYPES[id].label}:</span>{' '}
-                        {ctStates[id].reason}
-                      </p>
-                    </div>
-                    {id === 'article' && !isLinkedInOnly(selected) && (
-                      <button
-                        type="button"
-                        onClick={useLinkedInOnly}
-                        className="btn btn-primary btn-sm mt-2"
-                      >
-                        Switch to LinkedIn Only
-                      </button>
-                    )}
-                  </div>
-                ))}
-              </div>
+            {/* Actionable affordance for the locked LinkedIn Article type
+                (the per-type "why" now lives in each segment's tooltip). */}
+            {ctStates.article && !ctStates.article.enabled && !isLinkedInOnly(selected) && (
+              <button
+                type="button"
+                onClick={useLinkedInOnly}
+                className="btn btn-primary btn-sm mt-2"
+              >
+                🔒 LinkedIn Article — switch to LinkedIn only
+              </button>
             )}
 
             {/* Article title (LinkedIn Article mode) — smooth reveal */}
@@ -581,34 +566,19 @@ export default function CreatePost() {
               className="flex w-full items-center justify-between"
             >
               <span className="text-sm font-semibold">
-                Import Content <span className="font-normal text-slate-400">(optional)</span>
+                Import Content <span className="font-normal text-muted">(optional)</span>
               </span>
-              <span className="text-slate-400">{importOpen ? '▲' : '▼'}</span>
+              <span className="text-muted">{importOpen ? '▾' : '▸'}</span>
             </button>
 
             {importOpen && (
               <div className="mt-3 space-y-3">
-                <div className="flex flex-wrap gap-1.5">
-                  {IMPORT_SOURCES.map((s) => {
-                    const on = importType === s.id
-                    return (
-                      <button
-                        key={s.id}
-                        type="button"
-                        onClick={() => setImportType(s.id)}
-                        aria-pressed={on}
-                        className={`flex items-center gap-1 rounded-lg border px-2 py-1 text-xs font-medium transition ${
-                          on
-                            ? 'border-indigo-500 bg-indigo-500/15 text-indigo-300'
-                            : 'border-slate-300 text-slate-400 hover:bg-slate-100 dark:border-white/10 dark:hover:bg-white/5'
-                        }`}
-                      >
-                        <span>{s.icon}</span>
-                        {s.label}
-                      </button>
-                    )
-                  })}
-                </div>
+                <SourceDropdown
+                  options={IMPORT_SOURCES}
+                  value={importType}
+                  onChange={setImportType}
+                  ariaLabel="Import source"
+                />
 
                 {IMPORT_TEXT_SOURCES.includes(importType) && (
                   <div>
@@ -659,13 +629,13 @@ export default function CreatePost() {
                     <input
                       type="file"
                       accept=".pdf,.docx,.txt,.md"
-                      className="block w-full text-sm text-slate-400 file:mr-3 file:rounded-lg file:border-0 file:bg-indigo-500/15 file:px-3 file:py-1.5 file:text-indigo-300"
+                      className="block w-full text-sm text-muted file:mr-3 file:rounded-lg file:border-0 file:bg-accent-soft file:px-3 file:py-1.5 file:text-accent"
                       onChange={(e) => {
                         importFromFile(e.target.files?.[0])
                         e.target.value = ''
                       }}
                     />
-                    {importBusy && <div className="mt-2 text-xs text-slate-400">Reading document…</div>}
+                    {importBusy && <div className="mt-2 text-xs text-muted">Reading document…</div>}
                   </div>
                 )}
 
@@ -674,7 +644,7 @@ export default function CreatePost() {
                     <input
                       type="file"
                       accept="image/*"
-                      className="block w-full text-sm text-slate-400 file:mr-3 file:rounded-lg file:border-0 file:bg-indigo-500/15 file:px-3 file:py-1.5 file:text-indigo-300"
+                      className="block w-full text-sm text-muted file:mr-3 file:rounded-lg file:border-0 file:bg-accent-soft file:px-3 file:py-1.5 file:text-accent"
                       onChange={(e) => {
                         if (e.target.files?.length) {
                           addFiles(e.target.files)
@@ -684,7 +654,7 @@ export default function CreatePost() {
                         e.target.value = ''
                       }}
                     />
-                    <p className="mt-1 text-xs text-slate-400">
+                    <p className="mt-1 text-xs text-muted">
                       Your image is added to Media below; add your own caption in the editor.
                     </p>
                   </div>
@@ -702,7 +672,7 @@ export default function CreatePost() {
                   <button
                     type="button"
                     onClick={undoAssist}
-                    className="text-xs text-slate-400 underline hover:text-indigo-400"
+                    className="text-xs text-muted underline hover:text-accent"
                   >
                     Undo
                   </button>
@@ -729,7 +699,7 @@ export default function CreatePost() {
                     <button
                       key={e}
                       type="button"
-                      className="rounded p-1 text-lg hover:bg-slate-200 dark:hover:bg-white/10"
+                      className="rounded p-1 text-lg hover:bg-inset"
                       onClick={() => {
                         insertAtCursor(e)
                         setEmojiOpen(false)
@@ -755,13 +725,13 @@ export default function CreatePost() {
           <section className="card p-5">
             <div className="mb-3 flex items-center justify-between">
               <h2 className="text-sm font-semibold">Media</h2>
-              <span className="text-[11px] text-slate-400">shown in preview</span>
+              <span className="text-[11px] text-muted">shown in preview</span>
             </div>
             <div
               onDrop={onDrop}
               onDragOver={(e) => e.preventDefault()}
               onClick={() => fileRef.current?.click()}
-              className="grid cursor-pointer place-items-center rounded-xl border border-dashed border-slate-300 p-6 text-center text-sm text-slate-400 transition hover:border-indigo-400 dark:border-white/15"
+              className="grid cursor-pointer place-items-center rounded-xl border border-dashed border-line p-6 text-center text-sm text-muted transition hover:border-accent"
             >
               <div>
                 <div className="text-2xl">⬆️</div>
@@ -783,7 +753,7 @@ export default function CreatePost() {
             {media.length > 0 && (
               <div className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-4">
                 {media.map((m, idx) => (
-                  <div key={m.id} className="group relative aspect-square overflow-hidden rounded-lg border border-slate-200 dark:border-white/10">
+                  <div key={m.id} className="group relative aspect-square overflow-hidden rounded-lg border border-line">
                     {m.type === 'video' ? (
                       <video src={m.url} className="h-full w-full object-cover" />
                     ) : (
@@ -817,7 +787,7 @@ export default function CreatePost() {
               <label className="label">Hashtags</label>
               <div className="flex flex-wrap gap-1.5">
                 {hashtags.map((t) => (
-                  <span key={t} className="badge bg-indigo-500/15 text-indigo-300">
+                  <span key={t} className="badge bg-accent-soft text-accent">
                     #{t}
                     <button type="button" onClick={() => removeHashtag(t)} className="ml-1 hover:text-white">×</button>
                   </span>
@@ -894,7 +864,7 @@ export default function CreatePost() {
                   min={minLocal()}
                   onChange={(e) => setScheduleAt(e.target.value)}
                 />
-                <p className="mt-1 text-xs text-slate-400">Timezone: {tz}</p>
+                <p className="mt-1 text-xs text-muted">Timezone: {tz}</p>
               </div>
             )}
           </section>
@@ -928,8 +898,8 @@ export default function CreatePost() {
                   onClick={() => setActiveTab(p)}
                   className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-medium transition ${
                     activeTab === p
-                      ? 'bg-indigo-500/15 text-indigo-300'
-                      : 'text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5'
+                      ? 'bg-accent-soft text-accent'
+                      : 'text-muted hover:bg-inset'
                   }`}
                 >
                   <PlatformIcon platform={p} size={16} />
@@ -939,7 +909,7 @@ export default function CreatePost() {
             </div>
 
             {!selected.length ? (
-              <div className="grid place-items-center p-10 text-center text-sm text-slate-400">
+              <div className="grid place-items-center p-10 text-center text-sm text-muted">
                 Select a platform to preview.
               </div>
             ) : (
@@ -990,7 +960,7 @@ function ConfirmDialog({ confirm, onClose }) {
     >
       <div className="card w-full max-w-md p-5" onClick={(e) => e.stopPropagation()}>
         <h3 className="mb-1 text-lg font-bold">{confirm.title}</h3>
-        <p className="text-sm text-slate-500 dark:text-slate-300">{confirm.message}</p>
+        <p className="text-sm text-muted">{confirm.message}</p>
         <div className="mt-5 flex flex-wrap justify-end gap-2">
           {confirm.actions.map((a) => (
             <button
@@ -1017,7 +987,7 @@ function AssistMenu({ busy, onRun }) {
     setSub(null)
   }
   const itemCls =
-    'block w-full rounded-lg px-3 py-2 text-left hover:bg-slate-100 dark:hover:bg-white/10'
+    'block w-full rounded-lg px-3 py-2 text-left hover:bg-inset'
 
   return (
     <div className="relative">
@@ -1047,13 +1017,13 @@ function AssistMenu({ busy, onRun }) {
                   className={`flex items-center justify-between ${itemCls}`}
                 >
                   {a.label}
-                  {a.sub && <span className="text-slate-400">▸</span>}
+                  {a.sub && <span className="text-muted">▸</span>}
                 </button>
               ))}
 
             {sub && (
               <>
-                <button onClick={() => setSub(null)} className={`${itemCls} text-slate-400`}>
+                <button onClick={() => setSub(null)} className={`${itemCls} text-muted`}>
                   ← Back
                 </button>
                 {(sub === 'tone' ? TONE_OPTIONS : LANGUAGE_OPTIONS).map((opt) => (
@@ -1084,7 +1054,7 @@ function ToolBtn({ onClick, title, children }) {
       type="button"
       onClick={onClick}
       title={title}
-      className="grid h-8 w-8 place-items-center rounded-lg border border-slate-200 text-sm hover:bg-slate-100 dark:border-white/10 dark:hover:bg-white/10"
+      className="grid h-8 w-8 place-items-center rounded-lg border border-line text-sm hover:bg-inset"
     >
       {children}
     </button>
@@ -1099,7 +1069,7 @@ function CharCounter({ selected, count }) {
   )
   const over = Number.isFinite(limit) && count > limit
   return (
-    <span className={`text-xs ${over ? 'text-rose-400' : 'text-slate-400'}`}>
+    <span className={`text-xs ${over ? 'text-rose-400' : 'text-muted'}`}>
       {count}
       {Number.isFinite(limit) ? ` / ${limit}` : ''}
     </span>
@@ -1108,8 +1078,8 @@ function CharCounter({ selected, count }) {
 
 function SummaryRow({ label, value, warn }) {
   return (
-    <div className="flex justify-between gap-3 border-b border-slate-100 py-1.5 last:border-0 dark:border-white/5">
-      <span className="text-slate-400">{label}</span>
+    <div className="flex justify-between gap-3 border-b border-line py-1.5 last:border-0">
+      <span className="text-muted">{label}</span>
       <span className={`text-right font-medium ${warn ? 'text-amber-500' : ''}`}>{value}</span>
     </div>
   )
@@ -1126,7 +1096,7 @@ function PlatformPreview({ platform, data }) {
   const tags = hashtags.map((t) => `#${t}`).join(' ')
 
   return (
-    <div className="mx-auto max-w-sm overflow-hidden rounded-2xl border border-slate-200 bg-white text-slate-900 shadow-sm dark:border-white/10 dark:bg-slate-900 dark:text-slate-100">
+    <div className="mx-auto max-w-sm overflow-hidden rounded-2xl border border-line bg-surface text-body shadow-sm">
       {/* header */}
       <div className="flex items-center gap-2 p-3">
         <span
@@ -1137,7 +1107,7 @@ function PlatformPreview({ platform, data }) {
         </span>
         <div className="min-w-0">
           <div className="truncate text-sm font-semibold">{name}</div>
-          <div className="truncate text-xs text-slate-400">
+          <div className="truncate text-xs text-muted">
             {platform === 'twitter' || platform === 'threads' ? handle : 'Sponsored'} · {when}
           </div>
         </div>
@@ -1150,7 +1120,7 @@ function PlatformPreview({ platform, data }) {
       )}
       {tags && <p className="px-3 pb-2 text-sm text-sky-500">{tags}</p>}
       {location.trim() && (
-        <p className="px-3 pb-2 text-xs text-slate-400">📍 {location}</p>
+        <p className="px-3 pb-2 text-xs text-muted">📍 {location}</p>
       )}
 
       {/* media */}
@@ -1160,16 +1130,16 @@ function PlatformPreview({ platform, data }) {
       {link.trim() && media.length === 0 && <LinkPreview url={link} />}
 
       {/* engagement bar */}
-      <div className="flex items-center gap-4 border-t border-slate-100 px-3 py-2 text-xs text-slate-400 dark:border-white/5">
+      <div className="flex items-center gap-4 border-t border-line px-3 py-2 text-xs text-muted">
         <span>♡ Like</span>
         <span>💬 Comment</span>
         <span>↗ Share</span>
       </div>
 
       {showFirstComment && (
-        <div className="border-t border-slate-100 px-3 py-2 text-xs dark:border-white/5">
+        <div className="border-t border-line px-3 py-2 text-xs">
           <span className="font-semibold">{handle}</span>{' '}
-          <span className="text-slate-500 dark:text-slate-300">{firstComment}</span>
+          <span className="text-muted">{firstComment}</span>
         </div>
       )}
     </div>
@@ -1215,10 +1185,10 @@ function LinkPreview({ url }) {
     /* keep raw */
   }
   return (
-    <div className="m-3 overflow-hidden rounded-xl border border-slate-200 dark:border-white/10">
-      <div className="grid h-28 place-items-center bg-slate-100 text-3xl dark:bg-white/5">🔗</div>
+    <div className="m-3 overflow-hidden rounded-xl border border-line">
+      <div className="grid h-28 place-items-center bg-inset text-3xl">🔗</div>
       <div className="p-2">
-        <div className="text-xs uppercase text-slate-400">{domain}</div>
+        <div className="text-xs uppercase text-muted">{domain}</div>
         <div className="truncate text-sm font-medium">{url}</div>
       </div>
     </div>
@@ -1236,11 +1206,11 @@ function SuccessScreen({ result, onAnother, onScheduled, onDashboard }) {
         <h2 className="text-xl font-bold">
           {result.scheduled ? 'Post scheduled successfully' : 'Post published successfully'}
         </h2>
-        <p className="mt-1 text-sm text-slate-400">
+        <p className="mt-1 text-sm text-muted">
           {result.scheduled ? `Going live ${result.when}` : 'Your content is on its way.'}
         </p>
 
-        <div className="mt-5 rounded-xl border border-slate-200 p-3 text-left text-sm dark:border-white/10">
+        <div className="mt-5 rounded-xl border border-line p-3 text-left text-sm">
           <SummaryRow label="Platforms" value={result.platforms.map((p) => PLATFORMS[p].label).join(', ')} />
           <SummaryRow label="When" value={result.when} />
           <SummaryRow label="Media" value={`${result.mediaCount} file(s)`} />

@@ -23,15 +23,15 @@ export default function Settings() {
 
       <Link
         to="/business-profile"
-        className="card flex items-center justify-between p-5 transition hover:-translate-y-0.5 hover:shadow-lg dark:hover:shadow-black/30"
+        className="card flex items-center justify-between p-5 transition hover:-translate-y-0.5"
       >
         <div>
           <h2 className="font-semibold">Business Profile</h2>
-          <p className="text-sm text-slate-500 dark:text-slate-400">
+          <p className="text-sm text-muted">
             Tell the AI about your business for more personalized content.
           </p>
         </div>
-        <span className="text-slate-400">→</span>
+        <span className="text-muted">→</span>
       </Link>
 
       <section className="card p-5">
@@ -39,7 +39,7 @@ export default function Settings() {
         <div className="flex items-center justify-between">
           <div>
             <div className="text-sm font-medium">Theme</div>
-            <div className="text-xs text-slate-400">Currently {theme}</div>
+            <div className="text-xs text-muted">Currently {theme}</div>
           </div>
           <button onClick={toggle} className="btn btn-ghost">
             Switch to {theme === 'dark' ? 'light' : 'dark'}
@@ -49,7 +49,7 @@ export default function Settings() {
 
       <section className="card p-5 opacity-70">
         <h2 className="mb-2 font-semibold">Notifications & API limits</h2>
-        <p className="text-sm text-slate-400">Coming soon.</p>
+        <p className="text-sm text-muted">Coming soon.</p>
       </section>
 
       <button onClick={logout} className="btn btn-danger">
@@ -61,8 +61,8 @@ export default function Settings() {
 
 function Row({ label, value }) {
   return (
-    <div className="flex justify-between gap-4 border-b border-slate-100 pb-3 last:border-0 dark:border-white/5">
-      <dt className="text-slate-400">{label}</dt>
+    <div className="flex justify-between gap-4 border-b border-line pb-3 last:border-0">
+      <dt className="text-muted">{label}</dt>
       <dd className="font-medium">{value}</dd>
     </div>
   )

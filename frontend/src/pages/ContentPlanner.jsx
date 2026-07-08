@@ -89,7 +89,7 @@ export default function ContentPlanner() {
           <h1 className="flex items-center gap-2 text-2xl font-bold">
             <span>🗓️</span> AI Content Planner
           </h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400">
+          <p className="text-sm text-muted">
             Let AI plan, write, and schedule your entire content calendar.
           </p>
         </div>
@@ -183,20 +183,20 @@ function StepRail({ current }) {
             <div
               className={`flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm font-medium transition ${
                 active
-                  ? 'border-indigo-500 bg-indigo-500/10 text-indigo-600 dark:text-indigo-300'
+                  ? 'border-accent bg-accent-soft text-accent'
                   : done
                     ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-300'
-                    : 'border-slate-200 text-slate-400 dark:border-white/10'
+                    : 'border-line text-muted'
               }`}
             >
               <span className={`grid h-5 w-5 place-items-center rounded-full text-xs ${
-                active ? 'bg-indigo-500 text-white' : done ? 'bg-emerald-500 text-white' : 'bg-slate-200 text-slate-500 dark:bg-white/10'
+                active ? 'bg-accent text-accent-contrast' : done ? 'bg-emerald-500 text-white' : 'bg-inset text-muted'
               }`}>
                 {done ? '✓' : i + 1}
               </span>
               <span className="whitespace-nowrap">{s.label}</span>
             </div>
-            {i < STEPS.length - 1 && <span className="text-slate-300 dark:text-white/20">—</span>}
+            {i < STEPS.length - 1 && <span className="text-muted">—</span>}
           </div>
         )
       })}
@@ -212,41 +212,41 @@ function Hub({ plans, settings, onQuick, onAdvanced, onOpenPlan, onDeletePlan })
       <div className="grid gap-5 md:grid-cols-2">
         <button
           onClick={onQuick}
-          className="card group p-7 text-left transition hover:-translate-y-0.5 hover:border-indigo-500/40"
+          className="card group p-7 text-left transition hover:-translate-y-0.5 hover:border-accent"
         >
-          <div className="mb-3 grid h-12 w-12 place-items-center rounded-xl bg-gradient-to-br from-indigo-500 to-violet-500 text-2xl text-white">⚡</div>
+          <div className="mb-3 grid h-12 w-12 place-items-center rounded-xl bg-accent text-2xl text-accent-contrast">⚡</div>
           <h2 className="text-lg font-bold">Quick Generate</h2>
-          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+          <p className="mt-1 text-sm text-muted">
             One click. Uses your saved settings to instantly plan, write, and
             schedule your next batch of content.
           </p>
-          <span className="mt-4 inline-block text-sm font-semibold text-indigo-500 dark:text-indigo-300">
+          <span className="mt-4 inline-block text-sm font-semibold text-accent">
             {hasDefaults ? 'Generate now →' : 'Set defaults to enable →'}
           </span>
         </button>
 
         <button
           onClick={onAdvanced}
-          className="card group p-7 text-left transition hover:-translate-y-0.5 hover:border-indigo-500/40"
+          className="card group p-7 text-left transition hover:-translate-y-0.5 hover:border-accent"
         >
-          <div className="mb-3 grid h-12 w-12 place-items-center rounded-xl bg-gradient-to-br from-slate-600 to-slate-800 text-2xl text-white">🎛️</div>
+          <div className="mb-3 grid h-12 w-12 place-items-center rounded-xl bg-inset text-2xl text-body">🎛️</div>
           <h2 className="text-lg font-bold">Advanced Planner</h2>
-          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+          <p className="mt-1 text-sm text-muted">
             Open the full wizard to customize duration, frequency, platforms,
             goals, and content mix before AI builds your calendar.
           </p>
-          <span className="mt-4 inline-block text-sm font-semibold text-indigo-500 dark:text-indigo-300">
+          <span className="mt-4 inline-block text-sm font-semibold text-accent">
             Open wizard →
           </span>
         </button>
       </div>
 
       <div>
-        <h3 className="mb-3 text-sm font-semibold text-slate-500 dark:text-slate-400">
+        <h3 className="mb-3 text-sm font-semibold text-muted">
           Your plans
         </h3>
         {plans.length === 0 ? (
-          <div className="card p-8 text-center text-sm text-slate-400">
+          <div className="card p-8 text-center text-sm text-muted">
             No plans yet. Start with Quick Generate or the Advanced Planner above.
           </div>
         ) : (
@@ -258,7 +258,7 @@ function Hub({ plans, settings, onQuick, onAdvanced, onOpenPlan, onDeletePlan })
                     <span className="truncate font-semibold">{p.name}</span>
                     <PlanStatusBadge status={p.status} />
                   </div>
-                  <div className="mt-0.5 text-xs text-slate-400">
+                  <div className="mt-0.5 text-xs text-muted">
                     {p.duration_days} days · {p.platforms.join(', ')} · {p.total_posts || 0} posts
                   </div>
                 </div>
@@ -342,7 +342,7 @@ function SetupStep({ settings, onCancel, onCreated }) {
           </div>
           {form.frequency === 'custom' && (
             <div className="mt-3 flex items-center gap-3">
-              <label className="text-sm text-slate-500 dark:text-slate-400">Posts per week</label>
+              <label className="text-sm text-muted">Posts per week</label>
               <input type="number" min={1} max={7} value={form.posts_per_week}
                 onChange={(e) => set({ posts_per_week: Math.max(1, Math.min(7, Number(e.target.value) || 1)) })}
                 className="input w-24" />
@@ -356,7 +356,7 @@ function SetupStep({ settings, onCancel, onCreated }) {
               const on = form.platforms.includes(k)
               return (
                 <button key={k} type="button" onClick={() => togglePlatform(k)}
-                  className={`badge border px-3 py-1.5 transition ${on ? 'border-indigo-500 bg-indigo-500/10 text-indigo-600 dark:text-indigo-300' : 'border-slate-200 text-slate-500 dark:border-white/10 dark:text-slate-300'}`}>
+                  className={`badge border px-3 py-1.5 transition ${on ? 'border-accent bg-accent-soft text-accent' : 'border-line text-muted'}`}>
                   <span className="grid h-5 w-5 place-items-center rounded-full text-[10px] font-bold text-white" style={{ background: PLATFORMS[k].color }}>{PLATFORMS[k].initial}</span>
                   {PLATFORMS[k].label}
                 </button>
@@ -382,7 +382,7 @@ function SetupStep({ settings, onCancel, onCreated }) {
       {/* Live summary */}
       <div className="lg:col-span-1">
         <div className="card sticky top-24 p-6">
-          <h3 className="text-sm font-semibold text-slate-500 dark:text-slate-400">Plan summary</h3>
+          <h3 className="text-sm font-semibold text-muted">Plan summary</h3>
           <dl className="mt-4 space-y-3 text-sm">
             <SummaryRow label="Period" value={`${form.duration_days} days`} />
             <SummaryRow label="Frequency" value={PLANNER_FREQUENCIES.find((f) => f.value === form.frequency)?.label} />
@@ -396,7 +396,7 @@ function SetupStep({ settings, onCancel, onCreated }) {
             </button>
             <button onClick={onCancel} className="btn btn-ghost">Cancel</button>
           </div>
-          <p className="mt-3 text-center text-xs text-slate-400">AI proposes a calendar next — you review before anything is written.</p>
+          <p className="mt-3 text-center text-xs text-muted">AI proposes a calendar next — you review before anything is written.</p>
         </div>
       </div>
     </div>
@@ -453,12 +453,12 @@ function StrategyStep({ plan, setPlan, onBack, onGenerated }) {
     <div>
       {/* AI Marketing Manager: plan theme + rationale + content mix */}
       <div className="card mb-5 overflow-hidden p-5">
-        <div className="text-xs font-semibold uppercase tracking-wide text-indigo-500 dark:text-indigo-300">
+        <div className="text-xs font-semibold uppercase tracking-wide text-accent">
           Your AI content strategy
         </div>
         <h2 className="mt-1 text-xl font-bold">{plan.theme || 'Balanced content plan'}</h2>
         {plan.summary && (
-          <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">{plan.summary}</p>
+          <p className="mt-2 text-sm text-muted">{plan.summary}</p>
         )}
         <MixBreakdown topics={plan.topics} />
       </div>
@@ -466,7 +466,7 @@ function StrategyStep({ plan, setPlan, onBack, onGenerated }) {
       <div className="mb-5 flex flex-wrap items-center gap-3">
         <div>
           <h2 className="text-lg font-bold">Content calendar</h2>
-          <p className="text-sm text-slate-500 dark:text-slate-400">
+          <p className="text-sm text-muted">
             {plan.topics.length} topics · edit, regenerate, or add before AI writes the posts.
           </p>
         </div>
@@ -478,7 +478,7 @@ function StrategyStep({ plan, setPlan, onBack, onGenerated }) {
           <div key={t.id} className="card flex flex-wrap items-center gap-3 p-4">
             <div className="w-24 shrink-0 text-sm">
               <div className="font-semibold">{t.weekday}</div>
-              <div className="text-xs text-slate-400">{new Date(`${t.date}T00:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</div>
+              <div className="text-xs text-muted">{new Date(`${t.date}T00:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</div>
             </div>
             <select value={t.content_type} onChange={(e) => editTopic(t.id, { content_type: e.target.value })} onBlur={commitTopic}
               className={`badge shrink-0 border-0 ${CONTENT_TYPE_STYLES[t.content_type] || 'bg-slate-500/15 text-slate-500'}`}>
@@ -521,7 +521,7 @@ function MixBreakdown({ topics }) {
       {counts.map(([type, n]) => (
         <span key={type} className={`badge ${CONTENT_TYPE_STYLES[type] || 'bg-slate-500/15 text-slate-500'}`}>
           {type}
-          <span className="ml-1 rounded-full bg-black/10 px-1.5 text-[10px] font-bold dark:bg-white/15">{n}</span>
+          <span className="ml-1 rounded-full bg-inset px-1.5 text-[10px] font-bold">{n}</span>
         </span>
       ))}
     </div>
@@ -560,13 +560,13 @@ function GeneratingStep({ planId, onReady }) {
   return (
     <div className="grid min-h-[50vh] place-items-center">
       <div className="w-full max-w-md text-center">
-        <div className="mx-auto mb-5 grid h-16 w-16 animate-pulse place-items-center rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-500 text-3xl text-white">✦</div>
+        <div className="mx-auto mb-5 grid h-16 w-16 animate-pulse place-items-center rounded-2xl bg-accent text-3xl text-accent-contrast">✦</div>
         <h2 className="text-xl font-bold">Writing your content…</h2>
-        <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+        <p className="mt-2 text-sm text-muted">
           AI is generating platform-optimized posts for every topic. This can take a moment.
         </p>
-        <div className="mt-6 h-2 w-full overflow-hidden rounded-full bg-slate-200 dark:bg-white/10">
-          <div className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-violet-500 transition-all duration-500" style={{ width: `${Math.max(5, pct)}%` }} />
+        <div className="mt-6 h-2 w-full overflow-hidden rounded-full bg-inset">
+          <div className="h-full rounded-full bg-accent transition-all duration-500" style={{ width: `${Math.max(5, pct)}%` }} />
         </div>
         <p className="mt-3 text-sm font-medium">
           {plan ? `${plan.generated_posts} / ${plan.total_posts || '…'} posts` : 'Starting…'}
@@ -629,7 +629,7 @@ function ReviewStep({ plan, setPlan, onApproved }) {
 
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <h2 className="text-lg font-bold">Review & schedule</h2>
-        <p className="text-sm text-slate-400">Nothing publishes until you approve.</p>
+        <p className="text-sm text-muted">Nothing publishes until you approve.</p>
         <div className="ml-auto flex gap-2">
           <button onClick={() => approve(false)} disabled={busy} className="btn btn-ghost btn-sm">Approve selected ({selected.size})</button>
           <button onClick={() => approve(true)} disabled={busy || !pending.length} className="btn btn-primary btn-sm">
@@ -643,8 +643,8 @@ function ReviewStep({ plan, setPlan, onApproved }) {
           <div key={day}>
             <div className="mb-2 flex items-center gap-2">
               <h3 className="text-sm font-bold">{day}</h3>
-              <span className="text-xs text-slate-400">{posts.length} post{posts.length === 1 ? '' : 's'}</span>
-              <div className="h-px flex-1 bg-slate-200 dark:bg-white/10" />
+              <span className="text-xs text-muted">{posts.length} post{posts.length === 1 ? '' : 's'}</span>
+              <div className="h-px flex-1 bg-line" />
             </div>
             <div className="space-y-3">
               {posts.map((post) => (
@@ -690,12 +690,12 @@ function PostCard({ post, selected, onToggle, onChanged }) {
   }
 
   return (
-    <div className={`card p-4 ${selected ? 'ring-2 ring-indigo-500' : ''}`}>
+    <div className={`card p-4 ${selected ? 'ring-2 ring-accent' : ''}`}>
       <div className="flex items-start gap-3">
-        <input type="checkbox" checked={selected} onChange={onToggle} className="mt-1 h-4 w-4 accent-indigo-500" disabled={approved} />
+        <input type="checkbox" checked={selected} onChange={onToggle} className="mt-1 h-4 w-4 accent-accent" disabled={approved} />
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="badge border border-slate-200 dark:border-white/10">
+            <span className="badge border border-line">
               <span className="grid h-4 w-4 place-items-center rounded-full text-[9px] font-bold text-white" style={{ background: p.color }}>{p.initial}</span>
               {p.label}
             </span>
@@ -703,25 +703,25 @@ function PostCard({ post, selected, onToggle, onChanged }) {
             {approved
               ? <span className="badge bg-emerald-500/15 text-emerald-600 dark:text-emerald-300">Approved</span>
               : <span className="badge bg-amber-500/15 text-amber-600 dark:text-amber-300">Pending</span>}
-            <span className="ml-auto text-xs text-slate-400">{post.character_count} chars</span>
+            <span className="ml-auto text-xs text-muted">{post.character_count} chars</span>
           </div>
 
-          {post.topic && <div className="mt-2 text-xs font-medium text-slate-500 dark:text-slate-400">Topic: {post.topic}</div>}
+          {post.topic && <div className="mt-2 text-xs font-medium text-muted">Topic: {post.topic}</div>}
 
           {editing ? (
             <textarea className="input mt-2 min-h-32" value={content} onChange={(e) => setContent(e.target.value)} />
           ) : (
-            <p className="mt-2 whitespace-pre-wrap text-sm text-slate-700 dark:text-slate-200">{post.content}</p>
+            <p className="mt-2 whitespace-pre-wrap text-sm text-body">{post.content}</p>
           )}
 
           {post.hashtags?.length > 0 && (
             <div className="mt-2 flex flex-wrap gap-1">
-              {post.hashtags.map((h) => <span key={h} className="text-xs text-indigo-500 dark:text-indigo-300">#{h}</span>)}
+              {post.hashtags.map((h) => <span key={h} className="text-xs text-accent">#{h}</span>)}
             </div>
           )}
 
           <div className="mt-3 flex flex-wrap items-center gap-2">
-            <label className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
+            <label className="flex items-center gap-1.5 text-xs text-muted">
               🕑
               <input type="datetime-local" value={toLocalInput(post.scheduled_time)} onChange={(e) => reschedule(e.target.value)} className="input px-2 py-1 text-xs" disabled={busy} />
             </label>
@@ -755,7 +755,7 @@ function DoneStep({ plan, onHome }) {
       <div className="w-full max-w-lg text-center">
         <div className="mb-4 text-5xl">🎉</div>
         <h2 className="text-2xl font-bold">Your content calendar is ready</h2>
-        <p className="mx-auto mt-2 max-w-sm text-slate-500 dark:text-slate-400">
+        <p className="mx-auto mt-2 max-w-sm text-muted">
           {scheduled} post{scheduled === 1 ? '' : 's'} approved and scheduled. AutoSocial AI will publish them at the recommended times.
         </p>
         <div className="mt-6 grid grid-cols-3 gap-3">
@@ -806,7 +806,7 @@ function SettingsModal({ initial, onClose, onSaved }) {
           <h2 className="text-lg font-bold">Planner Settings</h2>
           <button onClick={onClose} className="btn btn-ghost btn-sm ml-auto">✕</button>
         </div>
-        <p className="mb-4 text-sm text-slate-500 dark:text-slate-400">
+        <p className="mb-4 text-sm text-muted">
           These defaults power Quick Generate and pre-fill the wizard.
         </p>
 
@@ -814,13 +814,13 @@ function SettingsModal({ initial, onClose, onSaved }) {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="label">Default period</label>
-              <select className="input" value={form.default_duration_days} onChange={(e) => set({ default_duration_days: Number(e.target.value) })}>
+              <select className="select" value={form.default_duration_days} onChange={(e) => set({ default_duration_days: Number(e.target.value) })}>
                 {PLANNER_DURATIONS.map((d) => <option key={d.value} value={d.value}>{d.label}</option>)}
               </select>
             </div>
             <div>
               <label className="label">Default frequency</label>
-              <select className="input" value={form.default_frequency} onChange={(e) => set({ default_frequency: e.target.value })}>
+              <select className="select" value={form.default_frequency} onChange={(e) => set({ default_frequency: e.target.value })}>
                 {PLANNER_FREQUENCIES.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
               </select>
             </div>
@@ -828,7 +828,7 @@ function SettingsModal({ initial, onClose, onSaved }) {
 
           <div>
             <label className="label">Timezone</label>
-            <select className="input" value={form.timezone} onChange={(e) => set({ timezone: e.target.value })}>
+            <select className="select" value={form.timezone} onChange={(e) => set({ timezone: e.target.value })}>
               {PLANNER_TIMEZONES.map((t) => <option key={t} value={t}>{t}</option>)}
             </select>
           </div>
@@ -840,7 +840,7 @@ function SettingsModal({ initial, onClose, onSaved }) {
                 const on = form.default_platforms.includes(k)
                 return (
                   <button key={k} type="button" onClick={() => togglePlatform(k)}
-                    className={`badge border px-2.5 py-1 transition ${on ? 'border-indigo-500 bg-indigo-500/10 text-indigo-600 dark:text-indigo-300' : 'border-slate-200 text-slate-500 dark:border-white/10 dark:text-slate-300'}`}>
+                    className={`badge border px-2.5 py-1 transition ${on ? 'border-accent bg-accent-soft text-accent' : 'border-line text-muted'}`}>
                     {PLATFORMS[k].label}
                   </button>
                 )
@@ -854,15 +854,15 @@ function SettingsModal({ initial, onClose, onSaved }) {
           </div>
 
           {/* Auto Mode — OFF only for now */}
-          <div className="rounded-xl border border-slate-200 p-3 dark:border-white/10">
+          <div className="rounded-xl border border-line p-3">
             <div className="flex items-center gap-2">
               <span className="font-medium">Auto Mode</span>
-              <span className="rounded-full bg-indigo-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-indigo-500 dark:text-indigo-300">Coming soon</span>
-              <span className="ml-auto inline-flex h-6 w-11 items-center rounded-full bg-slate-300 px-0.5 dark:bg-white/10">
-                <span className="h-5 w-5 rounded-full bg-white shadow" />
+              <span className="rounded-full bg-accent-soft px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-accent">Coming soon</span>
+              <span className="ml-auto inline-flex h-6 w-11 items-center rounded-full bg-inset px-0.5">
+                <span className="h-5 w-5 rounded-full bg-surface shadow-sm" />
               </span>
             </div>
-            <p className="mt-1 text-xs text-slate-400">
+            <p className="mt-1 text-xs text-muted">
               When enabled later, AI will schedule and publish automatically. For now every plan waits for your approval.
             </p>
           </div>
@@ -883,7 +883,7 @@ function Section({ title, hint, children }) {
     <div className="card p-5">
       <div className="mb-3">
         <h3 className="font-semibold">{title}</h3>
-        {hint && <p className="text-xs text-slate-400">{hint}</p>}
+        {hint && <p className="text-xs text-muted">{hint}</p>}
       </div>
       {children}
     </div>
@@ -893,9 +893,9 @@ function Section({ title, hint, children }) {
 function SelectCard({ active, onClick, title, hint }) {
   return (
     <button type="button" onClick={onClick}
-      className={`rounded-xl border p-4 text-left transition ${active ? 'border-indigo-500 bg-indigo-500/10' : 'border-slate-200 hover:border-indigo-500/40 dark:border-white/10'}`}>
+      className={`rounded-xl border p-4 text-left transition ${active ? 'border-accent bg-accent-soft' : 'border-line hover:border-accent'}`}>
       <div className="font-semibold">{title}</div>
-      {hint && <div className="text-xs text-slate-400">{hint}</div>}
+      {hint && <div className="text-xs text-muted">{hint}</div>}
     </button>
   )
 }
@@ -903,7 +903,7 @@ function SelectCard({ active, onClick, title, hint }) {
 function SummaryRow({ label, value }) {
   return (
     <div className="flex items-start justify-between gap-3">
-      <dt className="text-slate-400">{label}</dt>
+      <dt className="text-muted">{label}</dt>
       <dd className="text-right font-medium">{value}</dd>
     </div>
   )
@@ -913,7 +913,7 @@ function StatTile({ value, label }) {
   return (
     <div className="card p-4 text-center">
       <div className="text-2xl font-black">{value}</div>
-      <div className="text-xs text-slate-400">{label}</div>
+      <div className="text-xs text-muted">{label}</div>
     </div>
   )
 }

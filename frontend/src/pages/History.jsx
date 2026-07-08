@@ -66,7 +66,7 @@ export default function History() {
       <div className="card overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm">
-            <thead className="border-b border-slate-200 text-xs uppercase text-slate-400 dark:border-white/10">
+            <thead className="border-b border-line text-xs uppercase text-muted">
               <tr>
                 <th className="px-4 py-3 font-medium">Content</th>
                 <th className="px-4 py-3 font-medium">Platform</th>
@@ -78,7 +78,7 @@ export default function History() {
             <tbody>
               {posts === null ? (
                 [0, 1, 2, 3].map((i) => (
-                  <tr key={i} className="border-b border-slate-100 dark:border-white/5">
+                  <tr key={i} className="border-b border-line">
                     <td colSpan={5} className="px-4 py-3">
                       <div className="skeleton h-6 w-full" />
                     </td>
@@ -86,13 +86,13 @@ export default function History() {
                 ))
               ) : posts.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-4 py-12 text-center text-slate-500">
+                  <td colSpan={5} className="px-4 py-12 text-center text-muted">
                     No posts found.
                   </td>
                 </tr>
               ) : (
                 posts.map((p) => (
-                  <tr key={p.id} className="border-b border-slate-100 last:border-0 dark:border-white/5">
+                  <tr key={p.id} className="border-b border-line last:border-0">
                     <td className="max-w-xs px-4 py-3">
                       <div className="truncate">{p.content}</div>
                       {p.error && <div className="truncate text-xs text-rose-400">{p.error}</div>}
@@ -100,13 +100,13 @@ export default function History() {
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
                         <PlatformIcon platform={p.platform} size={22} />
-                        <span className="hidden text-xs text-slate-400 sm:inline">
+                        <span className="hidden text-xs text-muted sm:inline">
                           {PLATFORMS[p.platform]?.label}
                         </span>
                       </div>
                     </td>
                     <td className="px-4 py-3"><StatusBadge status={p.status} /></td>
-                    <td className="px-4 py-3 text-xs text-slate-400">
+                    <td className="px-4 py-3 text-xs text-muted">
                       {p.status === 'scheduled'
                         ? formatDateTime(p.scheduled_time)
                         : p.status === 'published'

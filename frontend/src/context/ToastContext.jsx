@@ -34,9 +34,9 @@ export function ToastProvider({ children }) {
 }
 
 const TONE = {
-  success: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200',
-  error: 'border-rose-500/30 bg-rose-500/10 text-rose-200',
-  info: 'border-indigo-500/30 bg-indigo-500/10 text-indigo-200',
+  success: 'border-emerald-500/40 text-emerald-600 dark:text-emerald-300',
+  error: 'border-rose-500/40 text-rose-600 dark:text-rose-300',
+  info: 'border-accent-line text-accent',
 }
 
 function Toaster({ toasts, onClose }) {
@@ -46,7 +46,7 @@ function Toaster({ toasts, onClose }) {
         <div
           key={t.id}
           onClick={() => onClose(t.id)}
-          className={`card cursor-pointer border px-4 py-3 text-sm shadow-lg ${TONE[t.type]}`}
+          className={`card cursor-pointer border px-4 py-3 text-sm text-body ${TONE[t.type]}`}
         >
           {t.message}
         </div>

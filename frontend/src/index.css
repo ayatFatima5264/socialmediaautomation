@@ -1,10 +1,85 @@
 @import 'tailwindcss';
 
-/* Class-based dark mode (we default to dark via <html class="dark">). */
+/* Class-based dark mode — <html class="dark"> is toggled by ThemeContext. */
 @custom-variant dark (&:where(.dark, .dark *));
 
-@theme {
+/* ------------------------------------------------------------------ *
+ * Design tokens — a single mint/emerald + plum system, theme-aware.
+ * Values flip between light and dark; everything else references the
+ * semantic --color-* utilities so the whole app re-skins from here.
+ * ------------------------------------------------------------------ */
+:root {
+  color-scheme: light;
+
+  --page: #f1f8f4;
+  --sidebar: #f1f8f4;
+  --surface: #ffffff;
+  --inset: #f1f8f4;
+  --line: #d0e9dc;
+
+  --accent: #1f8a5b;
+  --accent-hover: #136b44;
+  --accent-contrast: #ffffff;
+  --accent-soft: rgba(31, 138, 91, 0.12);
+  --accent-line: rgba(31, 138, 91, 0.45);
+
+  --text: #16281f;
+  --muted: #4c7862;
+
+  --field: #ffffff;
+  --field-border: rgba(31, 138, 91, 0.4);
+
+  --shadow: 0 1px 2px rgba(22, 40, 31, 0.06), 0 1px 3px rgba(22, 40, 31, 0.05);
+  --shadow-pop: 0 8px 24px rgba(22, 40, 31, 0.12);
+}
+
+.dark {
+  color-scheme: dark;
+
+  --page: #2e1b2a;
+  --sidebar: #241521;
+  --surface: #382334;
+  --inset: #241521;
+  --line: #4a3546;
+
+  --accent: #4fddb0;
+  --accent-hover: #6fe8c1;
+  --accent-contrast: #16281f;
+  --accent-soft: rgba(79, 221, 176, 0.16);
+  --accent-line: rgba(79, 221, 176, 0.45);
+
+  --text: #eaf5f0;
+  --muted: #b9ddd0;
+
+  --field: #241521;
+  --field-border: rgba(79, 221, 176, 0.38);
+
+  --shadow: none;
+  --shadow-pop: 0 12px 32px rgba(0, 0, 0, 0.45);
+}
+
+/* Register the tokens as Tailwind color utilities (bg-*, text-*, border-*,
+ * ring-*). `inline` keeps the var() reference so they stay theme-aware. */
+@theme inline {
   --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+
+  --color-page: var(--page);
+  --color-sidebar: var(--sidebar);
+  --color-surface: var(--surface);
+  --color-inset: var(--inset);
+  --color-line: var(--line);
+
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-contrast: var(--accent-contrast);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-line: var(--accent-line);
+
+  --color-body: var(--text);
+  --color-muted: var(--muted);
+
+  --color-field: var(--field);
+  --color-field-border: var(--field-border);
 }
 
 html,
@@ -14,74 +89,172 @@ body,
 }
 
 body {
-  @apply bg-slate-100 text-slate-900 antialiased dark:bg-slate-950 dark:text-slate-100;
+  background-color: var(--page);
+  color: var(--text);
   font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
-/* Subtle radial brand glow behind the dark UI. */
+/* No page can scroll sideways — the shell is fully fluid. */
+html,
+body {
+  overflow-x: hidden;
+}
+
+/* Flat, clean page background (no gradients, per the design brief). */
 .app-bg {
-  background-image: radial-gradient(
-      60rem 60rem at 110% -10%,
-      rgba(99, 102, 241, 0.12),
-      transparent 60%
-    ),
-    radial-gradient(
-      50rem 50rem at -10% 110%,
-      rgba(139, 92, 246, 0.1),
-      transparent 55%
-    );
+  background-color: var(--page);
 }
 
 @layer components {
+  /* ---- Surfaces --------------------------------------------------- */
   .card {
-    @apply rounded-2xl border border-slate-200 bg-white shadow-sm
-      dark:border-white/10 dark:bg-slate-900/60 dark:shadow-xl dark:shadow-black/20 dark:backdrop-blur-xl;
+    border-radius: 12px;
+    border: 1px solid var(--line);
+    background-color: var(--surface);
+    box-shadow: var(--shadow);
   }
 
+  /* A quiet inset panel that sits inside a card (rows, wells, previews). */
+  .panel {
+    border-radius: 10px;
+    border: 1px solid var(--line);
+    background-color: var(--inset);
+  }
+
+  /* ---- Buttons ---------------------------------------------------- */
   .btn {
-    @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm
-      font-semibold transition-all duration-150 focus:outline-none
+    @apply inline-flex items-center justify-center gap-2 rounded-[10px] px-4 py-2
+      text-sm font-semibold transition-colors duration-150
+      focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2
       disabled:cursor-not-allowed disabled:opacity-50;
+    --tw-ring-color: var(--accent);
+    --tw-ring-offset-color: var(--page);
   }
   .btn-primary {
-    @apply bg-gradient-to-r from-indigo-500 to-violet-500 text-white
-      shadow-lg shadow-indigo-500/20 hover:-translate-y-px hover:shadow-indigo-500/40 hover:brightness-110;
+    background-color: var(--accent);
+    color: var(--accent-contrast);
   }
+  .btn-primary:hover:not(:disabled) {
+    background-color: var(--accent-hover);
+  }
+  .btn-secondary {
+    border: 1px solid var(--line);
+    background-color: var(--surface);
+    color: var(--text);
+  }
+  .btn-secondary:hover:not(:disabled) {
+    background-color: var(--inset);
+    border-color: var(--accent-line);
+  }
+  /* Alias kept for existing markup that used .btn-ghost. */
   .btn-ghost {
-    @apply border border-slate-300 text-slate-700 hover:bg-slate-200
-      dark:border-white/10 dark:text-slate-200 dark:hover:bg-white/10;
+    border: 1px solid var(--line);
+    background-color: transparent;
+    color: var(--text);
+  }
+  .btn-ghost:hover:not(:disabled) {
+    background-color: var(--inset);
+    border-color: var(--accent-line);
   }
   .btn-danger {
-    @apply border border-rose-500/30 bg-rose-500/10 text-rose-600 hover:bg-rose-500/20
-      dark:text-rose-300;
+    @apply border border-rose-400/40 bg-rose-500/10 text-rose-600 hover:bg-rose-500/20 dark:text-rose-300;
   }
   .btn-sm {
-    @apply px-2.5 py-1 text-xs;
+    @apply gap-1.5 rounded-lg px-3 py-1.5 text-xs;
   }
 
-  .input {
-    @apply w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none
-      transition placeholder:text-slate-400 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/30
-      dark:border-white/10 dark:bg-slate-800/60 dark:text-slate-100;
+  /* ---- Form controls --------------------------------------------- */
+  .input,
+  .select {
+    @apply w-full rounded-[10px] px-3 py-2 text-sm outline-none transition;
+    border: 1.5px solid var(--field-border);
+    background-color: var(--field);
+    color: var(--text);
+  }
+  .input::placeholder {
+    color: var(--muted);
+    opacity: 0.8;
+  }
+  .input:focus,
+  .select:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-soft);
+  }
+  /* Native select: theme-aware chevron + solid option list via color-scheme. */
+  .select {
+    -webkit-appearance: none;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%234c7862' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.65rem center;
+    padding-right: 2.25rem;
+  }
+  .dark .select {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23b9ddd0' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
   }
   .label {
-    @apply mb-1.5 block text-sm font-medium text-slate-600 dark:text-slate-300;
+    @apply mb-1.5 block text-sm font-medium;
+    color: var(--text);
   }
 
+  /* ---- Badges ----------------------------------------------------- */
   .badge {
     @apply inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold;
   }
+  .badge-accent {
+    background-color: var(--accent-soft);
+    color: var(--accent);
+    border: 1px solid var(--accent-line);
+  }
 
+  /* ---- Sidebar navigation ---------------------------------------- */
   .nav-link {
-    @apply flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium text-slate-500
-      transition hover:bg-slate-200/70 hover:text-slate-900
-      dark:text-slate-400 dark:hover:bg-white/5 dark:hover:text-white;
+    @apply flex items-center gap-3 rounded-[10px] px-3 py-2 text-sm font-medium transition-colors;
+    color: var(--muted);
+  }
+  .nav-link:hover {
+    background-color: var(--inset);
+    color: var(--text);
   }
   .nav-link-active {
-    @apply bg-indigo-500/10 text-indigo-600 dark:bg-indigo-500/15 dark:text-indigo-300;
+    background-color: var(--accent-soft);
+    color: var(--accent);
+    font-weight: 600;
+  }
+  .nav-link-active:hover {
+    background-color: var(--accent-soft);
+    color: var(--accent);
+  }
+
+  /* ---- Pop-over menus (avatar menu, custom dropdowns) ------------- */
+  .menu {
+    border-radius: 12px;
+    border: 1px solid var(--line);
+    background-color: var(--surface);
+    box-shadow: var(--shadow-pop);
+    padding: 0.25rem;
+  }
+  .menu-item {
+    @apply flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm font-medium transition-colors;
+    color: var(--text);
+  }
+  .menu-item:hover {
+    background-color: var(--inset);
   }
 
   .skeleton {
-    @apply animate-pulse rounded-lg bg-slate-200 dark:bg-white/10;
+    @apply animate-pulse rounded-lg;
+    background-color: var(--inset);
   }
+}
+
+/* Accent-colored text link helper. */
+.link-accent {
+  color: var(--accent);
+}
+.link-accent:hover {
+  color: var(--accent-hover);
+  text-decoration: underline;
 }

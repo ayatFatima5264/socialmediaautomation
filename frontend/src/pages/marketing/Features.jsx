@@ -3,6 +3,13 @@ import Seo from '../../components/Seo.jsx'
 
 const FEATURES = [
   {
+    icon: '🤖',
+    title: 'AI Planner',
+    tag: 'New',
+    body: 'Generate and schedule an entire 7, 15, or 30-day content plan from a single request. AI writes platform-tailored captions across content types — promotional, educational, engagement, announcements, and more — organizes them into a content calendar, and automatically schedules every post across all six connected platforms. Review, edit, regenerate, or delete any post before it publishes.',
+    benefit: 'A full month of scheduled content in minutes, not days.',
+  },
+  {
     icon: '✍️',
     title: 'AI Post Generator',
     body: 'Start from a single idea and get complete posts written for each platform — a strong hook, a clear message, and a call to action. Instead of staring at a blank page, you start from a solid draft and edit from there.',
@@ -96,21 +103,26 @@ export default function Features() {
             {FEATURES.map((f) => (
               <div key={f.title} className="card p-6">
                 <div className="flex items-start gap-4">
-                  <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-indigo-500/15 to-violet-500/15 text-xl">
+                  <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-accent-soft text-xl">
                     {f.icon}
                   </div>
                   <div>
                     <div className="flex flex-wrap items-center gap-2">
                       <h3 className="text-lg font-bold">{f.title}</h3>
+                      {f.tag && (
+                        <span className="rounded-full bg-accent px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-accent-contrast">
+                          {f.tag}
+                        </span>
+                      )}
                       {f.comingSoon && (
-                        <span className="rounded-full bg-indigo-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-indigo-500 dark:text-indigo-300">
+                        <span className="rounded-full bg-accent-soft px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-accent">
                           Coming Soon
                         </span>
                       )}
                     </div>
-                    <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">{f.body}</p>
-                    <p className="mt-3 flex items-start gap-2 text-sm font-medium text-slate-700 dark:text-slate-200">
-                      <span className="text-indigo-500 dark:text-indigo-400">→</span>
+                    <p className="mt-2 text-sm text-muted">{f.body}</p>
+                    <p className="mt-3 flex items-start gap-2 text-sm font-medium text-body">
+                      <span className="text-accent">→</span>
                       {f.benefit}
                     </p>
                   </div>

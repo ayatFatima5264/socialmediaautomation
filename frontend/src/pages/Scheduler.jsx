@@ -88,7 +88,7 @@ export default function Scheduler() {
             </div>
           </div>
 
-          <div className="grid grid-cols-7 gap-1 text-center text-xs text-slate-400">
+          <div className="grid grid-cols-7 gap-1 text-center text-xs text-muted">
             {WEEKDAYS.map((w) => (
               <div key={w} className="py-1 font-medium">{w}</div>
             ))}
@@ -102,13 +102,13 @@ export default function Scheduler() {
                   key={i}
                   className={`min-h-20 rounded-lg border p-1 text-left ${
                     d
-                      ? 'border-slate-200 dark:border-white/5'
+                      ? 'border-line'
                       : 'border-transparent'
-                  } ${isToday(d) ? 'ring-1 ring-indigo-500' : ''}`}
+                  } ${isToday(d) ? 'ring-1 ring-accent' : ''}`}
                 >
                   {d && (
                     <>
-                      <div className="px-1 text-xs text-slate-400">{d}</div>
+                      <div className="px-1 text-xs text-muted">{d}</div>
                       <div className="mt-0.5 space-y-0.5">
                         {dayPosts.slice(0, 3).map((p) => (
                           <div
@@ -121,7 +121,7 @@ export default function Scheduler() {
                           </div>
                         ))}
                         {dayPosts.length > 3 && (
-                          <div className="px-1 text-[10px] text-slate-500">
+                          <div className="px-1 text-[10px] text-muted">
                             +{dayPosts.length - 3} more
                           </div>
                         )}
@@ -138,19 +138,19 @@ export default function Scheduler() {
         <div className="card h-fit p-5">
           <h2 className="mb-4 font-semibold">Pending ({scheduled.length})</h2>
           {scheduled.length === 0 ? (
-            <p className="py-6 text-center text-sm text-slate-500">No scheduled posts.</p>
+            <p className="py-6 text-center text-sm text-muted">No scheduled posts.</p>
           ) : (
             <ul className="space-y-3">
               {scheduled
                 .slice()
                 .sort((a, b) => parseServerDate(a.scheduled_time) - parseServerDate(b.scheduled_time))
                 .map((p) => (
-                  <li key={p.id} className="rounded-xl border border-slate-200 p-3 dark:border-white/10">
+                  <li key={p.id} className="rounded-xl border border-line p-3">
                     <div className="flex items-center gap-2">
                       <PlatformIcon platform={p.platform} size={24} />
                       <span className="text-xs text-amber-400">{formatDateTime(p.scheduled_time)}</span>
                     </div>
-                    <p className="mt-2 line-clamp-2 text-sm text-slate-300">{p.content}</p>
+                    <p className="mt-2 line-clamp-2 text-sm text-body">{p.content}</p>
                     <div className="mt-2 flex gap-2">
                       <button className="btn btn-primary btn-sm" onClick={() => publishNow(p.id)}>
                         Publish now

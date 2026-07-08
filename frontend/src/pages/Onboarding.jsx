@@ -74,15 +74,15 @@ export default function Onboarding() {
     return (
       <Shell>
         <div className="text-center">
-          <div className="mx-auto mb-5 grid h-16 w-16 place-items-center rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-500 text-3xl">
+          <div className="mx-auto mb-5 grid h-16 w-16 place-items-center rounded-2xl bg-accent text-accent-contrast text-3xl">
             ✦
           </div>
           <h1 className="text-2xl font-bold">Welcome to AutoSocial AI</h1>
-          <p className="mx-auto mt-3 max-w-md text-slate-500 dark:text-slate-400">
+          <p className="mx-auto mt-3 max-w-md text-muted">
             Let's personalize your AI experience so we can generate content that
             better matches your business.
           </p>
-          <p className="mt-2 text-sm text-slate-400">This setup takes less than 2 minutes.</p>
+          <p className="mt-2 text-sm text-muted">This setup takes less than 2 minutes.</p>
           <button onClick={() => setStep(1)} className="btn btn-primary mt-8 w-full sm:w-auto sm:px-10">
             Get Started
           </button>
@@ -98,7 +98,7 @@ export default function Onboarding() {
         <div className="text-center">
           <div className="mb-4 text-5xl">🎉</div>
           <h1 className="text-2xl font-bold">You're all set!</h1>
-          <p className="mx-auto mt-3 max-w-md text-slate-500 dark:text-slate-400">
+          <p className="mx-auto mt-3 max-w-md text-muted">
             Your business profile has been saved. AutoSocial AI will use this
             information to generate more personalized content.
           </p>
@@ -127,7 +127,7 @@ export default function Onboarding() {
           </Field>
           <Field label="Industry">
             <select
-              className="input"
+              className="select"
               value={form.industry}
               onChange={(e) => set({ industry: e.target.value })}
             >
@@ -223,7 +223,7 @@ export default function Onboarding() {
     <Shell>
       <ProgressBar step={step} total={TOTAL_QUESTION_STEPS} />
       <h2 className="mb-1 text-xl font-bold">{current.title}</h2>
-      <p className="mb-5 text-sm text-slate-400">
+      <p className="mb-5 text-sm text-muted">
         Step {step} of {TOTAL_QUESTION_STEPS}
       </p>
 
@@ -263,9 +263,9 @@ function Shell({ children }) {
 function ProgressBar({ step, total }) {
   const pct = Math.round((step / total) * 100)
   return (
-    <div className="mb-6 h-1.5 w-full overflow-hidden rounded-full bg-slate-200 dark:bg-white/10">
+    <div className="mb-6 h-1.5 w-full overflow-hidden rounded-full bg-inset">
       <div
-        className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-violet-500 transition-all duration-300"
+        className="h-full rounded-full bg-accent transition-all duration-300"
         style={{ width: `${pct}%` }}
       />
     </div>
@@ -277,7 +277,7 @@ function Field({ label, hint, children }) {
     <div>
       <label className="label mb-2 flex items-center justify-between">
         <span>{label}</span>
-        {hint && <span className="text-xs font-normal text-slate-400">{hint}</span>}
+        {hint && <span className="text-xs font-normal text-muted">{hint}</span>}
       </label>
       {children}
     </div>

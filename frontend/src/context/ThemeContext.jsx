@@ -4,7 +4,7 @@ const ThemeContext = createContext(null)
 const KEY = 'ss_theme'
 
 export function ThemeProvider({ children }) {
-  const [theme, setTheme] = useState(() => localStorage.getItem(KEY) || 'dark')
+  const [theme, setTheme] = useState(() => localStorage.getItem(KEY) || 'light')
 
   useEffect(() => {
     const root = document.documentElement

@@ -13,6 +13,7 @@ const PLANS = [
     highlight: false,
     features: [
       '30 AI generations / month',
+      'AI Planner — 7-day plans',
       '1 connected account',
       'AI captions & hashtags',
       'Basic scheduling',
@@ -29,6 +30,7 @@ const PLANS = [
     highlight: true,
     features: [
       'Unlimited AI generations',
+      'AI Planner — 7, 15 & 30-day plans',
       'Up to 5 connected accounts',
       'AI images & carousels',
       'Calendar & smart scheduling',
@@ -75,6 +77,7 @@ const PLANS = [
 // Feature comparison matrix. Values: true / false / string.
 const COMPARISON = [
   { label: 'AI generations', free: '30 / mo', pro: 'Unlimited', business: 'Unlimited', enterprise: 'Unlimited' },
+  { label: 'AI Planner (7 / 15 / 30-day)', free: '7-day', pro: true, business: true, enterprise: true },
   { label: 'Connected accounts', free: '1', pro: '5', business: '20', enterprise: 'Unlimited' },
   { label: 'AI captions & hashtags', free: true, pro: true, business: true, enterprise: true },
   { label: 'AI images & carousels', free: false, pro: true, business: true, enterprise: true },
@@ -95,9 +98,9 @@ const FAQ = [
 ]
 
 function Cell({ value }) {
-  if (value === true) return <span className="text-indigo-500 dark:text-indigo-400">✓</span>
-  if (value === false) return <span className="text-slate-300 dark:text-slate-600">—</span>
-  return <span className="text-slate-600 dark:text-slate-300">{value}</span>
+  if (value === true) return <span className="text-accent">✓</span>
+  if (value === false) return <span className="text-muted">—</span>
+  return <span className="text-body">{value}</span>
 }
 
 export default function Pricing() {
@@ -121,40 +124,42 @@ export default function Pricing() {
               <div
                 key={plan.name}
                 className={`card relative flex flex-col p-7 ${
-                  plan.highlight ? 'ring-2 ring-indigo-500' : ''
+                  plan.highlight
+                    ? 'border-2 border-accent ring-4 ring-accent-soft lg:-translate-y-2'
+                    : ''
                 }`}
               >
                 {plan.highlight && (
-                  <span className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-gradient-to-r from-indigo-500 to-violet-500 px-3 py-1 text-xs font-semibold text-white">
+                  <span className="absolute -top-3.5 left-1/2 -translate-x-1/2 rounded-full bg-accent px-4 py-1.5 text-xs font-bold uppercase tracking-wide text-accent-contrast">
                     Most Popular
                   </span>
                 )}
-                <div className="text-sm font-semibold text-slate-500 dark:text-slate-400">
+                <div className={`text-sm font-semibold ${plan.highlight ? 'text-accent' : 'text-muted'}`}>
                   {plan.name}
                 </div>
                 <div className="mt-2 flex items-baseline gap-1">
                   <span className="text-4xl font-black">{plan.price}</span>
-                  <span className="text-slate-400">{plan.cadence}</span>
+                  <span className="text-muted">{plan.cadence}</span>
                 </div>
-                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{plan.tagline}</p>
+                <p className="mt-1 text-sm text-muted">{plan.tagline}</p>
                 <Link
                   to={plan.to}
-                  className={`btn mt-6 w-full ${plan.highlight ? 'btn-primary' : 'btn-ghost'}`}
+                  className={`btn mt-6 w-full ${plan.highlight ? 'btn-primary' : 'btn-secondary'}`}
                 >
                   {plan.cta}
                 </Link>
                 <ul className="mt-6 space-y-3 text-sm">
                   {plan.features.map((f) => (
                     <li key={f} className="flex items-start gap-2">
-                      <span className="mt-0.5 text-indigo-500 dark:text-indigo-400">✓</span>
-                      <span className="text-slate-600 dark:text-slate-300">{f}</span>
+                      <span className="mt-0.5 text-accent">✓</span>
+                      <span className="text-body">{f}</span>
                     </li>
                   ))}
                 </ul>
               </div>
             ))}
           </div>
-          <p className="mt-4 text-center text-xs text-slate-400">
+          <p className="mt-4 text-center text-xs text-muted">
             Prices shown are placeholders and billed monthly. Annual billing coming soon.
           </p>
         </Container>
@@ -167,7 +172,7 @@ export default function Pricing() {
           <div className="card overflow-x-auto">
             <table className="w-full min-w-[640px] text-left text-sm">
               <thead>
-                <tr className="border-b border-slate-200 dark:border-white/10">
+                <tr className="border-b border-line">
                   <th className="p-4 font-semibold">Features</th>
                   <th className="p-4 text-center font-semibold">Free</th>
                   <th className="p-4 text-center font-semibold">Pro</th>
@@ -177,8 +182,8 @@ export default function Pricing() {
               </thead>
               <tbody>
                 {COMPARISON.map((row) => (
-                  <tr key={row.label} className="border-b border-slate-100 last:border-0 dark:border-white/5">
-                    <td className="p-4 text-slate-600 dark:text-slate-300">{row.label}</td>
+                  <tr key={row.label} className="border-b border-line last:border-0">
+                    <td className="p-4 text-body">{row.label}</td>
                     <td className="p-4 text-center"><Cell value={row.free} /></td>
                     <td className="p-4 text-center"><Cell value={row.pro} /></td>
                     <td className="p-4 text-center"><Cell value={row.business} /></td>
@@ -200,9 +205,9 @@ export default function Pricing() {
               <details key={item.q} className="card group p-5 [&_summary::-webkit-details-marker]:hidden">
                 <summary className="flex cursor-pointer list-none items-center justify-between gap-4 font-semibold">
                   {item.q}
-                  <span className="text-indigo-500 transition group-open:rotate-45 dark:text-indigo-300">+</span>
+                  <span className="text-accent transition group-open:rotate-45">+</span>
                 </summary>
-                <p className="mt-3 text-sm text-slate-500 dark:text-slate-400">{item.a}</p>
+                <p className="mt-3 text-sm text-muted">{item.a}</p>
               </details>
             ))}
           </div>

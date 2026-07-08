@@ -23,8 +23,8 @@ export default function ChipSelect({ options, value, onChange, multi = false }) 
           onClick={() => toggle(opt)}
           className={`rounded-full border px-3.5 py-1.5 text-sm font-medium transition ${
             isOn(opt)
-              ? 'border-indigo-500 bg-indigo-500/15 text-indigo-600 dark:text-indigo-300'
-              : 'border-slate-300 text-slate-600 hover:border-indigo-400 dark:border-white/10 dark:text-slate-300'
+              ? 'border-accent bg-accent-soft text-accent'
+              : 'border-line text-muted hover:border-accent'
           }`}
         >
           {isOn(opt) && <span className="mr-1">✓</span>}

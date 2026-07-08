@@ -31,7 +31,7 @@ export default function ScheduleModal({ open, title = 'Schedule post', onClose, 
     >
       <div className="card w-full max-w-md p-5" onClick={(e) => e.stopPropagation()}>
         <h3 className="mb-1 text-lg font-bold">{title}</h3>
-        <p className="mb-4 text-sm text-slate-400">
+        <p className="mb-4 text-sm text-muted">
           Pick a date & time (your local timezone). The scheduler publishes it automatically.
         </p>
         <label className="label">Publish at</label>

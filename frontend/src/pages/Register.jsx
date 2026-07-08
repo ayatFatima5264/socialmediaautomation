@@ -55,9 +55,9 @@ export default function Register() {
           {busy ? 'Creating…' : 'Create account'}
         </button>
       </form>
-      <p className="mt-6 text-center text-sm text-slate-400">
+      <p className="mt-6 text-center text-sm text-muted">
         Already have an account?{' '}
-        <Link to="/login" className="font-semibold text-indigo-400 hover:text-indigo-300">
+        <Link to="/login" className="font-semibold link-accent">
           Sign in
         </Link>
       </p>

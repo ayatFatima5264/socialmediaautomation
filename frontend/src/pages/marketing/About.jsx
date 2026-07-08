@@ -33,9 +33,9 @@ export default function About() {
           {/* Mission & Vision */}
           <div className="grid gap-6 md:grid-cols-2">
             <div className="card p-8">
-              <div className="text-sm font-semibold text-indigo-500 dark:text-indigo-300">Our mission</div>
+              <div className="text-sm font-semibold text-accent">Our mission</div>
               <h2 className="mt-2 text-2xl font-bold">Make consistent, on-brand content effortless</h2>
-              <p className="mt-4 text-slate-500 dark:text-slate-400">
+              <p className="mt-4 text-muted">
                 Great social media rewards those who show up every day — but creating
                 on-brand content across six platforms is exhausting. Our mission is to
                 take that weight off your plate, turning a single idea into a full set
@@ -43,9 +43,9 @@ export default function About() {
               </p>
             </div>
             <div className="card p-8">
-              <div className="text-sm font-semibold text-indigo-500 dark:text-indigo-300">Our vision</div>
+              <div className="text-sm font-semibold text-accent">Our vision</div>
               <h2 className="mt-2 text-2xl font-bold">A content team in every dashboard</h2>
-              <p className="mt-4 text-slate-500 dark:text-slate-400">
+              <p className="mt-4 text-muted">
                 We picture a world where any business — from a solo recruiter to a
                 growing agency — has the creative output of a full team, without the
                 overhead. AutoSocial AI is how we get there: one place to create,
@@ -57,14 +57,14 @@ export default function About() {
           {/* Why we built it */}
           <div className="mt-6 card p-8 md:p-10">
             <h2 className="text-2xl font-bold">Why we built AutoSocial AI</h2>
-            <p className="mt-4 text-slate-500 dark:text-slate-400">
+            <p className="mt-4 text-muted">
               We kept seeing the same story: talented teams with real expertise going
               quiet online — not because they had nothing to say, but because posting
               consistently took too many tools, too much time, and too much
               second-guessing. Writing in one app, designing in another, scheduling in
               a third, and still missing days.
             </p>
-            <p className="mt-4 text-slate-500 dark:text-slate-400">
+            <p className="mt-4 text-muted">
               AutoSocial AI brings all of it into one workflow. You bring the ideas and
               the judgment; the platform handles the drafting, the design, and the
               logistics. The result is simple — you stay visible and on-brand, while
@@ -80,7 +80,7 @@ export default function About() {
                 <div key={v.title} className="card p-6">
                   <div className="mb-3 text-2xl">{v.icon}</div>
                   <h3 className="font-bold">{v.title}</h3>
-                  <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">{v.body}</p>
+                  <p className="mt-2 text-sm text-muted">{v.body}</p>
                 </div>
               ))}
             </div>
@@ -97,7 +97,7 @@ export default function About() {
                       className={`badge ${
                         r.done
                           ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-300'
-                          : 'bg-indigo-500/15 text-indigo-600 dark:text-indigo-300'
+                          : 'bg-accent-soft text-accent'
                       }`}
                     >
                       {r.when}
@@ -105,7 +105,7 @@ export default function About() {
                   </div>
                   <div>
                     <h3 className="font-bold">{r.title}</h3>
-                    <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{r.body}</p>
+                    <p className="mt-1 text-sm text-muted">{r.body}</p>
                   </div>
                 </div>
               ))}
