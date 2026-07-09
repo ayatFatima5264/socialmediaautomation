@@ -29,6 +29,9 @@ def get_current_user(
 ) -> User:
     try:
         payload = decode_token(token)
+        # A password-reset token must never authenticate a request.
+        if payload.get("type") == "reset":
+            raise _credentials_exc
         subject = payload.get("sub")
         if subject is None:
             raise _credentials_exc
@@ -55,6 +58,8 @@ def get_current_user_optional(
         return None
     try:
         payload = decode_token(token)
+        if payload.get("type") == "reset":
+            return None
         subject = payload.get("sub")
         user_id = int(subject) if subject is not None else None
     except (jwt.PyJWTError, ValueError, TypeError):

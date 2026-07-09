@@ -18,12 +18,18 @@ class Settings(BaseSettings):
     )
 
     # ---- AI provider selection -------------------------------------------
-    # Which provider ai_service uses by default. Real free options:
-    #   "gemini" (Google, generous free tier) or "groq" (fast free Llama).
+    # Primary provider ai_service uses. Real free options:
+    #   "groq" (fast free Llama) or "gemini" (Google, generous free tier).
     # "mock" (offline, no key) is still available but must be selected
     # explicitly — a real provider with a missing key now errors clearly
     # instead of silently producing placeholder text.
-    ai_provider: str = "gemini"
+    ai_provider: str = "groq"
+
+    # Providers tried, in order, if the primary fails at request time (rate
+    # limit, timeout, bad response). Any without an API key are skipped. Set to
+    # [] to disable fallback. Parsed as a JSON list from the env var, e.g.
+    #   AI_FALLBACK_PROVIDERS=["gemini"]
+    ai_fallback_providers: list[str] = ["gemini"]
 
     # ---- Google Gemini (free tier) ---------------------------------------
     # Get a free key at https://aistudio.google.com/apikey
@@ -80,6 +86,20 @@ class Settings(BaseSettings):
     jwt_secret: str = "dev-secret-change-me"
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 60 * 24  # 1 day
+    # How long a password-reset link stays valid.
+    password_reset_expire_minutes: int = 30
+
+    # ---- Email (SMTP) — password reset & transactional mail --------------
+    # Set these to enable outbound email. Works with any SMTP provider
+    # (Gmail app password, SendGrid, Mailgun, Resend SMTP, Amazon SES, ...).
+    # Port 465 = implicit SSL; any other port (587) uses STARTTLS.
+    # When unset, reset emails are skipped and the reset link is logged instead
+    # (so the flow is still testable in development).
+    smtp_host: str | None = None
+    smtp_port: int = 587
+    smtp_user: str | None = None
+    smtp_password: str | None = None
+    smtp_from: str | None = None  # defaults to smtp_user; e.g. "AutoSocial AI <no-reply@…>"
 
     # ---- Scheduler -------------------------------------------------------
     # How often the background loop checks for due scheduled posts (seconds).

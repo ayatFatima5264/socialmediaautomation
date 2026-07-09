@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Link, Navigate, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
 import { useToast } from '../context/ToastContext.jsx'
-import { AuthShell } from './Login.jsx'
+import { AuthShell, PasswordField } from './Login.jsx'
 
 export default function Register() {
   const { user, register } = useAuth()
@@ -48,8 +48,8 @@ export default function Register() {
         </div>
         <div>
           <label className="label">Password</label>
-          <input className="input" type="password" required value={password}
-            onChange={(e) => setPassword(e.target.value)} placeholder="At least 8 characters" />
+          <PasswordField value={password} onChange={(e) => setPassword(e.target.value)}
+            placeholder="At least 8 characters" autoComplete="new-password" />
         </div>
         <button className="btn btn-primary w-full" disabled={busy}>
           {busy ? 'Creating…' : 'Create account'}

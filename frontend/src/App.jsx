@@ -3,6 +3,8 @@ import { useAuth } from './context/AuthContext.jsx'
 import Layout from './components/Layout.jsx'
 import Login from './pages/Login.jsx'
 import Register from './pages/Register.jsx'
+import ForgotPassword from './pages/ForgotPassword.jsx'
+import ResetPassword from './pages/ResetPassword.jsx'
 import Dashboard from './pages/Dashboard.jsx'
 import Generator from './pages/Generator.jsx'
 import CreatePost from './pages/CreatePost.jsx'
@@ -63,6 +65,8 @@ export default function App() {
       {/* ---- Existing authentication pages (reused as-is) --------------- */}
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Register />} />
+      <Route path="/forgot-password" element={<ForgotPassword />} />
+      <Route path="/reset-password" element={<ResetPassword />} />
 
       {/* ---- Onboarding wizard (first login, before the dashboard) ------ */}
       <Route
