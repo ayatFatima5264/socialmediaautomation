@@ -115,6 +115,7 @@ export default function PublicLayout() {
               <NavLink
                 key={item.to}
                 to={item.to}
+                end={item.end}
                 className={({ isActive }) => `nav-link ${isActive ? 'nav-link-active' : ''}`}
               >
                 {item.label}
@@ -147,6 +148,7 @@ export default function PublicLayout() {
                 <NavLink
                   key={item.to}
                   to={item.to}
+                  end={item.end}
                   onClick={closeMenu}
                   className={({ isActive }) => `nav-link ${isActive ? 'nav-link-active' : ''}`}
                 >

@@ -34,7 +34,10 @@ export const SITE = {
 }
 
 // Marketing top-navigation (used by PublicLayout).
+// `end: true` makes the link active only on an exact path match — needed for
+// Home ("/") so it isn't flagged active on every marketing route.
 export const MARKETING_NAV = [
+  { to: '/', label: 'Home', end: true },
   { to: '/features', label: 'Features' },
   { to: '/pricing', label: 'Pricing' },
   { to: '/about', label: 'About' },
