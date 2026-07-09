@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api, ApiError } from '../lib/api'
+import { loadFirstAvailable } from '../lib/imageLoader'
 import { useToast } from '../context/ToastContext.jsx'
 import ChipSelect from '../components/ChipSelect.jsx'
 import { PLATFORMS, PLATFORM_KEYS } from '../lib/constants'
@@ -408,6 +409,7 @@ function StrategyStep({ plan, setPlan, onBack, onGenerated }) {
   const toast = useToast()
   const [busy, setBusy] = useState(false)
   const [regenId, setRegenId] = useState(null)
+  const [withImages, setWithImages] = useState(true)
 
   const saveTopics = async (topics) => {
     try {
@@ -441,7 +443,7 @@ function StrategyStep({ plan, setPlan, onBack, onGenerated }) {
   async function generate() {
     setBusy(true)
     try {
-      const p = await api.generatePlan(plan.id)
+      const p = await api.generatePlan(plan.id, withImages)
       onGenerated(p)
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : 'Could not start generation')
@@ -496,8 +498,18 @@ function StrategyStep({ plan, setPlan, onBack, onGenerated }) {
         ))}
       </div>
 
-      <div className="mt-6 flex items-center gap-2">
+      <div className="mt-6 flex flex-wrap items-center gap-3">
         <button onClick={onBack} className="btn btn-ghost">← Previous</button>
+        <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-line px-3 py-2 text-sm">
+          <input
+            type="checkbox"
+            checked={withImages}
+            onChange={(e) => setWithImages(e.target.checked)}
+            className="h-4 w-4 accent-accent"
+          />
+          <span className="font-medium">🖼 Generate AI images</span>
+          <span className="text-xs text-muted">one visual per post</span>
+        </label>
         <div className="ml-auto flex gap-2">
           <button onClick={generate} disabled={busy || !plan.topics.length} className="btn btn-primary px-6">
             {busy ? 'Starting…' : 'Generate posts →'}
@@ -663,8 +675,46 @@ function PostCard({ post, selected, onToggle, onChanged }) {
   const [editing, setEditing] = useState(false)
   const [content, setContent] = useState(post.content)
   const [busy, setBusy] = useState(false)
+  const [imgBusy, setImgBusy] = useState(false)
+  const [showStock, setShowStock] = useState(false)
   const p = PLATFORMS[post.platform] || { label: post.platform, color: '#64748b', initial: '?' }
   const approved = post.approval_status === 'approved'
+  const image = Array.isArray(post.media) ? post.media.find((m) => m?.type === 'image' || m?.url) : null
+
+  const genImage = async () => {
+    setImgBusy(true)
+    try {
+      await api.generatePlannerPostImage(post.id)
+      toast.success('AI image generated')
+      onChanged()
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'Could not generate image')
+    } finally { setImgBusy(false) }
+  }
+  const attachStock = async (item) => {
+    setImgBusy(true)
+    try {
+      await api.updatePlannerPost(post.id, {
+        media: [{
+          type: 'image', source: 'stock', provider: item.source,
+          url: item.url, thumb: item.thumb, credit: item.credit, link: item.link,
+          fallbacks: [],
+        }],
+      })
+      setShowStock(false)
+      toast.success('Stock photo attached')
+      onChanged()
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'Could not attach photo')
+    } finally { setImgBusy(false) }
+  }
+  const removeImage = async () => {
+    setImgBusy(true)
+    try {
+      await api.updatePlannerPost(post.id, { media: [] })
+      onChanged()
+    } catch { toast.error('Could not remove image') } finally { setImgBusy(false) }
+  }
 
   const save = async () => {
     setBusy(true)
@@ -720,6 +770,39 @@ function PostCard({ post, selected, onToggle, onChanged }) {
             </div>
           )}
 
+          {/* Attached visual (AI-generated or stock) */}
+          {image && (
+            <div className="mt-3">
+              <div className="relative w-full max-w-xs overflow-hidden rounded-xl border border-line">
+                <PlannerImage
+                  candidates={[image.url, ...(image.fallbacks || [])]}
+                  alt={image.prompt || 'Post image'}
+                />
+                <span className="absolute left-2 top-2 rounded-full bg-black/60 px-2 py-0.5 text-[10px] font-semibold text-white">
+                  {image.source === 'stock' ? `Stock · ${image.provider || 'photo'}` : 'AI'}
+                </span>
+                <button
+                  type="button" onClick={removeImage} disabled={imgBusy}
+                  className="absolute right-2 top-2 grid h-6 w-6 place-items-center rounded-full bg-black/60 text-xs text-white hover:bg-rose-500"
+                  title="Remove image"
+                >✕</button>
+              </div>
+              {image.credit && (
+                <div className="mt-1 text-[11px] text-muted">Photo: {image.credit}</div>
+              )}
+            </div>
+          )}
+
+          {/* Image actions */}
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <button onClick={genImage} disabled={imgBusy || busy} className="btn btn-ghost btn-sm">
+              {imgBusy ? '…' : image ? '🖼 Regenerate image' : '🖼 Generate AI image'}
+            </button>
+            <button onClick={() => setShowStock(true)} disabled={imgBusy || busy} className="btn btn-ghost btn-sm">
+              🔎 Stock photo
+            </button>
+          </div>
+
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <label className="flex items-center gap-1.5 text-xs text-muted">
               🕑
@@ -741,6 +824,121 @@ function PostCard({ post, selected, onToggle, onChanged }) {
             </div>
           </div>
         </div>
+      </div>
+
+      {showStock && (
+        <StockPickerModal
+          defaultQuery={post.topic || post.content_type || ''}
+          busy={imgBusy}
+          onSelect={attachStock}
+          onClose={() => setShowStock(false)}
+        />
+      )}
+    </div>
+  )
+}
+
+// Loads the first working source from a candidate list, through the shared
+// concurrency gate — so a rate-limited primary AI source falls back automatically.
+function PlannerImage({ candidates, alt }) {
+  const [src, setSrc] = useState(null)
+  const [failed, setFailed] = useState(false)
+  const key = candidates.join('|')
+
+  useEffect(() => {
+    let cancelled = false
+    setSrc(null)
+    setFailed(false)
+    loadFirstAvailable(candidates).then((url) => {
+      if (cancelled) return
+      url ? setSrc(url) : setFailed(true)
+    })
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key])
+
+  if (failed) {
+    return (
+      <div className="grid aspect-square place-items-center bg-inset text-center text-xs text-muted">
+        Image unavailable
+      </div>
+    )
+  }
+  if (!src) return <div className="skeleton aspect-square w-full" />
+  return <img src={src} alt={alt} loading="lazy" className="aspect-square w-full object-cover" />
+}
+
+// Search & pick a free stock photo (Openverse by default) to attach to a post.
+function StockPickerModal({ defaultQuery, busy, onSelect, onClose }) {
+  const toast = useToast()
+  const [query, setQuery] = useState(defaultQuery || '')
+  const [results, setResults] = useState([])
+  const [loading, setLoading] = useState(false)
+  const [searched, setSearched] = useState(false)
+
+  const search = async () => {
+    const q = query.trim()
+    if (!q) return
+    setLoading(true)
+    setSearched(true)
+    try {
+      const data = await api.stockImages(q, 18)
+      setResults(data.results || [])
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'Search failed')
+      setResults([])
+    } finally { setLoading(false) }
+  }
+
+  // Auto-search once on open when we have a topic to seed the query.
+  useEffect(() => { if (defaultQuery?.trim()) search() }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4" onClick={onClose}>
+      <div className="card flex max-h-[85vh] w-full max-w-2xl flex-col p-6" onClick={(e) => e.stopPropagation()}>
+        <div className="mb-3 flex items-center">
+          <h2 className="text-lg font-bold">Choose a free stock photo</h2>
+          <button onClick={onClose} className="btn btn-ghost btn-sm ml-auto">✕</button>
+        </div>
+        <div className="flex gap-2">
+          <input
+            className="input flex-1" placeholder="Search photos… e.g. coffee, office, teamwork"
+            value={query} onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && search()} autoFocus
+          />
+          <button onClick={search} disabled={loading} className="btn btn-primary">
+            {loading ? 'Searching…' : 'Search'}
+          </button>
+        </div>
+
+        <div className="mt-4 flex-1 overflow-y-auto">
+          {loading ? (
+            <div className="grid grid-cols-3 gap-2">
+              {Array.from({ length: 9 }).map((_, i) => <div key={i} className="skeleton aspect-square w-full rounded-lg" />)}
+            </div>
+          ) : results.length ? (
+            <div className="grid grid-cols-3 gap-2">
+              {results.map((r, i) => (
+                <button
+                  key={`${r.url}-${i}`} type="button" disabled={busy}
+                  onClick={() => onSelect(r)}
+                  className="group relative overflow-hidden rounded-lg border border-line transition hover:border-accent disabled:opacity-50"
+                  title={r.credit ? `Photo: ${r.credit}` : 'Select'}
+                >
+                  <img src={r.thumb} alt={r.credit || 'stock'} loading="lazy" className="aspect-square w-full object-cover" />
+                  <span className="absolute inset-x-0 bottom-0 truncate bg-black/60 px-1.5 py-0.5 text-[10px] text-white opacity-0 transition group-hover:opacity-100">
+                    {r.credit}
+                  </span>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="grid h-40 place-items-center text-center text-sm text-muted">
+              {searched ? 'No photos found — try another search.' : 'Search for a photo to attach.'}
+            </div>
+          )}
+        </div>
+        <p className="mt-3 text-center text-xs text-muted">Free stock photos. Selecting one attaches it to this post.</p>
       </div>
     </div>
   )

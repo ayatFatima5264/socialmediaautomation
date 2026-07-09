@@ -86,6 +86,9 @@ export const api = {
   generate: (body) => request('/api/generate-post', { method: 'POST', body }),
   generateImage: (body) => request('/api/generate-image', { method: 'POST', body, auth: false }),
   generateImages: (body) => request('/api/generate-images', { method: 'POST', body, auth: false }),
+  // Free stock-photo search (Openverse by default; Pexels/Pixabay/Unsplash if keyed).
+  stockImages: (query, perPage = 12) =>
+    request(`/api/stock-images?query=${encodeURIComponent(query)}&per_page=${perPage}`, { auth: false }),
   generateArticle: (body) => request('/api/generate-article', { method: 'POST', body }),
 
   // AI text assist (in-place edits for the manual composer)
@@ -151,8 +154,11 @@ export const api = {
       method: 'POST',
       body: { topic_id: topicId },
     }),
-  generatePlan: (id) =>
-    request(`/api/planner/${id}/generate`, { method: 'POST', body: {} }),
+  generatePlan: (id, withImages = false) =>
+    request(`/api/planner/${id}/generate`, { method: 'POST', body: { with_images: !!withImages } }),
+  // Generate an AI image for one planner post (optional custom prompt).
+  generatePlannerPostImage: (postId, body = {}) =>
+    request(`/api/planner/posts/${postId}/image`, { method: 'POST', body }),
   updatePlannerPost: (postId, body) =>
     request(`/api/planner/posts/${postId}`, { method: 'PATCH', body }),
   regeneratePlannerPost: (postId) =>

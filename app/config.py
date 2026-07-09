@@ -50,6 +50,23 @@ class Settings(BaseSettings):
     image_model: str = "flux"
     image_width: int = 1080
     image_height: int = 1080
+    # Ordered AI image models tried by the fallback chain: if the primary
+    # (flux) errors/times-out/rate-limits, the next is attempted automatically.
+    # After these, non-AI photo hosts (LoremFlickr, Picsum) act as a final
+    # guaranteed fallback so the user always gets a visual.
+    image_fallback_models: list[str] = ["flux", "turbo"]
+
+    # ---- Free stock image search -----------------------------------------
+    # A free alternative to AI generation: search & pick a real stock photo.
+    # Default source is Openverse (keyless, CC-licensed, works out of the box).
+    # Add any one API key below and that higher-quality provider is used
+    # instead — no code change needed.
+    #   stock_provider="auto" picks the first configured key, else Openverse.
+    stock_provider: str = "auto"  # auto | openverse | pexels | pixabay | unsplash
+    openverse_base: str = "https://api.openverse.org"
+    pexels_api_key: str | None = None       # https://www.pexels.com/api/
+    pixabay_api_key: str | None = None       # https://pixabay.com/api/docs/
+    unsplash_access_key: str | None = None   # https://unsplash.com/developers
 
     # ---- Database --------------------------------------------------------
     # Production target is PostgreSQL, e.g.

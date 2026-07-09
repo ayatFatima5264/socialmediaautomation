@@ -27,6 +27,7 @@ from app.models.user import User
 from app.schemas.content_plan import (
     ApproveRequest,
     GenerateRequest,
+    PlannerImageRequest,
     PlannerPostRead,
     PlannerPostUpdate,
     PlannerSettingsRead,
@@ -39,8 +40,9 @@ from app.schemas.content_plan import (
 )
 from app.schemas.post import Platform, PostStatus
 from app.services import business_profile_service
+from app.services.image_service import ImageError, build_image_candidates, generate_with_fallback
 from app.services.planner import scheduling, signals, strategy
-from app.services.planner.runner import regenerate_post, run_generation
+from app.services.planner.runner import image_prompt_for, regenerate_post, run_generation
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/planner", tags=["planner"])
@@ -338,7 +340,8 @@ async def generate_plan(
     plan.status = "generating"
     plan.generated_posts = 0
     db.commit()
-    _spawn(run_generation(plan.id))
+    with_images = bool(_body and _body.with_images)
+    _spawn(run_generation(plan.id, with_images=with_images))
     return _plan_read(db, plan)
 
 
@@ -359,11 +362,52 @@ def update_planner_post(
         post.content = data.content
     if data.hashtags is not None:
         post.hashtags = data.hashtags
+    if data.media is not None:
+        # [] clears the image; a list attaches/replaces it (e.g. a stock photo).
+        post.media = data.media or None
     if data.scheduled_time is not None:
         sched = to_naive_utc(data.scheduled_time)
         if sched <= utcnow():
             raise HTTPException(status_code=422, detail="scheduled_time must be in the future")
         post.scheduled_time = sched
+    db.commit()
+    db.refresh(post)
+    return _post_read(post)
+
+
+@router.post("/posts/{post_id}/image", response_model=PlannerPostRead)
+async def generate_planner_post_image(
+    post_id: int,
+    body: PlannerImageRequest | None = None,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> PlannerPostRead:
+    """Generate an AI image for one planner post and attach it as media.
+
+    Uses the provider fallback chain (verified), so a failing primary provider
+    transparently falls back; only errors if every provider fails.
+    """
+    post = _owned_planner_post(db, post_id, user)
+    if post.status == PostStatus.published.value:
+        raise HTTPException(status_code=409, detail="Post already published")
+
+    prompt = (body.prompt.strip() if body and body.prompt else "") or image_prompt_for(
+        post.topic or post.content[:120], post.content_type
+    )
+    try:
+        url, provider = await generate_with_fallback(prompt, verify=True)
+    except ImageError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    fallbacks = [c for c in build_image_candidates(prompt) if c != url]
+    post.media = [{
+        "type": "image",
+        "source": "ai",
+        "provider": provider,
+        "prompt": prompt,
+        "url": url,
+        "fallbacks": fallbacks,
+    }]
     db.commit()
     db.refresh(post)
     return _post_read(post)

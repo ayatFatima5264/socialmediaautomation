@@ -34,6 +34,8 @@ from app.services.image_service import (
     build_image_candidates,
     compose_prompt,
     dimensions_for,
+    generate_with_fallback,
+    search_stock,
 )
 from app.services.image_service import generate as generate_image
 from app.services.providers import ProviderConfigError, ProviderError, available_providers
@@ -75,18 +77,64 @@ class GenerateImageRequest(BaseModel):
 
 class GenerateImageResponse(BaseModel):
     image_url: str
+    # Which provider produced the image (e.g. "pollinations-flux"). Also logged.
+    provider: str = "pollinations-flux"
+    # Ordered alternate sources the client can fall back to if `image_url` fails.
+    fallbacks: list[str] = []
 
 
 @router.post("/generate-image", response_model=GenerateImageResponse)
 async def generate_image_endpoint(req: GenerateImageRequest) -> GenerateImageResponse:
-    """Generate an AI image (Pollinations) and return its public URL."""
+    """Generate an AI image and return its public URL.
+
+    Uses the provider fallback chain: if the primary provider errors, times
+    out, is rate-limited or returns a non-image, the next provider is tried
+    automatically (verify=True), and the provider that succeeded is reported.
+    """
     try:
-        url = await generate_image(
+        url, provider = await generate_with_fallback(
             req.prompt, verify=req.verify, width=req.width, height=req.height
         )
     except ImageError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
-    return GenerateImageResponse(image_url=url)
+    # Remaining sources, so the client keeps a safety net even post-verify.
+    fallbacks = [
+        c
+        for c in build_image_candidates(req.prompt, width=req.width, height=req.height)
+        if c != url
+    ]
+    return GenerateImageResponse(image_url=url, provider=provider, fallbacks=fallbacks)
+
+
+# ---------------------------------------------------------------------------
+# Free stock-image search — an alternative to AI generation (Openverse by
+# default; Pexels/Pixabay/Unsplash when a key is configured).
+# ---------------------------------------------------------------------------
+class StockImage(BaseModel):
+    url: str
+    thumb: str
+    credit: str
+    source: str
+    link: str | None = None
+
+
+class StockImagesResponse(BaseModel):
+    provider: str
+    results: list[StockImage]
+
+
+@router.get("/stock-images", response_model=StockImagesResponse)
+async def stock_images_endpoint(query: str, per_page: int = 12) -> StockImagesResponse:
+    """Search a free stock-photo provider for `query`."""
+    if not query.strip():
+        raise HTTPException(status_code=422, detail="A search query is required.")
+    try:
+        provider, results = await search_stock(query, per_page=per_page)
+    except ImageError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return StockImagesResponse(
+        provider=provider, results=[StockImage(**r) for r in results]
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -322,4 +370,5 @@ def meta() -> dict:
         "aspect_ratios": list(ASPECT_RATIOS),
         "image_styles": list(IMAGE_STYLES),
         "image_qualities": list(IMAGE_QUALITIES),
+        "stock_search": True,
     }

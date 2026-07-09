@@ -67,10 +67,19 @@ class PlannerPostUpdate(BaseModel):
     content: str | None = Field(default=None, min_length=1, max_length=63206)
     hashtags: list[str] | None = None
     scheduled_time: datetime | None = None
+    # Attach / replace / clear the post's visuals (e.g. a chosen stock photo).
+    # Pass [] to remove the current image.
+    media: list | None = None
+
+
+class PlannerImageRequest(BaseModel):
+    """Generate an AI image for a single planner post."""
+    # Optional custom prompt; when omitted, one is derived from the post's topic.
+    prompt: str | None = Field(default=None, max_length=500)
 
 
 class GenerateRequest(BaseModel):
-    # Reserved for the AI Visuals step; text-only for now.
+    # When true, every generated post also gets an AI-generated image.
     with_images: bool = False
 
 

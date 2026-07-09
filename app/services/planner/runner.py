@@ -23,9 +23,34 @@ from app.models.post import Post
 from app.schemas.post import GeneratePostRequest, Platform, PostStatus, Tone
 from app.services import business_profile_service
 from app.services.ai_service import generate_posts
+from app.services.image_service import build_image_candidates, compose_prompt
 from app.services.planner.scheduling import schedule_time
 
 logger = logging.getLogger(__name__)
+
+
+def image_prompt_for(topic: str | None, content_type: str | None) -> str:
+    """Turn a planned topic into a styled image prompt."""
+    base = f"{(topic or '').strip()}. {content_type or 'social media'} visual, on-brand, professional"
+    return compose_prompt(base, style="realistic", prompt_enhancer=True)
+
+
+def build_post_media(topic: str | None, content_type: str | None, *, seed: int) -> list[dict]:
+    """A single AI-image media entry (with fallback sources) for a planner post.
+
+    Uses candidate URLs (no network) so bulk generation stays fast; the client
+    loader picks the first that renders, so a rate-limited primary still shows.
+    """
+    prompt = image_prompt_for(topic, content_type)
+    candidates = build_image_candidates(prompt, seed=seed)
+    return [{
+        "type": "image",
+        "source": "ai",
+        "provider": "pollinations-flux",
+        "prompt": prompt,
+        "url": candidates[0],
+        "fallbacks": candidates[1:],
+    }]
 
 # Map a planned content type to the closest generation tone.
 _TONE_BY_TYPE: dict[str, Tone] = {
@@ -61,8 +86,12 @@ def _avoid_instructions(used_hashtags: set[str]) -> str | None:
     )
 
 
-async def run_generation(plan_id: int) -> None:
-    """Generate + schedule every post for a plan. Safe to call as a background task."""
+async def run_generation(plan_id: int, with_images: bool = False) -> None:
+    """Generate + schedule every post for a plan. Safe to call as a background task.
+
+    When with_images is True, each post also gets an AI-generated image
+    (attached as `media`) so the whole calendar is visual, not text-only.
+    """
     db = SessionLocal()
     try:
         plan = db.get(ContentPlan, plan_id)
@@ -129,6 +158,13 @@ async def run_generation(plan_id: int) -> None:
                     platform=platform, local_date=local_date,
                     tzname=plan.timezone, slot=slot,
                 )
+                media = None
+                if with_images:
+                    # Distinct seed per post so images vary across the plan.
+                    seed = abs(hash((topic.get("topic"), platform.value))) % 1_000_000
+                    media = build_post_media(
+                        topic.get("topic"), topic.get("content_type"), seed=seed
+                    )
                 db.add(
                     Post(
                         user_id=plan.user_id,
@@ -141,6 +177,7 @@ async def run_generation(plan_id: int) -> None:
                         content_type=topic.get("content_type"),
                         topic=topic.get("topic"),
                         scheduled_time=sched,
+                        media=media,
                     )
                 )
                 used_hashtags.update(h.lower() for h in gp.hashtags)
