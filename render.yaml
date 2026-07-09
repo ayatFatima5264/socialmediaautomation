@@ -14,7 +14,7 @@ services:
     # Free web services sleep after ~15 min idle — the background scheduler
     # would stop and scheduled posts publish late. Use an always-on paid plan
     # for reliable auto-publishing. Keep to ONE instance (no distributed lock).
-    plan: starter
+    plan: free
     branch: main
     healthCheckPath: /
     autoDeploy: true
@@ -30,11 +30,14 @@ services:
       - key: ACCESS_TOKEN_EXPIRE_MINUTES
         value: "1440"
       # --- AI provider ------------------------------------------------------
+      # Groq is the primary; it falls back to Gemini if Groq errors/rate-limits.
       - key: AI_PROVIDER
-        value: gemini
-      - key: GEMINI_API_KEY
-        sync: false
+        value: groq
+      - key: AI_FALLBACK_PROVIDERS
+        value: '["gemini"]'
       - key: GROQ_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY
         sync: false
       # --- Scheduler --------------------------------------------------------
       - key: SCHEDULER_POLL_SECONDS
@@ -76,5 +79,5 @@ services:
 
 databases:
   - name: autosocial-db
-    plan: basic-256mb   # smallest paid tier; "free" Postgres expires after 90 days
+    plan: free          # free Postgres expires after 90 days; upgrade to basic-256mb later
     postgresMajorVersion: "16"
