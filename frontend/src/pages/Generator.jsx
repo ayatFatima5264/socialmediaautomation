@@ -788,6 +788,28 @@ export default function Generator() {
     }
   }
 
+  // Reset the whole input form (the "filters") back to defaults, so clearing
+  // generated content also clears the settings that produced it.
+  function resetInputs() {
+    setSourceType('prompt')
+    setSourceText('')
+    setSourceUrl('')
+    setTransform('rewrite')
+    setExtracted(null)
+    setImageData(null)
+    setImageNote('')
+    setActiveSource('')
+    setTopic('')
+    setTone('professional')
+    setAudience('')
+    setSelected(['instagram', 'facebook'])
+    setIncludeHashtags(true)
+    setVariants(false)
+    setContentType('post')
+    setImg({ ...DEFAULT_IMAGE_SETTINGS })
+    setOverrides({})
+  }
+
   function requestClearAll() {
     if (!drafts.length) return
     setConfirmModal({
@@ -800,8 +822,27 @@ export default function Generator() {
       onConfirm: () => {
         setDrafts([])
         setMeta(null)
+        resetInputs()
         setConfirmModal(null)
-        toast.success('Cleared all generated content')
+        toast.success('Cleared all generated content and filters')
+      },
+    })
+  }
+
+  function requestClearArticle() {
+    if (!article) return
+    setConfirmModal({
+      title: 'Discard Article?',
+      message:
+        'This will remove the generated article — title, cover, body, tags and unsaved changes. This action cannot be undone.',
+      confirmLabel: 'Yes, Clear Article',
+      cancelLabel: 'Cancel',
+      danger: true,
+      onConfirm: () => {
+        setArticle(null)
+        resetInputs()
+        setConfirmModal(null)
+        toast.success('Cleared the article and filters')
       },
     })
   }
@@ -1405,6 +1446,7 @@ export default function Generator() {
                 onRegenCover={regenerateCover}
                 onSave={saveArticleDraft}
                 onPublish={publishArticleLinkedIn}
+                onClear={requestClearArticle}
               />
             ) : (
               <div className="card grid place-items-center p-12 text-center text-muted">
@@ -1913,7 +1955,7 @@ function ConfirmModal({ modal, onCancel }) {
 }
 
 // LinkedIn Article editor — title, cover, rich body, tags, SEO, reading time.
-function ArticleEditor({ article, onChange, onRegenCover, onSave, onPublish }) {
+function ArticleEditor({ article, onChange, onRegenCover, onSave, onPublish, onClear }) {
   const [showPreview, setShowPreview] = useState(false)
   const words = article.body.trim() ? article.body.trim().split(/\s+/).length : 0
   const readingTime = Math.max(1, Math.round(words / 200))
@@ -2001,6 +2043,15 @@ function ArticleEditor({ article, onChange, onRegenCover, onSave, onPublish }) {
         >
           {article.status === 'publishing' ? 'Publishing…' : 'Publish to LinkedIn'}
         </button>
+        {onClear && (
+          <button
+            onClick={onClear}
+            disabled={article.status === 'publishing'}
+            className="btn btn-danger btn-sm ml-auto"
+          >
+            Clear
+          </button>
+        )}
       </div>
     </div>
   )
