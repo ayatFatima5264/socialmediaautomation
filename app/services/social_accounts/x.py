@@ -15,10 +15,16 @@ class XProvider(OAuthProvider):
 
     authorize_endpoint = "https://twitter.com/i/oauth2/authorize"
     token_endpoint = "https://api.twitter.com/2/oauth2/token"
-    scopes = ["tweet.read", "tweet.write", "users.read", "offline.access"]
+    # media.write is required to upload images/video to X's media endpoint;
+    # tweet.write alone only permits text. Adding it means accounts connected
+    # before this change must reconnect to grant it (see required_scopes).
+    scopes = ["tweet.read", "tweet.write", "users.read", "offline.access", "media.write"]
     scope_separator = " "
     token_auth = "basic"
     use_pkce = True
+    # Scopes whose absence should prompt the user to reconnect. media.write is
+    # newly required, so tokens minted without it need re-authorization.
+    required_scopes = ["media.write"]
 
     async def fetch_profile(self, tokens: OAuthTokens) -> ProfileInfo:
         data = await self._get_json(
