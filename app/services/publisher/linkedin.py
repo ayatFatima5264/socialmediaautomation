@@ -4,9 +4,8 @@ Constructed with the user's connected SocialAccount. The account's `account_id`
 is the member id (OpenID `sub`); LinkedIn's author URN is `urn:li:person:{id}`.
 The stored access token must carry the `w_member_social` scope.
 
-Phase 1 publishes text-only shares. Image/article shares are a later phase and
-only need a media-upload step here plus a richer payload in `linkedin_api` — no
-change to callers.
+Publishes text shares and single-image shares: an attached image is uploaded to
+LinkedIn (`linkedin_api.upload_image`) and referenced in the post's media.
 """
 from __future__ import annotations
 
@@ -37,17 +36,11 @@ class LinkedInPublisher(BasePublisher):
         image_url: str | None = None,
         media_urls: list[str] | None = None,
     ) -> PublishResult:
-        if image_url or media_urls:
-            # Phase 1 is text-only; don't fail the post — publish the text and
-            # note the dropped media.
-            logger.info(
-                "LinkedIn publish: media not yet supported — posting text only"
-            )
-
         text = _compose_post(content, hashtags)
-        if not text.strip():
+        image = image_url or (media_urls[0] if media_urls else None)
+        if not text.strip() and not image:
             return PublishResult(
-                success=False, error="Nothing to publish — the post text is empty."
+                success=False, error="Nothing to publish — the post is empty."
             )
         if len(text) > POST_MAX_CHARS:
             return PublishResult(
@@ -60,10 +53,18 @@ class LinkedInPublisher(BasePublisher):
 
         author_urn = f"urn:li:person:{self.account.account_id}"
         try:
-            post_id = await linkedin_api.create_text_post(
+            image_urn = None
+            if image:
+                image_urn = await linkedin_api.upload_image(
+                    access_token=self.account.access_token,
+                    owner_urn=author_urn,
+                    image_url=image,
+                )
+            post_id = await linkedin_api.create_post(
                 access_token=self.account.access_token,
                 author_urn=author_urn,
                 text=text,
+                image_urn=image_urn,
             )
         except linkedin_api.LinkedInAPIError as exc:
             logger.warning("LinkedIn publish failed: %s", exc)
