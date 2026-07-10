@@ -85,6 +85,7 @@ _ADDED_COLUMNS: dict[str, dict[str, str]] = {
         "status": "VARCHAR(20) DEFAULT 'connected'",
         "connected_at": "TIMESTAMP",
         "last_synced_at": "TIMESTAMP",
+        "scopes": "TEXT",
     },
     "users": {
         "onboarding_completed": "BOOLEAN",

@@ -44,6 +44,10 @@ class SocialAccount(Base):
     access_token: Mapped[str] = mapped_column(Text, nullable=False)
     refresh_token: Mapped[str | None] = mapped_column(Text, default=None)
     token_expires_at: Mapped[datetime | None] = mapped_column(DateTime, default=None)
+    # Space-delimited OAuth scopes actually granted for this token, recorded at
+    # connect time. Used to detect when a newly-required scope is missing and the
+    # user must reconnect. NULL for accounts connected before this was tracked.
+    scopes: Mapped[str | None] = mapped_column(Text, default=None)
 
     # ---- Platform identifiers --------------------------------------------
     # For Instagram:

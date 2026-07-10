@@ -71,6 +71,11 @@ class OAuthProvider:
     authorize_endpoint: str
     token_endpoint: str
     scopes: list[str] = []
+    # Subset of `scopes` that is mandatory for full functionality. If a stored
+    # account was authorized without one of these (e.g. a scope added after it
+    # connected), the app flags it as needing re-authorization. Empty by default
+    # so platforms opt in explicitly and none are flagged retroactively.
+    required_scopes: list[str] = []
     # Scope delimiter — most use space; Meta/Threads use comma.
     scope_separator: str = " "
     # "body" sends client_secret in the token request body; "basic" uses an

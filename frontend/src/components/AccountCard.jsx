@@ -44,6 +44,10 @@ export default function AccountCard({
   const status = account ? account.status : 'not_connected'
   const connected = status === 'connected'
   const needsReconnect = status === 'token_expired' || status === 'error'
+  // Connected, but authorized without a now-required permission (e.g. X's
+  // media.write). The account stays connected — we only ask the user to
+  // reconnect to grant it. Text-only publishing keeps working.
+  const needsReauth = !!account?.reauth_required
 
   return (
     <div className="card flex h-full flex-col gap-4 p-5 transition-all duration-200 hover:-translate-y-0.5">
@@ -91,26 +95,66 @@ export default function AccountCard({
         </div>
       </dl>
 
+      {/* Re-authorization notice — connected, but missing a required permission.
+          Not disconnected: text-only publishing still works. */}
+      {connected && needsReauth && (
+        <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs">
+          <p className="font-semibold text-amber-700 dark:text-amber-300">
+            Reconnect required
+          </p>
+          <p className="mt-1 text-body">
+            Grant the new media permission to post images and video from{' '}
+            {meta.label}. Text-only posts still work until you do.
+          </p>
+        </div>
+      )}
+
       {/* Actions — pinned to the bottom so every card is the same height */}
       <div className="mt-auto flex items-center gap-2 pt-1">
         {connected ? (
-          <>
-            <button
-              onClick={onDisconnect}
-              disabled={busy}
-              className="btn btn-danger flex-1"
-            >
-              {busy ? <Spinner /> : 'Disconnect'}
-            </button>
-            <button
-              onClick={onRefresh}
-              disabled={busy}
-              title="Refresh / re-sync"
-              className="btn btn-ghost btn-sm"
-            >
-              Sync
-            </button>
-          </>
+          needsReauth ? (
+            <>
+              <button
+                onClick={onConnect}
+                disabled={busy}
+                className="btn btn-primary flex-1"
+              >
+                {busy ? (
+                  <>
+                    <Spinner /> Connecting…
+                  </>
+                ) : (
+                  'Reconnect'
+                )}
+              </button>
+              <button
+                onClick={onDisconnect}
+                disabled={busy}
+                title="Disconnect"
+                className="btn btn-ghost btn-sm"
+              >
+                Disconnect
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                onClick={onDisconnect}
+                disabled={busy}
+                className="btn btn-danger flex-1"
+              >
+                {busy ? <Spinner /> : 'Disconnect'}
+              </button>
+              <button
+                onClick={onRefresh}
+                disabled={busy}
+                title="Refresh / re-sync"
+                className="btn btn-ghost btn-sm"
+              >
+                Sync
+              </button>
+            </>
+          )
         ) : (
           <button
             onClick={onConnect}

@@ -85,6 +85,7 @@ def effective_status(account: SocialAccount) -> AccountStatus:
 def serialize(account: SocialAccount) -> SocialAccountRead:
     read = SocialAccountRead.model_validate(account)
     read.status = effective_status(account)
+    read.reauth_required = reauth_required(account)
     return read
 
 
@@ -132,7 +133,14 @@ def start_connect(db: Session, user: User, platform: Platform) -> dict:
     """
     repo = SocialAccountRepository(db)
     existing = repo.get(user.id, platform)
-    if existing is not None and effective_status(existing) == AccountStatus.connected:
+    # A live connection can't be duplicated — except when it needs
+    # re-authorization (a newly-required scope is missing), in which case
+    # reconnecting is exactly how the user grants it.
+    if (
+        existing is not None
+        and effective_status(existing) == AccountStatus.connected
+        and not reauth_required(existing)
+    ):
         raise ConnectError(
             f"{platform.value.capitalize()} account already connected.", status_code=409
         )
@@ -258,6 +266,35 @@ def select_account(
 
 
 # --------------------------------------------------------------------------
+# Scope / re-authorization
+# --------------------------------------------------------------------------
+def missing_required_scopes(account: SocialAccount) -> list[str]:
+    """Required scopes the account's stored token was NOT granted.
+
+    Compares the platform provider's `required_scopes` against the scopes we
+    recorded at connect time. An account connected before a scope became required
+    has it missing (its stored scopes are NULL or lack the entry), which is
+    exactly the reconnect case. Providers with no required_scopes never match.
+    """
+    provider = get_provider(Platform(account.platform))
+    required = getattr(provider, "required_scopes", None) or []
+    if not required:
+        return []
+    granted = set((account.scopes or "").split())
+    return [scope for scope in required if scope not in granted]
+
+
+def reauth_required(account: SocialAccount) -> bool:
+    """True if the account must be reconnected to grant a newly-required scope.
+
+    This never disconnects the account — it only signals that re-authorization is
+    needed (e.g. X's media.write for image/video posting). Text-only publishing
+    keeps working, so the account stays connected.
+    """
+    return bool(missing_required_scopes(account))
+
+
+# --------------------------------------------------------------------------
 # Token lifecycle (used by publishers before calling a platform API)
 # --------------------------------------------------------------------------
 def token_needs_refresh(account: SocialAccount, *, leeway_seconds: int = 120) -> bool:
@@ -357,6 +394,12 @@ def _upsert(
         account = SocialAccount(user_id=user.id, platform=platform.value)
 
     _apply_tokens(account, tokens)
+    # Record the scopes granted for this token so we can later detect when a
+    # newly-required scope is missing. X returns `scope` in the token response;
+    # if a provider omits it, fall back to the scopes we requested (OAuth 2.0
+    # auth-code grants all requested scopes on consent — none are partial).
+    provider = get_provider(platform)
+    account.scopes = tokens.raw.get("scope") or " ".join(provider.scopes) or None
     account.account_id = profile.account_id or account.account_id or f"{platform.value}:{user.id}"
     account.page_id = profile.page_id
     account.username = profile.username

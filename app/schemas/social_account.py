@@ -58,6 +58,10 @@ class SocialAccountRead(BaseModel):
     id: int
     platform: Platform
     status: AccountStatus
+    # True when the account is connected but was authorized without a now-required
+    # scope (e.g. X's media.write): the user should reconnect to grant it. The
+    # account is NOT disconnected; text-only publishing still works.
+    reauth_required: bool = False
     username: str | None
     display_name: str | None
     profile_picture: str | None
