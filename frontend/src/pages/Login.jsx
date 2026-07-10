@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link, Navigate, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
 import { useToast } from '../context/ToastContext.jsx'
+import Logo from '../components/Logo.jsx'
 
 export default function Login() {
   const { user, login } = useAuth()
@@ -101,9 +102,7 @@ export function AuthShell({ title, subtitle, children }) {
     <div className="app-bg grid min-h-screen place-items-center p-4">
       <div className="w-full max-w-md">
         <Link to="/" className="mb-6 flex items-center justify-center gap-2">
-          <div className="grid h-10 w-10 place-items-center rounded-xl bg-accent text-xl font-black text-accent-contrast">
-            A
-          </div>
+          <Logo size={40} />
           <span className="text-xl font-bold">AutoSocial AI</span>
         </Link>
         <div className="card p-7">

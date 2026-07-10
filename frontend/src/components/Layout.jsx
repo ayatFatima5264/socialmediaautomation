@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
 import { useTheme } from '../context/ThemeContext.jsx'
+import Logo from './Logo.jsx'
 
 const NAV = [
   { to: '/dashboard', label: 'Dashboard', icon: '◧', end: true },
@@ -17,9 +18,7 @@ const NAV = [
 function Brand() {
   return (
     <Link to="/dashboard" className="flex items-center gap-2 px-2">
-      <div className="grid h-9 w-9 shrink-0 place-items-center rounded-[10px] bg-accent text-lg font-black text-accent-contrast">
-        A
-      </div>
+      <Logo size={36} className="shrink-0" />
       <div className="min-w-0">
         <div className="truncate text-sm font-bold leading-tight text-body">AutoSocial AI</div>
         <div className="truncate text-xs text-muted">AI Post Studio</div>

@@ -4,13 +4,12 @@ import { useAuth } from '../../context/AuthContext.jsx'
 import { useTheme } from '../../context/ThemeContext.jsx'
 import { MARKETING_NAV, FOOTER_COLUMNS, SITE } from '../../config/site'
 import { trackPageView } from '../../lib/analytics'
+import Logo from '../Logo.jsx'
 
 function Brand() {
   return (
     <Link to="/" className="flex items-center gap-2">
-      <div className="grid h-9 w-9 place-items-center rounded-xl bg-accent text-lg font-black text-accent-contrast">
-        A
-      </div>
+      <Logo size={36} />
       <span className="text-lg font-bold">{SITE.name}</span>
     </Link>
   )
