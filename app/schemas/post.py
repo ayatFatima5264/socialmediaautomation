@@ -85,6 +85,10 @@ class PostCreate(BaseModel):
     platform: Platform
     content: str = Field(..., min_length=1, max_length=63206)
     hashtags: list[str] = Field(default_factory=list)
+    # Optional attached visuals, each like {"type": "image", "url": <public URL>}.
+    # Persisted to Post.media so publishers that support media (Instagram, X,
+    # LinkedIn) receive the image(s) on publish. None/empty for text-only posts.
+    media: list[dict] | None = None
     # If set and in the future, the post is scheduled; otherwise it's a draft.
     scheduled_time: datetime | None = None
 

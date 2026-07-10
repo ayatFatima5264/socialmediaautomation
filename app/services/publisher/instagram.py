@@ -31,8 +31,10 @@ class InstagramPublisher(BasePublisher):
         image_url: str | None = None,
         media_urls: list[str] | None = None,
     ) -> PublishResult:
-        # `media_urls` is accepted for a uniform publisher contract; Instagram's
-        # existing single-image `image_url` path is left unchanged here.
+        # Instagram publishes a single image; use the first attached media URL
+        # when the caller supplies the general list instead of `image_url`.
+        if not image_url and media_urls:
+            image_url = media_urls[0]
         if not image_url:
             return PublishResult(
                 success=False,

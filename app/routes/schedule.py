@@ -49,6 +49,7 @@ def create_post(
         hashtags=data.hashtags,
         status=post_status,
         scheduled_time=scheduled,
+        media=data.media or None,
     )
     db.add(post)
     db.commit()

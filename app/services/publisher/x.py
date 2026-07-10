@@ -187,4 +187,17 @@ def _user_message(exc: x_api.XAPIError) -> str:
             "X rejected the access token (expired or permissions revoked). "
             "Reconnect your X account and try again."
         )
+    if _is_plan_credit_error(exc):
+        return (
+            "Your X API plan has no posting credits left, so the post wasn't "
+            "published. Upgrade your X API tier or wait for the monthly quota to "
+            "reset, then try again. (Manage it in the X Developer Portal.)"
+        )
     return f"X API error: {exc.message}"
+
+
+def _is_plan_credit_error(exc: x_api.XAPIError) -> bool:
+    """Detect X's plan/quota rejection (e.g. "does not have any credits to
+    fulfill this request"), which X returns as a 403 rather than a rate limit."""
+    message = (exc.message or "").lower()
+    return "credit" in message or "does not have access" in message

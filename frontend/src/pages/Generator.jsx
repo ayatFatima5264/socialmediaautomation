@@ -128,7 +128,6 @@ export default function Generator() {
       imgLoading: false,
       imgError: d.imgError ?? null,
       capLoading: false,
-      igBusy: false,
       // Keep only terminal statuses across a refresh; drop transient ones.
       status: ['published', 'scheduled', 'failed'].includes(d.status) ? d.status : null,
     })),
@@ -160,7 +159,7 @@ export default function Generator() {
 
   // Persist composer state so a refresh restores the session.
   useEffect(() => {
-    const slim = drafts.map(({ imgLoading, capLoading, igBusy, ...keep }) => keep)
+    const slim = drafts.map(({ imgLoading, capLoading, ...keep }) => keep)
     const payload = {
       topic, tone, audience, selected, includeHashtags, variants,
       img, overrides, meta, drafts: slim,
@@ -445,7 +444,6 @@ export default function Generator() {
           imgLoading: false,
           imgError: null,
           capLoading: false,
-          igBusy: false,
         })),
       )
       setDrafts(cards)
@@ -681,6 +679,11 @@ export default function Generator() {
         platform: c.platform,
         content: c.content,
         hashtags: hashtagList(c.hashtags),
+        // Attach the generated visuals so platforms that need/support media
+        // (Instagram, X, LinkedIn) publish with the image, not text-only.
+        media: (c.images || [])
+          .filter((im) => im?.url)
+          .map((im) => ({ type: 'image', url: im.url })),
       })
       // The publish endpoint returns the updated post — inspect it for the real
       // outcome (a non-throwing response can still be a platform failure).
@@ -831,34 +834,6 @@ export default function Generator() {
     a.click()
     a.remove()
     URL.revokeObjectURL(url)
-  }
-
-  async function publishInstagram(i) {
-    const c = drafts[i]
-    const caption = [c.content, hashtagList(c.hashtags).map((t) => `#${t}`).join(' ')]
-      .filter(Boolean)
-      .join('\n\n')
-    const firstImage = c.images[0]?.url
-    updateDraft(i, { igBusy: true })
-    try {
-      const res = await api.publishInstagram({
-        caption,
-        image_url: firstImage || null,
-        image_prompt: firstImage ? null : c.imagePrompt || c.content,
-        content: c.content,
-        hashtags: hashtagList(c.hashtags),
-      })
-      if (res.image_url) {
-        updateDraft(i, (cur) => ({
-          images: cur.images.length ? cur.images : [{ url: res.image_url, label: null }],
-        }))
-      }
-      toast.success('Published to Instagram — see it in History')
-    } catch (err) {
-      toast.error(err.message || 'Instagram publish failed')
-    } finally {
-      updateDraft(i, { igBusy: false })
-    }
   }
 
   async function doSchedule(localValue) {
@@ -1518,7 +1493,6 @@ export default function Generator() {
               onSave={() => saveDraft(i)}
               onSchedule={() => setScheduleFor(i)}
               onPublish={() => publishNow(i)}
-              onPublishInstagram={() => publishInstagram(i)}
               onClearPlatform={() => clearPlatform(i)}
               onDuplicate={() => duplicatePlatform(i)}
             />
@@ -1602,7 +1576,7 @@ function PostCard({
   c, limit, label,
   onContent, onHashtags, onImageResolved, onCopy, onDownload, onDownloadAll,
   onDownloadAssets, onRegenCaption, onRegenImages, onRegenSlide, onRegenAll,
-  onSave, onSchedule, onPublish, onPublishInstagram, onClearPlatform, onDuplicate,
+  onSave, onSchedule, onPublish, onClearPlatform, onDuplicate,
 }) {
   const over = c.content.length > limit
   const isCarousel = c.settings.carousel && c.images.length > 1
@@ -1750,15 +1724,6 @@ function PostCard({
         >
           {c.status === 'publishing' ? 'Publishing…' : 'Publish Now'}
         </button>
-        {c.platform === 'instagram' && (
-          <button
-            onClick={onPublishInstagram}
-            disabled={c.igBusy}
-            className="btn btn-sm bg-pink-600 text-white hover:bg-pink-500"
-          >
-            {c.igBusy ? 'Publishing…' : '📸 Publish to Instagram'}
-          </button>
-        )}
       </div>
     </div>
   )
