@@ -866,7 +866,12 @@ export default function Generator() {
     if (!article) return
     updateArticle({ status: 'publishing' })
     try {
-      await api.createPost({ platform: 'linkedin', content: articleContent(), hashtags: article.tags })
+      await api.createPost({
+        platform: 'linkedin', content: articleContent(), hashtags: article.tags,
+        media: article.cover?.url
+          ? [{ type: 'image', url: article.cover.url }]
+          : [],
+      })
       updateArticle({ status: 'saved' })
       toast.success('Article saved as draft')
     } catch (err) {
@@ -881,6 +886,10 @@ export default function Generator() {
     try {
       const created = await api.createPost({
         platform: 'linkedin', content: articleContent(), hashtags: article.tags,
+        // Attach the article cover so LinkedIn publishes it with the article.
+        media: article.cover?.url
+          ? [{ type: 'image', url: article.cover.url }]
+          : [],
       })
       const post = await api.publishPost(created.id)
       const outcome = publishOutcome(post, 'LinkedIn')
