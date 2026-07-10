@@ -179,6 +179,73 @@ async def publish_image(
         return media_id
 
 
+# --------------------------------------------------------------------------
+# Facebook Page publishing
+# --------------------------------------------------------------------------
+async def list_pages(access_token: str) -> list[dict]:
+    """Return the Facebook Pages the user manages: {id, name, access_token}.
+
+    Posting to a Page is authorized by that Page's OWN access token (returned
+    here), not the user token — so publishers resolve the Page token at publish
+    time from the stored user token. Empty list if the user manages no Pages.
+    """
+    pages: list[dict] = []
+    async with httpx.AsyncClient(timeout=settings.ai_request_timeout) as client:
+        url = "me/accounts"
+        params: dict = {
+            "fields": "name,access_token",
+            "access_token": access_token,
+            "limit": 100,
+        }
+        while True:
+            data = await _get(client, url, params)
+            pages.extend(data.get("data", []))
+            nxt = (data.get("paging") or {}).get("next")
+            if not nxt or len(pages) >= 500:  # sane cap
+                break
+            url = nxt.replace(f"{_base()}/", "")
+            params = {}
+    return pages
+
+
+async def create_page_post(
+    *,
+    page_id: str,
+    page_access_token: str,
+    message: str,
+    image_url: str | None = None,
+) -> str:
+    """Publish a text or single-image post to a Facebook Page. Returns the post id.
+
+    With `image_url` (a publicly reachable URL) it creates a photo post via
+    `/{page}/photos`; otherwise a text post via `/{page}/feed`. Facebook fetches
+    the image server-side, so no upload/polling step is needed (unlike Instagram).
+    """
+    async with httpx.AsyncClient(timeout=settings.ai_request_timeout) as client:
+        if image_url:
+            data = await _post(
+                client,
+                f"{page_id}/photos",
+                {
+                    "url": image_url,
+                    "caption": message,
+                    "access_token": page_access_token,
+                },
+            )
+            # /photos returns {"id": <photo id>, "post_id": <feed post id>}.
+            post_id = data.get("post_id") or data.get("id")
+        else:
+            data = await _post(
+                client,
+                f"{page_id}/feed",
+                {"message": message, "access_token": page_access_token},
+            )
+            post_id = data.get("id")
+        if not post_id:
+            raise GraphAPIError("Graph API did not return a post id.")
+        return post_id
+
+
 async def _await_container_ready(
     client: httpx.AsyncClient, creation_id: str, access_token: str
 ) -> None:

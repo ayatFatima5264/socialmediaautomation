@@ -11,13 +11,23 @@ from sqlalchemy.orm import Session
 from app.models.social_account import SocialAccount
 from app.schemas.post import Platform
 from app.services.publisher.base import BasePublisher
+from app.services.publisher.facebook import FacebookPublisher
 from app.services.publisher.instagram import InstagramPublisher
 from app.services.publisher.linkedin import LinkedInPublisher
+from app.services.publisher.pinterest import PinterestPublisher
 from app.services.publisher.simulated import SimulatedPublisher
+from app.services.publisher.threads import ThreadsPublisher
 from app.services.publisher.x import XPublisher
 
 #: Platforms with a real adapter, keyed by platform.
-_REAL_PLATFORMS = {Platform.instagram, Platform.twitter, Platform.linkedin}
+_REAL_PLATFORMS = {
+    Platform.instagram,
+    Platform.twitter,
+    Platform.linkedin,
+    Platform.facebook,
+    Platform.threads,
+    Platform.pinterest,
+}
 
 
 def get_publisher(
@@ -39,4 +49,10 @@ def get_publisher(
             return XPublisher(account, db)
         if platform is Platform.linkedin:
             return LinkedInPublisher(account)
+        if platform is Platform.facebook:
+            return FacebookPublisher(account)
+        if platform is Platform.threads:
+            return ThreadsPublisher(account)
+        if platform is Platform.pinterest:
+            return PinterestPublisher(account)
     return SimulatedPublisher(platform)
