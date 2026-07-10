@@ -141,9 +141,12 @@ class Settings(BaseSettings):
     # the user picks a linked Instagram Business account.
     linkedin_client_id: str | None = None
     linkedin_client_secret: str | None = None
-    # LinkedIn's versioned REST API requires a YYYYMM version header. Bump this
-    # as LinkedIn deprecates older versions (see developer.linkedin.com changelog).
-    linkedin_api_version: str = "202405"
+    # LinkedIn's versioned REST API requires a YYYYMM version header, and each
+    # version is retired ~1 year after release. Keep this within the last ~12
+    # months or posts fail with "Requested version … is not active". Override via
+    # LINKEDIN_API_VERSION without a code change; bump the default periodically
+    # (see the developer.linkedin.com changelog for currently-active versions).
+    linkedin_api_version: str = "202606"
     x_client_id: str | None = None
     x_client_secret: str | None = None
     pinterest_client_id: str | None = None
