@@ -49,22 +49,24 @@ export default function AccountCard({
     <div className="card flex h-full flex-col gap-4 p-5 transition-all duration-200 hover:-translate-y-0.5">
       {/* Header */}
       <div className="flex items-start justify-between gap-3">
-        <div className="flex items-center gap-3">
+        <div className="flex min-w-0 flex-1 items-center gap-3">
           <AccountAvatar platform={platform} account={account} />
-          <div>
-            <div className="font-semibold leading-tight">{meta.label}</div>
+          <div className="min-w-0">
+            <div className="truncate font-semibold leading-tight">{meta.label}</div>
             {account?.username ? (
-              <div className="text-xs text-muted">
+              <div className="truncate text-xs text-muted">
                 @{account.username}
               </div>
             ) : (
-              <div className="text-xs text-muted">
+              <div className="truncate text-xs text-muted">
                 Not linked
               </div>
             )}
           </div>
         </div>
-        <AccountStatusBadge status={busy && !account ? 'syncing' : status} />
+        <div className="shrink-0 whitespace-nowrap">
+          <AccountStatusBadge status={busy && !account ? 'syncing' : status} />
+        </div>
       </div>
 
       {/* Details */}
