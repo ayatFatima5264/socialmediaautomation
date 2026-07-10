@@ -3,6 +3,7 @@ import { api } from '../lib/api'
 import { useToast } from '../context/ToastContext.jsx'
 import { formatDateTime, localInputToISO, parseServerDate } from '../lib/datetime'
 import { PLATFORMS } from '../lib/constants'
+import { publishOutcome } from '../lib/publish'
 import PlatformIcon from '../components/PlatformIcon.jsx'
 import StatusBadge from '../components/StatusBadge.jsx'
 import ScheduleModal from '../components/ScheduleModal.jsx'
@@ -31,6 +32,20 @@ export default function History() {
     try {
       await fn()
       toast.success(okMsg)
+      load()
+    } catch (e) {
+      toast.error(e.message)
+    }
+  }
+
+  // Publish reports the real outcome: a non-throwing response can still be a
+  // platform failure (status 'failed') or a simulated publish (sim_ external id).
+  async function publishAction(post) {
+    try {
+      const updated = await api.publishPost(post.id)
+      const outcome = publishOutcome(updated, PLATFORMS[updated.platform]?.label || 'the platform')
+      if (outcome.ok) toast.success(outcome.message)
+      else toast.error(outcome.message)
       load()
     } catch (e) {
       toast.error(e.message)
@@ -118,7 +133,7 @@ export default function History() {
                         {p.status !== 'published' && (
                           <button
                             className="btn btn-ghost btn-sm"
-                            onClick={() => action(() => api.publishPost(p.id), 'Published (simulated)')}
+                            onClick={() => publishAction(p)}
                           >
                             Publish
                           </button>

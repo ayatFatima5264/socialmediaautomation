@@ -13,6 +13,7 @@ import {
   DEFAULT_IMAGE_SETTINGS,
 } from '../lib/constants'
 import { localInputToISO } from '../lib/datetime'
+import { publishOutcome } from '../lib/publish'
 import { loadFirstAvailable } from '../lib/imageLoader'
 import {
   CONTENT_TYPES,
@@ -670,29 +671,36 @@ export default function Generator() {
   }
 
   // Publish one card, tracking its status (used by both the per-card button
-  // and Publish All). Returns true on success; never throws.
+  // and Publish All). Returns the publish outcome; never throws.
   async function publishCard(i) {
     const c = drafts[i]
+    const label = PLATFORMS[c.platform]?.label || c.platform
     updateDraft(i, { status: 'publishing', publishError: null })
     try {
-      const post = await api.createPost({
+      const created = await api.createPost({
         platform: c.platform,
         content: c.content,
         hashtags: hashtagList(c.hashtags),
       })
-      await api.publishPost(post.id)
-      updateDraft(i, { status: 'published' })
-      return true
+      // The publish endpoint returns the updated post — inspect it for the real
+      // outcome (a non-throwing response can still be a platform failure).
+      const post = await api.publishPost(created.id)
+      const outcome = publishOutcome(post, label)
+      updateDraft(i, {
+        status: outcome.ok ? 'published' : 'failed',
+        publishError: outcome.ok ? null : outcome.message,
+      })
+      return outcome
     } catch (err) {
       updateDraft(i, { status: 'failed', publishError: err.message })
-      return false
+      return { ok: false, simulated: false, message: err.message }
     }
   }
 
   async function publishNow(i) {
-    const ok = await publishCard(i)
-    if (ok) toast.success(`Published to ${PLATFORMS[drafts[i].platform].label} (simulated)`)
-    else toast.error('Publish failed')
+    const outcome = await publishCard(i)
+    if (outcome.ok) toast.success(outcome.message)
+    else toast.error(outcome.message || 'Publish failed')
   }
 
   // --- bulk actions ---------------------------------------------------------
@@ -717,7 +725,7 @@ export default function Generator() {
     try {
       // Non-blocking: each card resolves its own success/failure independently.
       const results = await Promise.allSettled(drafts.map((_, i) => publishCard(i)))
-      const ok = results.filter((r) => r.status === 'fulfilled' && r.value).length
+      const ok = results.filter((r) => r.status === 'fulfilled' && r.value?.ok).length
       const fail = drafts.length - ok
       if (fail === 0) toast.success(`Published all ${ok} platform(s)`)
       else toast.error(`${ok} published · ${fail} failed`)
@@ -896,12 +904,14 @@ export default function Generator() {
     if (!article) return
     updateArticle({ status: 'publishing' })
     try {
-      const post = await api.createPost({
+      const created = await api.createPost({
         platform: 'linkedin', content: articleContent(), hashtags: article.tags,
       })
-      await api.publishPost(post.id)
-      updateArticle({ status: 'published' })
-      toast.success('Published to LinkedIn (simulated)')
+      const post = await api.publishPost(created.id)
+      const outcome = publishOutcome(post, 'LinkedIn')
+      updateArticle({ status: outcome.ok ? 'published' : null })
+      if (outcome.ok) toast.success(outcome.message)
+      else toast.error(outcome.message)
     } catch (err) {
       updateArticle({ status: null })
       toast.error(err.message || 'LinkedIn publish failed')

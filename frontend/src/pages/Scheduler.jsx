@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { api } from '../lib/api'
 import { useToast } from '../context/ToastContext.jsx'
 import { formatDateTime, parseServerDate } from '../lib/datetime'
+import { PLATFORMS } from '../lib/constants'
+import { publishOutcome } from '../lib/publish'
 import PlatformIcon from '../components/PlatformIcon.jsx'
 
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
@@ -56,8 +58,10 @@ export default function Scheduler() {
   }
   async function publishNow(id) {
     try {
-      await api.publishPost(id)
-      toast.success('Published (simulated)')
+      const post = await api.publishPost(id)
+      const outcome = publishOutcome(post, PLATFORMS[post.platform]?.label || 'the platform')
+      if (outcome.ok) toast.success(outcome.message)
+      else toast.error(outcome.message)
       load()
     } catch (e) {
       toast.error(e.message)
