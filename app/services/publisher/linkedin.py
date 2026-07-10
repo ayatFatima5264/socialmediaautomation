@@ -30,9 +30,14 @@ class LinkedInPublisher(BasePublisher):
         self.account = account
 
     async def publish(
-        self, *, content: str, hashtags: list[str], image_url: str | None = None
+        self,
+        *,
+        content: str,
+        hashtags: list[str],
+        image_url: str | None = None,
+        media_urls: list[str] | None = None,
     ) -> PublishResult:
-        if image_url:
+        if image_url or media_urls:
             # Phase 1 is text-only; don't fail the post — publish the text and
             # note the dropped media.
             logger.info(

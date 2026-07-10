@@ -258,6 +258,40 @@ def select_account(
 
 
 # --------------------------------------------------------------------------
+# Token lifecycle (used by publishers before calling a platform API)
+# --------------------------------------------------------------------------
+def token_needs_refresh(account: SocialAccount, *, leeway_seconds: int = 120) -> bool:
+    """True if the account's access token is expired or about to expire.
+
+    Only refreshable accounts qualify: one with no stored refresh token, or no
+    known expiry (a long-lived token), is left untouched. `leeway_seconds` gives
+    callers a margin so they refresh just before a token would lapse mid-request.
+    """
+    if not account.refresh_token or account.token_expires_at is None:
+        return False
+    return account.token_expires_at <= utcnow() + timedelta(seconds=leeway_seconds)
+
+
+async def refresh_tokens(db: Session, account: SocialAccount) -> SocialAccount:
+    """Force-refresh an account's OAuth tokens and persist them, in place.
+
+    Reuses the platform provider's `refresh()` and the shared token-application
+    logic so publishers never duplicate token handling. Persists immediately so a
+    later failure in the same request can't lose a freshly rotated refresh token.
+    Raises OAuthError if there is no refresh token or the provider refresh fails.
+    """
+    if not account.refresh_token:
+        raise OAuthError("No refresh token stored — reconnect the account.")
+    provider = get_provider(Platform(account.platform))
+    tokens = await provider.refresh(account.refresh_token)
+    _apply_tokens(account, tokens)
+    account.last_synced_at = utcnow()
+    db.commit()
+    db.refresh(account)
+    return account
+
+
+# --------------------------------------------------------------------------
 # Refresh
 # --------------------------------------------------------------------------
 async def refresh_account(db: Session, user: User, platform: Platform) -> SocialAccount:

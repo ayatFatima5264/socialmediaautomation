@@ -24,8 +24,15 @@ class InstagramPublisher(BasePublisher):
         self.account = account
 
     async def publish(
-        self, *, content: str, hashtags: list[str], image_url: str | None = None
+        self,
+        *,
+        content: str,
+        hashtags: list[str],
+        image_url: str | None = None,
+        media_urls: list[str] | None = None,
     ) -> PublishResult:
+        # `media_urls` is accepted for a uniform publisher contract; Instagram's
+        # existing single-image `image_url` path is left unchanged here.
         if not image_url:
             return PublishResult(
                 success=False,

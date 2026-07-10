@@ -24,6 +24,22 @@ from app.services.publisher import PublishResult, get_publisher
 logger = logging.getLogger(__name__)
 
 
+def _media_urls(post: Post) -> list[str]:
+    """Ordered public media URLs attached to a post, read from Post.media.
+
+    Post.media items look like {"type": "image", "url": <public URL>, ...} (see
+    the planner). Publishers that support media (e.g. X) receive these and decide
+    how to use them; text-only publishers ignore them. Malformed/urlless entries
+    are skipped.
+    """
+    items = post.media or []
+    return [
+        item["url"]
+        for item in items
+        if isinstance(item, dict) and item.get("url")
+    ]
+
+
 async def publish_post(db: Session, post: Post) -> Post:
     """Publish a single post via its platform adapter and persist the outcome.
 
@@ -41,10 +57,12 @@ async def publish_post(db: Session, post: Post) -> Post:
         )
     ).first()
 
-    publisher = get_publisher(platform, account)
+    publisher = get_publisher(platform, account, db)
     try:
         result = await publisher.publish(
-            content=post.content, hashtags=post.hashtags or []
+            content=post.content,
+            hashtags=post.hashtags or [],
+            media_urls=_media_urls(post),
         )
     except Exception as exc:  # adapter blew up — record, don't crash the loop
         logger.exception("Publisher raised for post %s", post.id)

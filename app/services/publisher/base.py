@@ -25,11 +25,19 @@ class BasePublisher(ABC):
 
     @abstractmethod
     async def publish(
-        self, *, content: str, hashtags: list[str], image_url: str | None = None
+        self,
+        *,
+        content: str,
+        hashtags: list[str],
+        image_url: str | None = None,
+        media_urls: list[str] | None = None,
     ) -> PublishResult:
         """Publish a post to the platform.
 
-        `image_url` is a publicly reachable media URL. Some platforms (Instagram)
-        require it; text-only platforms ignore it.
+        `image_url` is a single publicly reachable media URL (legacy single-image
+        contract). `media_urls` is the ordered list of public media URLs from
+        `Post.media`, for platforms that support several (e.g. X, up to 4 images).
+        A publisher uses whichever it supports; text-only platforms ignore both.
+        Both default to None so existing callers are unaffected.
         """
         raise NotImplementedError
