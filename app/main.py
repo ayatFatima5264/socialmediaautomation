@@ -25,6 +25,7 @@ from app.routes import (
     schedule,
     social,
 )
+from app.services.publisher.registry import _REAL_PLATFORMS
 from app.services.scheduler import scheduler_loop
 
 logging.basicConfig(level=logging.INFO)
@@ -74,3 +75,23 @@ app.include_router(planner.router)
 @app.get("/")
 def home() -> dict:
     return {"status": "ok", "service": "autosocial-ai", "docs": "/docs"}
+
+
+@app.get("/health")
+def health() -> dict:
+    """Deployment probe: reports the running commit + key live config so a
+    deploy can be verified from outside (Render injects RENDER_GIT_COMMIT)."""
+    import os
+
+    commit = (
+        os.getenv("RENDER_GIT_COMMIT")
+        or os.getenv("GIT_COMMIT")
+        or "unknown"
+    )
+    return {
+        "status": "ok",
+        "version": app.version,
+        "commit": commit[:12],
+        "linkedin_api_version": settings.linkedin_api_version,
+        "real_publishers": sorted(p.value for p in _REAL_PLATFORMS),
+    }
