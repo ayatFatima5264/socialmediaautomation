@@ -150,6 +150,12 @@ class Settings(BaseSettings):
 
     # ---- CORS (React frontend dev server) --------------------------------
     cors_origins: list[str] = ["http://localhost:5173", "http://localhost:3000"]
+    # Any origin matching this regex is also allowed, on top of cors_origins.
+    # This keeps the deployed frontend working even if CORS_ORIGINS is unset or
+    # misconfigured on the host — it allows the Vercel production alias *and*
+    # every preview deployment (https://<anything>.vercel.app). Set to an empty
+    # string to disable, or override for a custom domain.
+    cors_origin_regex: str = r"https://.*\.vercel\.app"
 
     def oauth_credentials(self, platform: str) -> tuple[str | None, str | None]:
         """Return (client_id, client_secret) for a platform, or (None, None)."""

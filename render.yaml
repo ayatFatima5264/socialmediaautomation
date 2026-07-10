@@ -48,7 +48,15 @@ services:
       - key: FRONTEND_URL         # e.g. https://app.yourdomain.com
         sync: false
       # pydantic parses this as a JSON list, e.g. ["https://app.yourdomain.com"]
+      # NOTE: it MUST be valid JSON (square brackets + quotes), not a bare URL.
+      # Optional now — the backend also allows any https://*.vercel.app origin
+      # via CORS_ORIGIN_REGEX, so the Vercel frontend works without setting this.
       - key: CORS_ORIGINS
+        sync: false
+      # Regex of extra allowed origins. Defaults to https://.*\.vercel\.app so
+      # the deployed frontend + preview URLs work out of the box. Override for a
+      # custom domain, e.g. https://(.*\.)?yourdomain\.com
+      - key: CORS_ORIGIN_REGEX
         sync: false
       # --- Meta (Facebook + Instagram) OAuth --------------------------------
       - key: META_APP_ID
