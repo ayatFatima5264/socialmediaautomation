@@ -109,7 +109,7 @@ export default function seoPlugin() {
     async closeBundle() {
       // Import the same route data the app uses. These modules are plain ESM
       // with no Vite syntax, which is exactly why they were split out.
-      const { BRAND, MARKETING_PAGES, PRIVATE_ROUTES, fullTitle } =
+      const { AUTHOR, BRAND, MARKETING_PAGES, PRIVATE_ROUTES, fullTitle } =
         await importFile('../src/seo/pages.data.js')
       // posts.data.js holds ONLY published articles — it is what the client
       // bundle imports. drafts.data.js is read here and nowhere else, purely so
@@ -253,7 +253,7 @@ export default function seoPlugin() {
                 keywords: post.keyword,
                 articleSection: post.category,
                 mainEntityOfPage: { '@type': 'WebPage', '@id': url },
-                author: { '@type': 'Organization', name: BRAND.name, url: siteUrl },
+                author: { '@type': 'Person', name: AUTHOR.name },
                 publisher: {
                   '@type': 'Organization',
                   name: BRAND.name,

@@ -7,10 +7,26 @@
 // artwork at roughly zero kilobytes, keeps it crisp at any size, and keeps it
 // visually part of the brand rather than borrowed stock photography.
 //
+// SAFE AREA — the reason the layout constants below look fussy:
+// the same 1200x630 artwork is rendered into three different container
+// shapes (16/9 cards, 16/10 featured, and a wide article header), all with
+// `preserveAspectRatio="slice"`, which crops rather than letterboxes. The
+// tightest crops are:
+//
+//   article header  1200x430  -> vertical crop, leaves y 100..530
+//   featured card   16/10     -> horizontal crop, leaves x  96..1104
+//
+// Anything outside the intersection of those gets cut off. SAFE below is that
+// intersection with a margin, and every piece of text or iconography is
+// positioned inside it. Decorative patterns may bleed past — that is the point
+// of them.
+//
 // NOTE: gradient/clip ids are namespaced with the post slug. Without that, the
 // eight covers on the blog index would all resolve to the first card's
 // gradient — SVG ids are document-global.
 // ---------------------------------------------------------------------------
+
+const SAFE = { left: 140, right: 1060, top: 130, bottom: 500 }
 
 // Twenty palettes: [deep, mid, glow]. Hue walks the wheel while saturation and
 // lightness stay put, so the set reads as one family instead of a paint box.
@@ -38,15 +54,15 @@ export const PALETTES = [
 ]
 
 // ---- Pattern families -----------------------------------------------------
-// Each returns SVG children drawn over the gradient, in the palette's glow
-// colour at low opacity. Pure geometry — no randomness, so a given post's
-// cover is byte-identical on every render.
+// Drawn behind the content in the palette's glow colour at low opacity, and
+// weighted toward the right so the left-hand text block stays legible. These
+// are allowed to bleed outside the safe area.
 
 function Rings({ glow }) {
   return (
-    <g stroke={glow} fill="none" opacity="0.28">
-      {[90, 170, 250, 330, 410].map((r, i) => (
-        <circle key={r} cx="985" cy="150" r={r} strokeWidth={i % 2 ? 1.5 : 3} />
+    <g stroke={glow} fill="none" opacity="0.22">
+      {[70, 140, 210, 280, 350].map((r, i) => (
+        <circle key={r} cx="1010" cy="315" r={r} strokeWidth={i % 2 ? 1.5 : 3} />
       ))}
     </g>
   )
@@ -54,14 +70,14 @@ function Rings({ glow }) {
 
 function Grid({ glow }) {
   return (
-    <g fill={glow} opacity="0.3">
+    <g fill={glow} opacity="0.26">
       {Array.from({ length: 11 }, (_, row) =>
         Array.from({ length: 20 }, (_, col) => {
           const cx = 60 + col * 60
           const cy = 40 + row * 58
-          // Dots fade out toward the lower-left so the title stays readable.
           const r = 2 + ((row + col) % 4) * 1.1
-          return <circle key={`${row}-${col}`} cx={cx} cy={cy} r={r} opacity={0.25 + (col / 20) * 0.75} />
+          // Fade toward the left so the headline sits on clean colour.
+          return <circle key={`${row}-${col}`} cx={cx} cy={cy} r={r} opacity={0.1 + (col / 20) * 0.9} />
         }),
       )}
     </g>
@@ -70,7 +86,7 @@ function Grid({ glow }) {
 
 function Waves({ glow }) {
   return (
-    <g stroke={glow} fill="none" opacity="0.32">
+    <g stroke={glow} fill="none" opacity="0.26">
       {[0, 1, 2, 3, 4, 5].map((i) => {
         const y = 120 + i * 92
         return (
@@ -87,10 +103,9 @@ function Waves({ glow }) {
 
 function Shards({ glow }) {
   return (
-    <g fill={glow} opacity="0.26">
+    <g fill={glow} opacity="0.22">
       <path d="M1200 0 L1200 300 L900 0 Z" />
       <path d="M1200 200 L1200 470 L960 470 Z" opacity="0.7" />
-      <path d="M760 0 L980 0 L760 240 Z" opacity="0.5" />
       <path d="M1080 630 L1200 630 L1200 430 Z" opacity="0.6" />
       <path d="M880 630 L1020 630 L1020 500 Z" opacity="0.35" />
     </g>
@@ -99,32 +114,65 @@ function Shards({ glow }) {
 
 function Bars({ glow }) {
   return (
-    <g fill={glow} opacity="0.3">
+    <g fill={glow} opacity="0.24">
       {[
-        [820, 380, 250],
-        [880, 300, 330],
-        [940, 190, 440],
-        [1000, 260, 370],
-        [1060, 120, 510],
-        [1120, 330, 300],
+        [900, 330, 190],
+        [955, 270, 250],
+        [1010, 200, 320],
+        [1065, 250, 270],
+        [1120, 150, 380],
       ].map(([x, y, h]) => (
-        <rect key={x} x={x} y={y} width="34" height={h} rx="17" />
+        <rect key={x} x={x} y={y} width="30" height={h} rx="15" />
       ))}
-      <circle cx="837" cy="330" r="14" opacity="0.9" />
-      <circle cx="957" cy="140" r="14" opacity="0.9" />
-      <circle cx="1077" cy="70" r="14" opacity="0.9" />
     </g>
   )
 }
 
 const PATTERNS = [Rings, Grid, Waves, Shards, Bars]
 
+// ---- Headline wrapping ----------------------------------------------------
+// SVG has no text wrapping, so lines are measured here. At 60px in Inter Black
+// the average glyph is roughly 0.52em wide, and the headline column is
+// SAFE.left..820 (the icon badge occupies the right). Three lines maximum —
+// a fourth would collide with the kicker above or the crop below.
+function wrapTitle(text, maxChars = 23, maxLines = 3) {
+  const words = String(text).split(/\s+/)
+  const lines = []
+  let line = ''
+
+  for (const word of words) {
+    const candidate = line ? `${line} ${word}` : word
+    if (candidate.length <= maxChars) {
+      line = candidate
+    } else {
+      if (line) lines.push(line)
+      line = word
+      if (lines.length === maxLines) break
+    }
+  }
+  if (line && lines.length < maxLines) lines.push(line)
+
+  // If the title overflowed, trim the last line and mark the truncation.
+  if (lines.length === maxLines) {
+    const consumed = lines.join(' ').split(/\s+/).length
+    if (consumed < words.length) {
+      lines[maxLines - 1] = `${lines[maxLines - 1].replace(/[,:;]$/, '')}…`
+    }
+  }
+  return lines
+}
+
 /**
  * @param {string} slug     unique per post — namespaces the SVG ids
  * @param {number} palette  index into PALETTES
  * @param {number} pattern  index into PATTERNS
- * @param {string} icon     large watermark glyph
- * @param {string} label    short kicker printed on the art (usually the category)
+ * @param {string} icon     glyph shown in the badge
+ * @param {string} label    short kicker (the article's category)
+ * @param {string} title    when supplied, the headline is drawn on the art.
+ *                          Used for the article header, where the cover is
+ *                          large; omitted on cards, where the real title sits
+ *                          directly beneath the image and repeating it reads
+ *                          as a mistake.
  */
 export default function BlogCover({
   slug = 'post',
@@ -132,20 +180,26 @@ export default function BlogCover({
   pattern = 0,
   icon = '✦',
   label,
+  title,
   className = '',
   rounded = 'rounded-2xl',
 }) {
   const [deep, mid, glow] = PALETTES[palette % PALETTES.length]
   const Pattern = PATTERNS[pattern % PATTERNS.length]
   const gid = `cvg-${slug}`
-  const fid = `cvf-${slug}`
+  const sid = `cvs-${slug}`
+
+  const lines = title ? wrapTitle(title) : []
+  // Vertically centre the text block within the safe band.
+  const blockHeight = (label ? 52 : 0) + lines.length * 72
+  const startY = (SAFE.top + SAFE.bottom) / 2 - blockHeight / 2 + 34
 
   return (
     <svg
       viewBox="0 0 1200 630"
       className={`${className} ${rounded} block h-full w-full`}
       role="img"
-      aria-label={label ? `${label} article cover` : 'Article cover'}
+      aria-label={title ? `Cover image for “${title}”` : `${label || 'Article'} cover image`}
       preserveAspectRatio="xMidYMid slice"
     >
       <defs>
@@ -154,44 +208,63 @@ export default function BlogCover({
           <stop offset="62%" stopColor={mid} />
           <stop offset="100%" stopColor={glow} stopOpacity="0.75" />
         </linearGradient>
-        {/* Softens the pattern where the kicker text sits. */}
-        <linearGradient id={fid} x1="0" y1="0" x2="1" y2="0">
-          <stop offset="0%" stopColor={deep} stopOpacity="0.92" />
-          <stop offset="55%" stopColor={deep} stopOpacity="0.15" />
+        {/* Darkens the left third so the headline always clears contrast,
+            whatever the pattern is doing behind it. */}
+        <linearGradient id={sid} x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0%" stopColor={deep} stopOpacity="0.85" />
+          <stop offset="60%" stopColor={deep} stopOpacity="0.2" />
           <stop offset="100%" stopColor={deep} stopOpacity="0" />
         </linearGradient>
       </defs>
 
       <rect width="1200" height="630" fill={`url(#${gid})`} />
       <Pattern glow={glow} />
-      <rect width="1200" height="630" fill={`url(#${fid})`} />
+      <rect width="1200" height="630" fill={`url(#${sid})`} />
 
-      {/* Oversized watermark glyph, bottom-left. */}
-      <text
-        x="72"
-        y="560"
-        fontSize="300"
-        fill={glow}
-        opacity="0.22"
-        fontFamily="Inter, system-ui, sans-serif"
-      >
-        {icon}
-      </text>
+      {/* Icon badge, right of the headline and inside the horizontal crop. */}
+      <g opacity="0.9">
+        <circle cx="925" cy="315" r="96" fill={glow} opacity="0.14" />
+        <circle cx="925" cy="315" r="96" fill="none" stroke={glow} strokeWidth="2.5" opacity="0.45" />
+        <text
+          x="925"
+          y="315"
+          fontSize="96"
+          fill={glow}
+          textAnchor="middle"
+          dominantBaseline="central"
+          fontFamily="Inter, system-ui, sans-serif"
+        >
+          {icon}
+        </text>
+      </g>
 
       {label && (
         <text
-          x="76"
-          y="112"
-          fontSize="34"
+          x={SAFE.left}
+          y={startY - 34}
+          fontSize="26"
           fill={glow}
-          opacity="0.95"
-          letterSpacing="6"
+          letterSpacing="5"
           fontWeight="700"
           fontFamily="Inter, system-ui, sans-serif"
         >
           {label.toUpperCase()}
         </text>
       )}
+
+      {lines.map((line, i) => (
+        <text
+          key={i}
+          x={SAFE.left}
+          y={startY + 42 + i * 72}
+          fontSize="60"
+          fill="#ffffff"
+          fontWeight="800"
+          fontFamily="Inter, system-ui, sans-serif"
+        >
+          {line}
+        </text>
+      ))}
     </svg>
   )
 }

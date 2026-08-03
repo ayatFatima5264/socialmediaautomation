@@ -6,6 +6,7 @@ import Markdown, { extractHeadings, extractFaq } from '../../lib/markdown.jsx'
 import { Container, CTASection } from './_ui.jsx'
 import { SITE, SITE_URL } from '../../config/site'
 import { getPost, getRelated, loadPostBody, formatPostDate } from '../../content/posts'
+import { AUTHOR } from '../../seo/pages.data.js'
 import NotFound from '../NotFound.jsx'
 
 // ---------------------------------------------------------------------------
@@ -115,7 +116,7 @@ export default function BlogPost() {
       description: post.description,
       datePublished: post.date,
       dateModified: post.date,
-      author: { '@type': 'Organization', name: SITE.name, url: SITE_URL },
+      author: { '@type': 'Person', name: AUTHOR.name },
       publisher: { '@type': 'Organization', name: SITE.name, url: SITE_URL },
       mainEntityOfPage: { '@type': 'WebPage', '@id': `${SITE_URL}/blog/${post.slug}` },
       keywords: post.keyword,
@@ -174,9 +175,9 @@ export default function BlogPost() {
 
           <div className="mt-6 flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-line pt-5 text-sm text-muted">
             <span className="grid h-8 w-8 place-items-center rounded-full bg-accent text-xs font-bold text-accent-contrast">
-              {SITE.name.slice(0, 1)}
+              {AUTHOR.initial}
             </span>
-            <span className="font-medium text-body">The {SITE.name} Team</span>
+            <span className="font-medium text-body">{AUTHOR.name}</span>
             <span aria-hidden="true">·</span>
             <time dateTime={post.date}>{formatPostDate(post.date)}</time>
             <span aria-hidden="true">·</span>
@@ -193,6 +194,7 @@ export default function BlogPost() {
               pattern={post.cover.pattern}
               icon={post.cover.icon}
               label={post.category}
+              title={post.title}
               rounded=""
               className="h-full"
             />

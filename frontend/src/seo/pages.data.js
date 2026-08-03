@@ -11,6 +11,14 @@
 
 // Brand facts needed at build time. Kept here (rather than in config/site.js)
 // because that module reads import.meta.env and cannot be loaded by Node.
+// Article byline. Kept here so the visible author on the page and the author
+// in the BlogPosting structured data are always the same person — Google
+// flags a mismatch between them.
+export const AUTHOR = {
+  name: 'Fatima Aslam',
+  initial: 'F',
+}
+
 export const BRAND = {
   name: 'AutoSocial AI',
   tagline: 'AI Social Media Management Platform',
