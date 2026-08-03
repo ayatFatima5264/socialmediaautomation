@@ -42,6 +42,20 @@ class BusinessProfile(Base):
     # Step 6 — Website (optional).
     website: Mapped[str | None] = mapped_column(String(500), default=None)
 
+    # ---- Brand Kit -------------------------------------------------------
+    # Branding applied to generated images as editable overlay layers.
+    #
+    # `logo_url` accepts either a remote URL or a data: URL. Data URLs let a
+    # user upload a logo without any file-storage infrastructure — relevant
+    # because the API runs on an ephemeral disk where uploaded files would not
+    # survive a redeploy. Logos are small, and there is at most one per user.
+    logo_url: Mapped[str | None] = mapped_column(Text, default=None)
+    # Ordered hex strings, most important first: ["#1f8a5b", "#6ee7b7"].
+    brand_colors: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    phone: Mapped[str | None] = mapped_column(String(40), default=None)
+    email: Mapped[str | None] = mapped_column(String(255), default=None)
+    address: Mapped[str | None] = mapped_column(String(500), default=None)
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

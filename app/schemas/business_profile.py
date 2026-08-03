@@ -36,6 +36,15 @@ class BusinessProfileUpdate(BaseModel):
     business_goals: list[str] = Field(default_factory=list)
     website: str | None = Field(default=None, max_length=500)
 
+    # ---- Brand Kit -------------------------------------------------------
+    # Generous max_length: logo_url may be a data: URL for an uploaded file,
+    # which avoids needing file storage for a single small image per user.
+    logo_url: str | None = Field(default=None, max_length=1_500_000)
+    brand_colors: list[str] = Field(default_factory=list)
+    phone: str | None = Field(default=None, max_length=40)
+    email: str | None = Field(default=None, max_length=255)
+    address: str | None = Field(default=None, max_length=500)
+
     @field_validator("brand_voice", "business_goals", mode="before")
     @classmethod
     def _clean_list(cls, v: object) -> list[str]:
@@ -45,7 +54,35 @@ class BusinessProfileUpdate(BaseModel):
             v = [v]
         return [str(x).strip() for x in v if str(x).strip()]
 
-    @field_validator("business_name", "industry", "target_audience", "website", "business_description")
+    @field_validator("brand_colors", mode="before")
+    @classmethod
+    def _clean_colors(cls, v: object) -> list[str]:
+        """Keep only well-formed hex colours, normalised to #rrggbb.
+
+        The overlay renderer writes these straight into SVG fill attributes, so
+        anything that isn't a valid colour is dropped rather than passed
+        through — a malformed value would silently break the rendered layer.
+        """
+        if not v:
+            return []
+        if isinstance(v, str):
+            v = [v]
+        out: list[str] = []
+        for raw in v:
+            c = str(raw).strip().lower()
+            if not c.startswith("#"):
+                c = f"#{c}"
+            # Expand shorthand #abc -> #aabbcc.
+            if len(c) == 4 and all(ch in "0123456789abcdef" for ch in c[1:]):
+                c = "#" + "".join(ch * 2 for ch in c[1:])
+            if len(c) == 7 and all(ch in "0123456789abcdef" for ch in c[1:]):
+                out.append(c)
+        return out[:6]
+
+    @field_validator(
+        "business_name", "industry", "target_audience", "website",
+        "business_description", "logo_url", "phone", "email", "address",
+    )
     @classmethod
     def _blank_to_none(cls, v: str | None) -> str | None:
         if v is None:
@@ -64,4 +101,9 @@ class BusinessProfileRead(BaseModel):
     brand_voice: list[str]
     business_goals: list[str]
     website: str | None
+    logo_url: str | None = None
+    brand_colors: list[str] = []
+    phone: str | None = None
+    email: str | None = None
+    address: str | None = None
     updated_at: datetime | None = None

@@ -218,6 +218,32 @@ body {
     @apply animate-pulse rounded-lg;
     background-color: var(--inset);
   }
+
+  /* ---- Split workspace -------------------------------------------- *
+   * Two-column working pages (AI Generator, Create Post, Scheduler)
+   * where the controls and the results scroll INDEPENDENTLY. Without
+   * this the whole page scrolls as one, so scrolling down a long list of
+   * generated posts drags the settings form off screen — and getting
+   * back to "Generate" means scrolling all the way up again.
+   *
+   * Only applies from `lg` up. On a phone the columns stack, and two
+   * nested scroll areas there are worse than one page scroll.
+   * ------------------------------------------------------------------ */
+  .split-shell {
+    @apply flex flex-col gap-6 lg:h-full lg:min-h-0;
+  }
+  .split-grid {
+    /* min-h-0 is what actually allows the children to scroll: a grid item
+     * defaults to min-height:auto and would grow to fit its content
+     * instead of clipping it. */
+    @apply grid gap-6 lg:min-h-0 lg:flex-1;
+  }
+  .split-pane {
+    @apply lg:min-h-0 lg:overflow-y-auto;
+    /* Keeps content off the scrollbar without shifting layout when it
+     * appears and disappears. */
+    scrollbar-gutter: stable;
+  }
 }
 
 /* Accent-colored text link helper. */

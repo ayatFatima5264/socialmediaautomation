@@ -125,6 +125,345 @@ async def generate_article(
     }
 
 
+# Character budgets per slot. These are not cosmetic: the layout renders each
+# slot at a fixed size, so text beyond the budget either wraps past the frame or
+# gets clipped. Asking the model for the right length is far more reliable than
+# truncating afterwards, which cuts mid-sentence.
+TEMPLATE_SLOTS: dict[str, tuple[str, int]] = {
+    "headline": ("The main statement. Punchy and specific, not a caption.", 70),
+    "subtext": ("One supporting line that adds a concrete detail.", 110),
+    "cta": ("A 2-4 word button label, e.g. 'Book a call'.", 22),
+    "badge": ("A very short pill label, e.g. '50% OFF' or \"WE'RE HIRING\".", 16),
+    "price": ("A short price, e.g. '£49' or 'From $29'.", 12),
+}
+
+
+def _slot_limits(wanted: list[str], max_chars: dict[str, int] | None) -> dict[str, int]:
+    """Effective character budget per slot.
+
+    A layout may be tighter than the general budget — a big centred quote holds
+    far less than a three-line lower third — but never looser: the defaults are
+    what the renderers were sized for, so a caller asking for more would push
+    text past the frame.
+    """
+    limits: dict[str, int] = {}
+    for name in wanted:
+        default = TEMPLATE_SLOTS[name][1]
+        override = (max_chars or {}).get(name)
+        limits[name] = min(default, override) if isinstance(override, int) and override > 0 else default
+    return limits
+
+
+async def generate_template_content(
+    topic: str,
+    *,
+    slots: list[str],
+    template_label: str,
+    tone: str = "professional",
+    audience: str | None = None,
+    max_chars: dict[str, int] | None = None,
+    provider_name: str | None = None,
+    business_context: str | None = None,
+) -> dict:
+    """Generate the text that fills a content template's slots.
+
+    This is what makes generation layout-aware. Rather than producing a caption
+    and hoping it fits, the model is told which fields the design has and how
+    long each may be, so the result is composed for the layout it will occupy.
+
+    `max_chars` lets a template tighten those budgets for its own geometry; see
+    `_slot_limits`.
+
+    Unknown slot names are ignored, and any slot the model omits comes back as
+    an empty string — templates already skip empty slots, so a partial response
+    degrades to a simpler layout instead of failing.
+    """
+    wanted = [s for s in slots if s in TEMPLATE_SLOTS]
+    if not wanted:
+        return {}
+    limits = _slot_limits(wanted, max_chars)
+
+    provider = get_provider(provider_name)
+    system = (
+        "You are a senior social media art director writing copy that must fit "
+        "inside a fixed graphic layout. Every field has a hard character limit "
+        "and going over breaks the design. You ALWAYS return only a JSON object "
+        "matching the requested schema — no markdown, no code fences."
+    )
+    audience_line = f"\nTARGET AUDIENCE: {audience}" if audience else ""
+    context_line = (
+        f"\nBUSINESS CONTEXT (make it on-brand; ignore missing fields):\n{business_context}"
+        if business_context
+        else ""
+    )
+    field_lines = "\n".join(
+        f'- "{name}": {TEMPLATE_SLOTS[name][0]} Max {limits[name]} characters.'
+        for name in wanted
+    )
+    schema = ", ".join(f'"{name}": "..."' for name in wanted)
+
+    user = (
+        f"Write the on-image text for a {tone} \"{template_label}\" graphic.\n"
+        f"TOPIC: {topic}{audience_line}{context_line}\n\n"
+        f"Fields to write:\n{field_lines}\n\n"
+        "Rules:\n"
+        "- Respect every character limit strictly. Shorter is better.\n"
+        "- No hashtags, no emoji, no quotation marks around the text.\n"
+        "- Write for a reader who sees only the image, with no caption.\n\n"
+        f"Return ONLY a JSON object with exactly these keys:\n{{{schema}}}"
+    )
+
+    raw = await provider.complete(
+        system=system,
+        user=user,
+        max_tokens=400,
+        temperature=settings.ai_temperature,
+        json_mode=True,
+        context={"template": template_label, "topic": topic},
+    )
+    data = _parse_json(raw)
+
+    out: dict[str, str] = {}
+    for name in wanted:
+        limit = limits[name]
+        value = str(data.get(name, "") or "").strip().strip('"')
+        # Hard cap as a backstop — models overshoot limits often enough that
+        # trusting the instruction alone would let text run past the frame.
+        out[name] = value[:limit].strip()
+    return out
+
+
+# Where a layout puts its text -> how the scene must be framed to leave room.
+# Phrased as camera direction because that is what a text-to-image model acts
+# on; "leave space for a headline" means nothing to it, "subject in the upper
+# two thirds, foreground falling away" does.
+_ZONE_DIRECTION = {
+    "bottom": "the lower third of the frame is empty foreground, floor, "
+              "surface or sky — no subject matter there",
+    "top": "the upper third of the frame is empty sky, wall or open space — "
+           "no subject matter there",
+    "center": "the subject sits around the outer edges, leaving the middle of "
+              "the frame open and low in detail",
+    "left": "the subject sits on the right, the left third is open and plain",
+    "right": "the subject sits on the left, the right third is open and plain",
+    "full": "a restrained, minimal scene with large areas of plain tone",
+}
+
+
+async def build_visual_prompt(
+    topic: str,
+    *,
+    style_label: str | None = None,
+    template_label: str | None = None,
+    safe_zone: str | None = None,
+    headline: str | None = None,
+    provider_name: str | None = None,
+    business_context: str | None = None,
+) -> str:
+    """Turn a post topic into a detailed VISUAL SCENE description.
+
+    This is the fix for irrelevant, stock-looking images. Sending the post text
+    to a diffusion model asks it to illustrate an abstract marketing statement,
+    which is exactly the input that produces a generic laptop-on-a-desk. The
+    model needs a *scene*: a concrete subject, setting, lighting, camera angle,
+    and colour direction.
+
+    So an LLM reads the post first and writes that scene — grounded in the
+    business's actual industry, so a healthcare post yields a clinical setting
+    and a restaurant post yields food, rather than the same office stock photo
+    for both.
+
+    `safe_zone` is where the chosen template will draw its text. Feeding it in
+    here (as well as into compose_prompt) matters because the LLM can frame the
+    *scene* around the empty region, which a bolted-on "leave space at the
+    bottom" clause cannot do once the subject has already been described.
+
+    Returns a plain prompt string. Falls back to the topic on any failure: a
+    worse image is better than no image.
+    """
+    clean = (topic or "").strip()
+    if not clean:
+        return clean
+
+    context_line = (
+        f"\nBUSINESS CONTEXT (use the industry to ground the scene):\n{business_context}"
+        if business_context
+        else ""
+    )
+    # The on-image headline, when it exists, is the single strongest signal of
+    # what the picture is actually about — it is the message the design makes.
+    headline_line = f"\nHEADLINE THAT WILL APPEAR ON THE IMAGE: {headline}" if headline else ""
+    zone = _ZONE_DIRECTION.get(str(safe_zone or "").strip().lower())
+    reserve_line = f"\n- Frame it so {zone}." if zone else ""
+    style_line = f"\n- Visual treatment: {style_label}." if style_label else ""
+    template_line = f"\n- It will be used as a {template_label} graphic." if template_label else ""
+
+    system = (
+        "You write prompts for a text-to-image model. You translate a marketing "
+        "message into a single concrete PHOTOGRAPHIC SCENE. You never write "
+        "slogans, captions, or abstract concepts — a diffusion model cannot "
+        "draw 'productivity', only a specific thing in a specific place. "
+        "You ALWAYS return only a JSON object."
+    )
+    user = (
+        f"POST TOPIC: {clean}{headline_line}{context_line}\n\n"
+        "Write ONE image prompt describing a scene that a viewer would "
+        "immediately connect to this topic.\n\n"
+        "Requirements:\n"
+        "- Name a concrete subject and setting (people, objects, place).\n"
+        "- Specify lighting and camera framing.\n"
+        "- Suggest a colour direction.\n"
+        "- Match the subject to the industry — a healthcare post gets a "
+        "clinical scene, a restaurant post gets food, a property post gets "
+        "interiors, a marketing post gets a studio or campaign scene. Never "
+        "default to a generic laptop or office desk unless the topic is "
+        "genuinely about software or office work."
+        f"{style_line}{template_line}{reserve_line}\n"
+        "- The image is a background for a designed graphic: one clear "
+        "subject, plenty of calm negative space, nothing cluttered.\n"
+        "- No text, letters, numbers, signage, logos, or watermarks in the scene.\n"
+        "- 45 words maximum. No preamble.\n\n"
+        'Return ONLY: {"prompt": "..."}'
+    )
+
+    try:
+        # Provider resolution is inside the guard too: an unconfigured or
+        # misconfigured provider must degrade to the raw topic, not take down
+        # image generation, which needs no LLM to work at all.
+        raw = await get_provider(provider_name).complete(
+            system=system,
+            user=user,
+            max_tokens=200,
+            temperature=0.7,
+            json_mode=True,
+            context={"visual_prompt": True, "topic": clean[:80]},
+        )
+        built = str(_parse_json(raw).get("prompt", "")).strip()
+    except Exception:  # noqa: BLE001 - never let this block image generation
+        logger.warning("Visual prompt generation failed; using the raw topic.")
+        return clean
+
+    # A one-word answer means the model misunderstood; the topic is safer.
+    return built if len(built) > 15 else clean
+
+
+# Operations the image editor can apply. The model picks from this closed set
+# rather than emitting free-form edits, because an operation the client cannot
+# execute is worse than a refusal — it looks like the edit silently failed.
+IMAGE_EDIT_OPS = {
+    "move": "Move a layer to a corner. Needs `target` and `anchor`.",
+    "recolor": "Recolour layers. Needs `target`; optional `color` (hex) or `palette`:'brand'.",
+    "resize": "Scale a layer. Needs `target` and `scale` (0.5 = half, 2 = double).",
+    "spacing": "Shift layers away from the edges. Needs `delta` (e.g. 0.02).",
+    "theme": "Switch the overall look. Needs `mode`: 'dark' or 'light'.",
+    "add_text": "Add a text layer. Needs `text`; optional `anchor`.",
+    "add_cta": "Add a call-to-action button. Needs `text`.",
+    "remove": "Delete layers. Needs `target`.",
+    "restyle": "Regenerate the artwork in a different visual style. Needs `style`.",
+    "regenerate": "Regenerate the artwork from a new description. Needs `prompt`.",
+}
+
+#: Targets the client knows how to resolve to layers.
+IMAGE_EDIT_TARGETS = (
+    "logo", "text", "headline", "subtext", "cta", "background",
+    "shapes", "image", "all",
+)
+
+#: Ops that require new artwork rather than a layer change.
+REGENERATING_OPS = {"restyle", "regenerate"}
+
+
+async def interpret_image_edit(
+    instruction: str,
+    *,
+    layers: list[dict],
+    style: str | None = None,
+    provider_name: str | None = None,
+    business_context: str | None = None,
+) -> dict:
+    """Turn a natural-language edit into structured operations.
+
+    The image pipeline is text-to-image and cannot edit an existing bitmap. It
+    does not need to for most requests: the picture is a stack of addressable
+    layers, so "move the logo to the top right" or "use my brand colours" are
+    layer edits — applied instantly, losslessly, and undoably, with the artwork
+    untouched.
+
+    Only instructions that genuinely change what is DEPICTED ("replace the
+    laptop with a smartphone", "make it more premium") need new artwork. Those
+    return a regenerating op, and the client keeps every existing layer so the
+    layout survives the swap.
+
+    Returns {"operations": [...], "explanation": str, "needs_regeneration": bool}.
+    """
+    provider = get_provider(provider_name)
+
+    op_lines = "\n".join(f"- {name}: {desc}" for name, desc in IMAGE_EDIT_OPS.items())
+    layer_lines = (
+        "\n".join(
+            f"- id={l.get('id')} type={l.get('type')}"
+            + (f" text={str(l.get('text'))[:40]!r}" if l.get("text") else "")
+            for l in layers[:20]
+        )
+        or "- (no layers)"
+    )
+    context_line = (
+        f"\nBUSINESS CONTEXT:\n{business_context}" if business_context else ""
+    )
+
+    system = (
+        "You convert a user's plain-English request about a social media graphic "
+        "into a short list of structured edit operations. You ALWAYS return only "
+        "a JSON object — no markdown, no code fences, no commentary.\n\n"
+        "Prefer layer operations. Only use 'restyle' or 'regenerate' when the "
+        "request changes what the picture actually DEPICTS or its overall look — "
+        "those discard the current artwork, so they are a last resort."
+    )
+    user = (
+        f"USER REQUEST: {instruction}\n\n"
+        f"CURRENT LAYERS:\n{layer_lines}\n"
+        f"CURRENT STYLE: {style or 'unspecified'}{context_line}\n\n"
+        f"AVAILABLE OPERATIONS:\n{op_lines}\n\n"
+        f"VALID `target` VALUES: {', '.join(IMAGE_EDIT_TARGETS)}\n"
+        "VALID `anchor` VALUES: top-left, top-right, bottom-left, bottom-right, center\n\n"
+        "Rules:\n"
+        "- Return 1-4 operations. Fewer is better.\n"
+        "- Use only the operation names and target values listed above.\n"
+        "- If the request is unclear, return an empty operations list and say why.\n"
+        "- `explanation` is one short sentence describing what you changed.\n\n"
+        'Return ONLY: {"operations": [{"op": "...", ...}], "explanation": "..."}'
+    )
+
+    raw = await provider.complete(
+        system=system,
+        user=user,
+        max_tokens=500,
+        temperature=0.2,  # low: this is parsing intent, not writing copy
+        json_mode=True,
+        context={"image_edit": True},
+    )
+    data = _parse_json(raw)
+
+    operations = []
+    for item in data.get("operations") or []:
+        if not isinstance(item, dict):
+            continue
+        op = str(item.get("op", "")).strip()
+        if op not in IMAGE_EDIT_OPS:
+            continue  # drop anything the client cannot execute
+        target = str(item.get("target", "")).strip().lower()
+        if target and target not in IMAGE_EDIT_TARGETS:
+            target = "all"
+        cleaned = {k: v for k, v in item.items() if k not in {"op", "target"}}
+        operations.append({"op": op, **({"target": target} if target else {}), **cleaned})
+
+    return {
+        "operations": operations[:4],
+        "explanation": str(data.get("explanation", "")).strip(),
+        "needs_regeneration": any(o["op"] in REGENERATING_OPS for o in operations),
+    }
+
+
 def _normalize_list(value: object) -> list[str]:
     """Normalize a value into a clean list of strings (keeps phrases intact)."""
     if value is None:

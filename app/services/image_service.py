@@ -25,6 +25,8 @@ logger = logging.getLogger(__name__)
 # in a fetched image URL. The prompt is free text to Pollinations, so we reduce
 # it to letters/digits/spaces — same image, URL-safe.
 _PROMPT_SANITIZE_RE = re.compile(r"[^A-Za-z0-9 ]+")
+# Brand colours are user-supplied; only well-formed hex reaches the prompt.
+_HEX_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 
 
 class ImageError(Exception):
@@ -58,17 +60,158 @@ def dimensions_for(aspect_ratio: str) -> tuple[int, int]:
 # Visual style presets -> descriptive keywords folded into the image prompt.
 # Adding a style here makes it usable end-to-end with no other change.
 IMAGE_STYLES: dict[str, str] = {
+    # --- Visual treatments ------------------------------------------------
+    "corporate": (
+        "modern corporate photography, clean bright office environment, "
+        "professional, crisp lighting, muted confident palette"
+    ),
     "realistic": "photorealistic, natural lighting, sharp focus, high detail",
-    "minimal": "minimalist, clean composition, lots of negative space, simple",
     "illustration": "flat vector illustration, bold clean shapes, vivid colors",
+    "minimal": "minimalist, clean composition, lots of negative space, simple",
     "3d": "3d render, soft studio lighting, subtle depth of field",
     "cartoon": "playful cartoon style, bold outlines, vibrant colors",
     "watercolor": "soft watercolor painting, gentle washes, artistic texture",
+    "luxury": (
+        "luxury editorial aesthetic, rich textures, dramatic directional light, "
+        "deep tones with metallic accents, premium and understated"
+    ),
     "anime": "anime style, cel shaded, expressive, crisp linework",
+    # --- Sector treatments ------------------------------------------------
+    # These read as industries rather than art styles, but they work the same
+    # way: each is a prompt fragment that steers subject matter and palette.
+    # Useful precisely because most users think in terms of their sector.
+    "startup": (
+        "modern startup workspace, natural light, laptops and whiteboards, "
+        "energetic collaborative team, bright airy tones"
+    ),
+    "healthcare": (
+        "clean clinical setting, calm and reassuring, soft blues and whites, "
+        "professional healthcare environment, hygienic and bright"
+    ),
+    "restaurant": (
+        "appetising food photography, warm inviting light, shallow depth of "
+        "field, rustic textures, fresh ingredients"
+    ),
+    "real_estate": (
+        "architectural interior photography, wide angle, bright natural light, "
+        "tidy staged spaces, warm neutral palette"
+    ),
+    "fitness": (
+        "dynamic fitness photography, strong directional light, motion and "
+        "energy, gym or outdoor training setting, bold contrast"
+    ),
+    "ecommerce": (
+        "clean product photography on a seamless background, soft even studio "
+        "light, crisp shadows, centred hero product"
+    ),
 }
 
 #: Allowed image-quality tiers. "hd" asks Pollinations to enhance the prompt.
 IMAGE_QUALITIES = ("standard", "hd")
+
+
+# ---------------------------------------------------------------------------
+# Composition control.
+#
+# A generated image that will carry a headline, a CTA and a logo is not the
+# same brief as a generated image on its own: it needs a deliberate empty
+# region for the text to sit in. Diffusion models fill the frame edge to edge
+# unless told otherwise, which is why AI posts so often end up with a headline
+# sitting on someone's face.
+#
+# A layout declares WHERE its text lives (its safe zone); these fragments turn
+# that into direction the image model actually understands — where the subject
+# goes, where the detail stops, and what the empty area should look like.
+# ---------------------------------------------------------------------------
+SAFE_ZONES: dict[str, str] = {
+    "bottom": (
+        "place the subject in the upper two thirds of the frame, "
+        "leave the lower third as calm uncluttered negative space with soft "
+        "even tone and no detail"
+    ),
+    "top": (
+        "place the subject in the lower two thirds of the frame, "
+        "leave the top third as calm uncluttered negative space with soft "
+        "even tone and no detail"
+    ),
+    "center": (
+        "simple low-detail backdrop with a wide calm area through the middle "
+        "of the frame, subject matter kept to the outer edges"
+    ),
+    "left": (
+        "place the subject on the right side of the frame, leave the left "
+        "third as calm uncluttered negative space"
+    ),
+    "right": (
+        "place the subject on the left side of the frame, leave the right "
+        "third as calm uncluttered negative space"
+    ),
+    "full": (
+        "minimal low-detail composition with generous negative space "
+        "throughout, nothing competing with an overlay"
+    ),
+}
+
+#: Direction that makes the output read as a designed graphic rather than a
+#: snapshot. Applied whenever text will be drawn on top.
+DESIGN_DIRECTION = (
+    "professional advertising art direction, single clear focal point, "
+    "balanced composition, deliberate negative space, clean depth of field, "
+    "polished colour grading, magazine quality"
+)
+
+#: Terms that reliably wreck a design background, suppressed whenever the
+#: image is composed for an overlay.
+LAYOUT_NEGATIVES = (
+    "cluttered background, busy pattern, collage, split frame, "
+    "text, lettering, words, captions, watermark, signature, "
+    "distorted faces, extra limbs, low resolution"
+)
+
+#: Longest prompt handed to the image provider. Past roughly this length the
+#: model starts ignoring the tail — which is where the composition direction
+#: sits — and the URL gets unwieldy for platforms that fetch it server-side.
+MAX_PROMPT_CHARS = 900
+
+
+def safe_zone_fragment(safe_zone: str | None) -> str:
+    """Composition direction for a layout's text zone (e.g. "bottom")."""
+    if not safe_zone:
+        return ""
+    return SAFE_ZONES.get(str(safe_zone).strip().lower(), "")
+
+
+def brand_prompt_fragment(
+    colors: list[str] | None = None,
+    *,
+    reserve_space: str | None = None,
+) -> str:
+    """Prompt guidance for images that will carry a Brand Kit overlay.
+
+    Two distinct jobs:
+
+    1. Nudge the palette toward the brand colours. Diffusion models honour
+       colour direction reasonably well, though never exactly — this biases
+       the image, it does not guarantee a match.
+    2. Suppress generated text. This matters more than it sounds: AI image
+       models render lettering as garbled pseudo-text, and since the real
+       company name and contact details are drawn as a sharp vector layer on
+       top, any generated text is pure noise competing with it. Asking for a
+       clean area where the overlay will sit also stops the logo landing on
+       top of a busy focal point.
+    """
+    parts: list[str] = []
+
+    valid = [c for c in (colors or []) if _HEX_RE.match(c or "")]
+    if valid:
+        parts.append("dominant colour palette of " + " and ".join(valid[:3]))
+
+    if reserve_space:
+        parts.append(f"leave clean uncluttered space at the {reserve_space} of the frame")
+
+    # Always applied when branding is on — see docstring point 2.
+    parts.append("no text, no lettering, no words, no watermark, no logo in the image")
+    return ", ".join(parts)
 
 
 def compose_prompt(
@@ -77,8 +220,24 @@ def compose_prompt(
     style: str | None = None,
     negative: str | None = None,
     prompt_enhancer: bool = False,
+    brand_colors: list[str] | None = None,
+    brand_reserve: str | None = None,
+    branded: bool = False,
+    background_hint: str | None = None,
+    safe_zone: str | None = None,
+    design_direction: bool = False,
 ) -> str:
-    """Fold style, an enhancer hint and negative terms into one prompt string.
+    """Fold style, layout and negative terms into one image-model prompt.
+
+    Order matters. The subject leads (diffusion models weight the opening of a
+    prompt most heavily), then the visual treatment, then the composition rules
+    that keep the frame usable as a design surface, then the exclusions.
+
+    `safe_zone` is the layout's text region ("bottom", "center", …) and is what
+    turns "a bakery" into an image with somewhere for the headline to go.
+    `design_direction` adds the art-direction language that separates a
+    designed background from a snapshot; both are opt-in, so a bare
+    compose_prompt(topic) is still exactly the topic.
 
     Pollinations has no separate negative-prompt parameter, so "avoid X" terms
     are expressed inline as "without X" — good enough to steer the model away.
@@ -88,11 +247,43 @@ def compose_prompt(
         parts.append("highly detailed, professional, eye-catching social media visual")
     if style and style in IMAGE_STYLES:
         parts.append(IMAGE_STYLES[style])
-    if negative:
-        terms = [t.strip() for t in re.split(r"[,\n]+", negative) if t.strip()]
-        if terms:
-            parts.append("without " + ", ".join(terms))
-    return ". ".join(p for p in parts if p)
+    if design_direction:
+        parts.append(DESIGN_DIRECTION)
+    # Layout guidance: the text is drawn on top, so the background has to make
+    # room for it rather than compete with it. The template's prose hint and
+    # the structural safe-zone rule complement each other — the first describes
+    # the scene, the second says where the detail must stop.
+    if background_hint:
+        parts.append(background_hint.strip())
+    zone = safe_zone_fragment(safe_zone)
+    if zone:
+        parts.append(zone)
+    if branded:
+        parts.append(brand_prompt_fragment(brand_colors, reserve_space=brand_reserve))
+
+    avoid = [t.strip() for t in re.split(r"[,\n]+", negative or "") if t.strip()]
+    # Gated on the RESOLVED zone, not the argument: an unrecognised zone name
+    # adds no composition rule, so it must not add constraints either.
+    if zone or design_direction:
+        # Only when the image is a design surface — on a plain generation these
+        # would be unrequested constraints.
+        avoid.extend(t.strip() for t in LAYOUT_NEGATIVES.split(","))
+    if avoid:
+        # Preserve order while dropping repeats, so a user's own "no text"
+        # doesn't get restated by the layout defaults.
+        seen: set[str] = set()
+        unique = [t for t in avoid if not (t.lower() in seen or seen.add(t.lower()))]
+        parts.append("without " + ", ".join(unique))
+
+    # Clauses are joined with ". ", so a fragment that already ends in a full
+    # stop — the LLM-written brief usually does — would otherwise double it up.
+    prompt = ". ".join(p.rstrip(" .") for p in parts if p and p.strip(" ."))
+    if len(prompt) > MAX_PROMPT_CHARS:
+        # Cut at a separator so the prompt ends on a whole clause rather than
+        # mid-phrase, which reads to the model as a different instruction.
+        cut = prompt.rfind(", ", 0, MAX_PROMPT_CHARS)
+        prompt = prompt[: cut if cut > MAX_PROMPT_CHARS // 2 else MAX_PROMPT_CHARS].rstrip(" ,.")
+    return prompt
 
 
 def build_image_url(
@@ -151,6 +342,7 @@ def named_candidates(
     height: int | None = None,
     seed: int | None = None,
     enhance: bool = False,
+    keyword_source: str | None = None,
 ) -> list[tuple[str, str]]:
     """Ordered (provider, url) pairs for one image — the fallback chain.
 
@@ -161,6 +353,11 @@ def named_candidates(
 
     The AI models come from settings.image_fallback_models; the last two are
     different hosts that won't rate-limit, guaranteeing a relevant-ish visual.
+
+    `keyword_source` is the original topic. The photo fallback searches by
+    keyword, and a composed prompt is mostly art direction ("soft directional
+    light", "negative space") — searching that returns abstract stock, so the
+    topic is used for the search whenever the caller can supply it.
     """
     w = width or settings.image_width
     h = height or settings.image_height
@@ -172,7 +369,8 @@ def named_candidates(
             f"pollinations-{model}",
             build_image_url(prompt, width=w, height=h, seed=seed, model=model, enhance=enhance),
         ))
-    out.append(("loremflickr", f"https://loremflickr.com/{w}/{h}/{quote(_keywords(prompt))}?lock={lock}"))
+    terms = _keywords(keyword_source or prompt)
+    out.append(("loremflickr", f"https://loremflickr.com/{w}/{h}/{quote(terms)}?lock={lock}"))
     out.append(("picsum", f"https://picsum.photos/seed/{lock + 1}/{w}/{h}"))
     return out
 
@@ -184,6 +382,7 @@ def build_image_candidates(
     height: int | None = None,
     seed: int | None = None,
     enhance: bool = False,
+    keyword_source: str | None = None,
 ) -> list[str]:
     """Ordered image-source URLs for one image: try each until one renders.
 
@@ -193,7 +392,8 @@ def build_image_candidates(
     return [
         url
         for _, url in named_candidates(
-            prompt, width=width, height=height, seed=seed, enhance=enhance
+            prompt, width=width, height=height, seed=seed, enhance=enhance,
+            keyword_source=keyword_source,
         )
     ]
 

@@ -30,9 +30,14 @@ logger = logging.getLogger(__name__)
 
 
 def image_prompt_for(topic: str | None, content_type: str | None) -> str:
-    """Turn a planned topic into a styled image prompt."""
+    """Turn a planned topic into a styled image prompt.
+
+    Planner images carry a brand overlay like any other, so they are composed
+    as design surfaces: art-directed, with the clutter and pseudo-lettering
+    that ruins an overlay suppressed.
+    """
     base = f"{(topic or '').strip()}. {content_type or 'social media'} visual, on-brand, professional"
-    return compose_prompt(base, style="realistic", prompt_enhancer=True)
+    return compose_prompt(base, style="realistic", prompt_enhancer=True, design_direction=True)
 
 
 def build_post_media(topic: str | None, content_type: str | None, *, seed: int) -> list[dict]:
@@ -42,7 +47,9 @@ def build_post_media(topic: str | None, content_type: str | None, *, seed: int) 
     loader picks the first that renders, so a rate-limited primary still shows.
     """
     prompt = image_prompt_for(topic, content_type)
-    candidates = build_image_candidates(prompt, seed=seed)
+    # The photo fallback searches by keyword, so it gets the topic rather than
+    # the art direction — see named_candidates.
+    candidates = build_image_candidates(prompt, seed=seed, keyword_source=topic)
     return [{
         "type": "image",
         "source": "ai",

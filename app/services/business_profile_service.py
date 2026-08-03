@@ -37,6 +37,13 @@ def upsert_profile(
     profile.business_goals = data.business_goals
     profile.website = data.website
 
+    # Brand Kit.
+    profile.logo_url = data.logo_url
+    profile.brand_colors = data.brand_colors
+    profile.phone = data.phone
+    profile.email = data.email
+    profile.address = data.address
+
     db.commit()
     db.refresh(profile)
     return profile

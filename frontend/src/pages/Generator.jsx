@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../lib/api'
 import { useToast } from '../context/ToastContext.jsx'
 import {
@@ -7,6 +7,7 @@ import {
   TONES,
   ASPECT_RATIOS,
   IMAGE_STYLES,
+  IMAGE_STYLE_GROUPS,
   IMAGE_QUALITIES,
   CAROUSEL_SLIDE_OPTIONS,
   PLATFORM_ASPECT_DEFAULT,
@@ -15,6 +16,29 @@ import {
 import { localInputToISO } from '../lib/datetime'
 import { publishOutcome } from '../lib/publish'
 import { loadFirstAvailable } from '../lib/imageLoader'
+import useBrandKit from '../hooks/useBrandKit'
+import BrandKitControls from '../components/brand/BrandKitControls.jsx'
+import BrandOverlay from '../components/brand/BrandOverlay.jsx'
+import {
+  BrandLayersProvider,
+  useComposeLayers,
+  useLayout,
+} from '../components/brand/BrandLayersContext.jsx'
+import TemplatePicker from '../components/brand/TemplatePicker.jsx'
+import ImageEditor from '../components/editor/ImageEditor.jsx'
+import {
+  getContentTemplate,
+  backgroundHintFor,
+  buildContentLayers,
+  getLayout,
+  maxCharsFor,
+  safeZoneFor,
+  DEFAULT_TEMPLATE_ID,
+} from '../lib/brandKit/contentTemplates'
+import { planPlacement } from '../lib/brandKit/smartLayout'
+import { validateLayers } from '../lib/brandKit/validateLayout'
+import { buildBrandLayers } from '../lib/brandKit/templates'
+import { getSize, DEFAULT_SIZE, aspectOf } from '../lib/brandKit/platformSizes'
 import {
   CONTENT_TYPES,
   CONTENT_TYPE_ORDER,
@@ -115,6 +139,83 @@ export default function Generator() {
   // Global image settings (apply to all selected platforms) + per-platform
   // overrides keyed by platform.
   const [img, setImg] = useState({ ...DEFAULT_IMAGE_SETTINGS, ...(SAVED?.img || {}) })
+
+  // Content template + platform size. The template decides the on-image layout
+  // and which text slots the AI writes; the size decides the pixel dimensions.
+  // Picking a template adopts its natural size, which the user can override.
+  // Which image is open in the editor, if any: { draftIndex, imageIndex,
+  // url, layers }. Held here rather than per card so a single editor
+  // instance serves every image on the page.
+  const [editing, setEditing] = useState(null)
+  const [templateId, setTemplateId] = useState(SAVED?.templateId ?? DEFAULT_TEMPLATE_ID)
+  const [sizeId, setSizeId] = useState(SAVED?.sizeId ?? DEFAULT_SIZE)
+
+  function updateTemplate(patch) {
+    if (patch.templateId != null) setTemplateId(patch.templateId)
+    if (patch.sizeId != null) {
+      setSizeId(patch.sizeId)
+      // Keep the image pipeline's aspect ratio in step with the chosen size.
+      updateImg({ aspectRatio: getSize(patch.sizeId).aspectRatio })
+    }
+  }
+
+  // Brand Kit: the user's logo/colours/contact plus their overlay preferences.
+  // Layers are composited over the image at render time, so toggling branding
+  // never requires regenerating anything.
+  const {
+    brandKit,
+    settings: brandSettings,
+    setSettings: setBrandSettings,
+    available: brandAvailable,
+  } = useBrandKit()
+
+  // Extra generation hints sent when branding is on: bias the palette toward
+  // the brand colours, keep the overlay area clean, and suppress the garbled
+  // pseudo-text diffusion models produce (the real text is a vector layer).
+  // Resolution order for what the image depicts:
+  //   1. the user's explicit Image Prompt, when they typed one
+  //   2. the prompt derived from the post content (previous behaviour)
+  //   3. the topic, as a last resort
+  // Keeping (2) and (3) means an untouched Image Prompt field changes nothing
+  // about how the existing flow behaves.
+  const imagePromptFor = (card) =>
+    img.imagePrompt?.trim() || card?.imagePrompt || topic
+
+  // Same composition the renderer performs, available outside the provider
+  // so the editor can be handed exactly what is on screen — including the
+  // placement chosen for that specific image, or the design would shift the
+  // moment the user opened it.
+  const composeForEditor = (content, slideIndex, placement) => {
+    const aspect = aspectOf(sizeId)
+    const layers = [
+      ...(content
+        ? buildContentLayers(templateId, content, { brandKit, slideIndex, placement, aspect })
+        : []),
+      ...(brandSettings.enabled && brandAvailable ? buildBrandLayers(brandKit, brandSettings) : []),
+    ]
+    return validateLayers(layers, { aspect, layout: getLayout(templateId) })
+  }
+
+  const brandRequest = useMemo(() => {
+    if (!brandSettings.enabled || !brandAvailable) return {}
+    return {
+      branded: true,
+      brand_colors: brandKit?.brand_colors || [],
+      brand_reserve: brandSettings.template === 'corner-logo' ? null : 'bottom',
+    }
+  }, [brandSettings.enabled, brandSettings.template, brandAvailable, brandKit])
+
+  // What the chosen layout needs the artwork to be: the region it will fill
+  // with text, and what kind of graphic it is. Sent with every image request
+  // so the scene is composed around the design instead of fighting it.
+  const templateRequest = useMemo(
+    () => ({
+      background_hint: backgroundHintFor(templateId),
+      safe_zone: safeZoneFor(templateId),
+      template_label: getContentTemplate(templateId).label,
+    }),
+    [templateId],
+  )
   const [overrides, setOverrides] = useState(SAVED?.overrides ?? {})
   const [showAdvanced, setShowAdvanced] = useState(false)
   // Advanced option groups are collapsed by default to keep the form compact.
@@ -491,10 +592,15 @@ export default function Generator() {
       let cover = null
       try {
         const imgRes = await api.generateImages({
-          prompt: a.cover_image_prompt || a.title,
+          prompt: img.imagePrompt?.trim() || a.cover_image_prompt || a.title,
           aspect_ratio: '16:9',
           style: img.style,
           quality: img.quality,
+          ...brandRequest,
+          // Both candidates are already visual descriptions — the article
+          // generator writes one, or the user typed one — so re-briefing them
+          // would only blur what they asked for.
+          analyze: false,
         })
         cover = imgRes.images[0]
       } catch {
@@ -540,8 +646,31 @@ export default function Generator() {
     const s = card.settings
     updateDraft(i, { imgLoading: true, imgError: null })
     try {
+      // The layout's on-image copy is written to its slot budgets, so it
+      // fits the design rather than being squeezed into it afterwards. It is
+      // fetched in parallel with the image and is optional — a failure here
+      // leaves an unlayered image rather than no image.
+      const template = getContentTemplate(templateId)
+      const contentPromise = api
+        .generateTemplateContent({
+          topic: imagePromptFor(card) || topic,
+          template_label: template.label,
+          slots: template.slots,
+          max_chars: maxCharsFor(templateId),
+          tone,
+          audience: audience || null,
+        })
+        .then((r) => r.content)
+        .catch(() => null)
+
+      // The headline is the message the design makes, so it briefs the
+      // artwork. Worth the extra round trip: this endpoint only builds URLs —
+      // the picture itself is rendered when the browser loads one — so
+      // sequencing costs a request, not a generation.
+      const copy = await contentPromise
+
       const res = await api.generateImages({
-        prompt: card.imagePrompt || topic,
+        prompt: imagePromptFor(card),
         platform: card.platform,
         aspect_ratio: s.aspectRatio,
         carousel: s.carousel,
@@ -550,8 +679,16 @@ export default function Generator() {
         quality: s.quality,
         negative_prompt: s.negative || null,
         prompt_enhancer: s.promptEnhancer,
+        ...brandRequest,
+        ...templateRequest,
+        headline: copy?.headline || null,
       })
-      updateDraft(i, { images: res.images, imgLoading: false, imgError: null })
+      updateDraft(i, {
+        images: res.images,
+        templateContent: await contentPromise,
+        imgLoading: false,
+        imgError: null,
+      })
     } catch (err) {
       updateDraft(i, {
         imgLoading: false,
@@ -588,7 +725,7 @@ export default function Generator() {
     updateDraft(i, { imgLoading: true })
     try {
       const res = await api.generateImages({
-        prompt: slide?.label || c.imagePrompt || topic,
+        prompt: slide?.label || imagePromptFor(c),
         platform: c.platform,
         aspect_ratio: s.aspectRatio,
         carousel: false,
@@ -597,6 +734,9 @@ export default function Generator() {
         quality: s.quality,
         negative_prompt: s.negative || null,
         prompt_enhancer: s.promptEnhancer,
+        ...brandRequest,
+        ...templateRequest,
+        headline: c.templateContent?.headline || null,
       })
       const fresh = res.images[0]
       updateDraft(i, (cur) => ({
@@ -947,8 +1087,11 @@ export default function Generator() {
     if (!article) return
     try {
       const imgRes = await api.generateImages({
-        prompt: article.coverPrompt, aspect_ratio: '16:9',
+        prompt: img.imagePrompt?.trim() || article.coverPrompt,
+        aspect_ratio: '16:9',
         style: img.style, quality: img.quality,
+        ...brandRequest,
+        analyze: false, // already a visual description — see runGenerateArticle
       })
       updateArticle({ cover: imgRes.images[0] })
     } catch (err) {
@@ -959,17 +1102,18 @@ export default function Generator() {
   const platformsForOverride = selected.length ? selected : []
 
   return (
-    <div className="space-y-6">
-      <div>
+    <BrandLayersProvider brandKit={brandKit} settings={brandSettings} templateId={templateId}>
+    <div className="split-shell">
+      <div className="shrink-0">
         <h1 className="text-2xl font-bold">AI Generator</h1>
         <p className="text-sm text-muted">
           Describe an idea — get platform-optimized captions and AI images you control.
         </p>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[380px_1fr]">
+      <div className="split-grid lg:grid-cols-[380px_1fr]">
         {/* ---- Input panel ---- */}
-        <form onSubmit={generate} className="card h-fit space-y-5 p-5">
+        <form onSubmit={generate} className="card split-pane space-y-5 p-5 lg:h-full">
           {/* Step 0 — Create From (single dropdown, was a 10-pill grid) */}
           <div>
             <label className="label">Create from</label>
@@ -1236,13 +1380,54 @@ export default function Generator() {
                       value={img.style}
                       onChange={(e) => updateImg({ style: e.target.value })}
                     >
-                      {IMAGE_STYLES.map((s) => (
-                        <option key={s.value} value={s.value}>
-                          {s.label}
-                        </option>
+                      {IMAGE_STYLE_GROUPS.map((group) => (
+                        <optgroup key={group} label={group}>
+                          {IMAGE_STYLES.filter((s) => s.group === group).map((s) => (
+                            <option key={s.value} value={s.value}>
+                              {s.label}
+                            </option>
+                          ))}
+                        </optgroup>
                       ))}
                     </select>
                   </div>
+
+                  {/* Independent image prompt. Left blank, the image is
+                      described from the post content exactly as before. */}
+                  <div>
+                    <label className="label flex items-center justify-between" htmlFor="imagePrompt">
+                      <span>Image Prompt</span>
+                      <span className="text-xs font-normal text-muted">
+                        {img.imagePrompt?.trim() ? 'Custom' : 'Auto from post'}
+                      </span>
+                    </label>
+                    <textarea
+                      id="imagePrompt"
+                      className="input min-h-20 resize-y"
+                      maxLength={480}
+                      placeholder="Describe the image you want. Leave blank to build it from the post."
+                      value={img.imagePrompt || ''}
+                      onChange={(e) => updateImg({ imagePrompt: e.target.value })}
+                    />
+                    <p className="mt-1.5 text-xs text-muted">
+                      Independent of the post text — describe the visual, not the caption.
+                    </p>
+                  </div>
+
+                  <TemplatePicker
+                    templateId={templateId}
+                    sizeId={sizeId}
+                    brandKit={brandKit}
+                    brandSettings={brandSettings}
+                    onChange={updateTemplate}
+                  />
+
+                  <BrandKitControls
+                    brandKit={brandKit}
+                    settings={brandSettings}
+                    onChange={setBrandSettings}
+                    available={brandAvailable}
+                  />
                 </div>
               )}
             </Accordion>
@@ -1434,7 +1619,7 @@ export default function Generator() {
         </form>
 
         {/* ---- Output panel ---- */}
-        <div className="space-y-4">
+        <div className="split-pane space-y-4 lg:h-full lg:pr-1">
           {/* Article mode renders a dedicated editor */}
           {contentType === 'article' ? (
             articleBusy ? (
@@ -1533,6 +1718,13 @@ export default function Generator() {
                   images: cur.images.map((im, j) => (j === idx ? { ...im, url } : im)),
                 }))
               }
+              // Remembered per image so the editor — and a later re-render —
+              // opens on the placement the user is already looking at.
+              onImagePlacement={(idx, placement) =>
+                updateDraft(i, (cur) => ({
+                  images: cur.images.map((im, j) => (j === idx ? { ...im, placement } : im)),
+                }))
+              }
               onCopy={() => copyCaption(c)}
               onDownload={(url, name) => downloadImage(url, name)}
               onDownloadAll={() => downloadAll(c)}
@@ -1540,6 +1732,25 @@ export default function Generator() {
               onRegenCaption={() => regenerateCaption(i)}
               onRegenImages={() => generateCardImages(i, c)}
               onRegenSlide={(idx) => regenerateSlide(i, idx)}
+              onEditImage={(idx) => {
+                const im = c.images?.[idx]
+                if (!im?.url) return
+                const [w, h] = getSize(sizeId).dimensions
+                setEditing({
+                  draftIndex: i,
+                  imageIndex: idx,
+                  url: im.url,
+                  prompt: im.prompt || c.imagePrompt || topic,
+                  size: { width: w, height: h },
+                  // Hand over the exact layers on screen, so the editor opens
+                  // on what the user is looking at rather than a bare image.
+                  layers: composeForEditor(
+                    c.templateContent,
+                    c.settings?.carousel ? idx : undefined,
+                    im.placement,
+                  ),
+                })
+              }}
               onRegenAll={() => regenerateEntirePost(i)}
               onSave={() => saveDraft(i)}
               onSchedule={() => setScheduleFor(i)}
@@ -1568,7 +1779,51 @@ export default function Generator() {
       />
 
       <ConfirmModal modal={confirmModal} onCancel={() => setConfirmModal(null)} />
+
+      {/* Image editor. Opens on a generated image with its brand and content
+          layers already editable; saving replaces that image with a flattened
+          data URL, so the rest of the flow (publish, schedule) is unchanged. */}
+      {editing && (
+        <ImageEditor
+          open
+          imageUrl={editing.url}
+          size={editing.size}
+          layers={editing.layers}
+          brandKit={brandKit}
+          style={img.style}
+          onClose={() => setEditing(null)}
+          // Fresh artwork for the SAME frame. Only the base image layer is
+          // swapped, so every text, shape and brand layer survives — which is
+          // how the layout is preserved when a request needs new art.
+          onRegenerate={async ({ style, prompt }) => {
+            const res = await api.generateImages({
+              prompt: prompt || editing.prompt || imagePromptFor(null),
+              aspect_ratio: getSize(sizeId).aspectRatio,
+              style: style || img.style,
+              quality: img.quality,
+              negative_prompt: img.negative || null,
+              prompt_enhancer: img.promptEnhancer,
+              ...brandRequest,
+              ...templateRequest,
+              // The user asked for this artwork in their own words, so it is
+              // used as written rather than re-briefed from the post.
+              analyze: !prompt,
+            })
+            return res.images?.[0]?.url || null
+          }}
+          onSave={(dataUrl) => {
+            updateDraft(editing.draftIndex, (cur) => ({
+              images: cur.images.map((im, i) =>
+                i === editing.imageIndex ? { ...im, url: dataUrl, fallbacks: [], edited: true } : im,
+              ),
+            }))
+            setEditing(null)
+            toast.success('Image updated')
+          }}
+        />
+      )}
     </div>
+    </BrandLayersProvider>
   )
 }
 
@@ -1625,8 +1880,8 @@ function SettingsGrid({ aspectRatio, carousel, slides, onChange }) {
 // ---------------------------------------------------------------------------
 function PostCard({
   c, limit, label,
-  onContent, onHashtags, onImageResolved, onCopy, onDownload, onDownloadAll,
-  onDownloadAssets, onRegenCaption, onRegenImages, onRegenSlide, onRegenAll,
+  onContent, onHashtags, onImageResolved, onImagePlacement, onCopy, onDownload, onDownloadAll,
+  onDownloadAssets, onRegenCaption, onRegenImages, onRegenSlide, onRegenAll, onEditImage,
   onSave, onSchedule, onPublish, onClearPlatform, onDuplicate,
 }) {
   const over = c.content.length > limit
@@ -1710,7 +1965,17 @@ function PostCard({
                       alt={im.label || `${label} image ${idx + 1}`}
                       aspectRatio={c.settings.aspectRatio}
                       onResolved={(url) => onImageResolved(idx, url)}
+                      onPlacement={(p) => onImagePlacement(idx, p)}
+                      content={c.templateContent}
+                      slideIndex={isCarousel ? idx : undefined}
                     />
+                    <button
+                      onClick={() => onEditImage(idx)}
+                      title="Open in the editor"
+                      className="absolute right-2 top-2 rounded-lg border border-line bg-surface/95 px-2.5 py-1 text-xs font-semibold text-body opacity-0 shadow-sm transition group-hover:opacity-100 focus:opacity-100"
+                    >
+                      ✎ Edit
+                    </button>
                     {isCarousel && (
                       <figcaption className="mt-1 flex items-center justify-between gap-1 text-[11px] text-muted">
                         <span className="truncate">
@@ -1782,22 +2047,49 @@ function PostCard({
 
 // Loads the first working source from a candidate list, through a global
 // concurrency gate (avoids rate-limit 429s), falling back automatically.
-function SmartImage({ candidates, alt, aspectRatio, onResolved }) {
+function SmartImage({
+  candidates,
+  alt,
+  aspectRatio,
+  onResolved,
+  onPlacement,
+  content,
+  slideIndex,
+}) {
+  const compose = useComposeLayers()
+  const layout = useLayout()
   const [src, setSrc] = useState(null)
   const [failed, setFailed] = useState(false)
   const [reloadKey, setReloadKey] = useState(0)
+  // Where the text actually goes on THIS image. Null until the artwork has
+  // been read, and null forever if it cannot be (cross-origin, load failure),
+  // in which case the template's declared zone is used unchanged.
+  const [placement, setPlacement] = useState(null)
   const ratio = aspectRatio.replace(':', '/')
   const key = candidates.join('|')
+  const [rw, rh] = aspectRatio.split(':').map(Number)
+  const aspect = rw && rh ? rw / rh : 1
+  const brandLayers = compose(content, slideIndex, placement, aspect)
 
   useEffect(() => {
     let cancelled = false
     setSrc(null)
     setFailed(false)
+    setPlacement(null)
     loadFirstAvailable(candidates).then((url) => {
       if (cancelled) return
       if (url) {
         setSrc(url)
         onResolved?.(url)
+        // Read the image and pick the calmest zone for the text. Deliberately
+        // not awaited before showing the image: the artwork appears straight
+        // away and the layers settle a frame later, rather than the whole card
+        // waiting on an analysis that may not even succeed.
+        planPlacement(url, layout).then((p) => {
+          if (cancelled) return
+          setPlacement(p)
+          onPlacement?.(p)
+        })
       } else {
         setFailed(true)
       }
@@ -1830,14 +2122,24 @@ function SmartImage({ candidates, alt, aspectRatio, onResolved }) {
   if (!src) {
     return <div className="skeleton w-full rounded-xl" style={{ aspectRatio: ratio }} />
   }
+
+  // Brand layers are drawn over the image rather than baked into it, so
+  // toggling the Brand Kit is instant and never costs a regeneration.
   return (
-    <img
-      src={src}
-      alt={alt}
-      loading="lazy"
-      className="w-full rounded-xl object-cover"
-      style={{ aspectRatio: ratio }}
-    />
+    <div className="relative w-full overflow-hidden rounded-xl" style={{ aspectRatio: ratio }}>
+      <img
+        src={src}
+        alt={alt}
+        loading="lazy"
+        crossOrigin="anonymous"
+        className="h-full w-full object-cover"
+      />
+      <BrandOverlay
+        layers={brandLayers}
+        aspect={aspect}
+        idPrefix={`gen-${String(src).slice(-20).replace(/[^a-z0-9]/gi, '')}`}
+      />
+    </div>
   )
 }
 

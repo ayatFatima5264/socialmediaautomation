@@ -60,7 +60,7 @@ export default function Layout() {
   const initials = (user?.full_name || user?.email || '?').slice(0, 1).toUpperCase()
 
   return (
-    <div className="app-bg flex min-h-screen">
+    <div className="app-bg flex h-screen overflow-hidden">
       {/* ---- Desktop sidebar ---------------------------------------- */}
       <aside className="sticky top-0 hidden h-screen w-64 shrink-0 flex-col border-r border-line bg-sidebar p-4 md:flex">
         <div className="mb-8">
@@ -174,7 +174,7 @@ export default function Layout() {
           </div>
         </header>
 
-        <main className="min-w-0 flex-1 p-4 md:p-6">
+        <main className="min-w-0 flex-1 overflow-y-auto p-4 md:p-6">
           <Outlet />
         </main>
       </div>

@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext.jsx'
 import { useToast } from '../context/ToastContext.jsx'
 import { api } from '../lib/api'
 import { formatDateTime } from '../lib/datetime'
+import { profileCompletion } from '../lib/businessProfile'
 
 // ---------------------------------------------------------------------------
 // Settings — account administration only.
@@ -199,19 +200,9 @@ function BusinessProfileCard() {
     }
   }, [])
 
-  // The fields that actually change what the AI produces.
-  const filled = profile
-    ? [
-        profile.business_name,
-        profile.industry,
-        profile.business_description,
-        profile.target_audience,
-        profile.brand_voice?.length,
-        profile.business_goals?.length,
-      ].filter(Boolean).length
-    : 0
-  const total = 6
-  const complete = filled === total
+  // Shared with the Business Profile page itself, so this card and the page it
+  // links to can never report different completion figures.
+  const { filled, total, complete } = profileCompletion(profile)
 
   return (
     <section className="card p-6 md:p-7">

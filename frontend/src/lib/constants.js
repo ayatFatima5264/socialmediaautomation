@@ -50,15 +50,28 @@ export const ASPECT_RATIOS = [
   { value: '2:3', label: 'Tall / Pin (2:3)' },
 ]
 
+// Image styles. `group` drives the <optgroup> split in the dropdown: visual
+// treatments describe how an image looks, sector presets describe what it shows.
+// Values must match the IMAGE_STYLES keys in app/services/image_service.py.
 export const IMAGE_STYLES = [
-  { value: 'realistic', label: 'Realistic' },
-  { value: 'minimal', label: 'Minimal' },
-  { value: 'illustration', label: 'Illustration' },
-  { value: '3d', label: '3D' },
-  { value: 'cartoon', label: 'Cartoon' },
-  { value: 'watercolor', label: 'Watercolor' },
-  { value: 'anime', label: 'Anime' },
+  { value: 'corporate', label: 'Modern Corporate', group: 'Visual style' },
+  { value: 'realistic', label: 'Realistic', group: 'Visual style' },
+  { value: 'illustration', label: 'Flat Illustration', group: 'Visual style' },
+  { value: 'minimal', label: 'Minimal', group: 'Visual style' },
+  { value: '3d', label: '3D', group: 'Visual style' },
+  { value: 'cartoon', label: 'Cartoon', group: 'Visual style' },
+  { value: 'watercolor', label: 'Watercolor', group: 'Visual style' },
+  { value: 'luxury', label: 'Luxury', group: 'Visual style' },
+  { value: 'anime', label: 'Anime', group: 'Visual style' },
+  { value: 'startup', label: 'Startup', group: 'Industry' },
+  { value: 'healthcare', label: 'Healthcare', group: 'Industry' },
+  { value: 'restaurant', label: 'Restaurant', group: 'Industry' },
+  { value: 'real_estate', label: 'Real Estate', group: 'Industry' },
+  { value: 'fitness', label: 'Fitness', group: 'Industry' },
+  { value: 'ecommerce', label: 'E-commerce', group: 'Industry' },
 ]
+
+export const IMAGE_STYLE_GROUPS = ['Visual style', 'Industry']
 
 export const IMAGE_QUALITIES = [
   { value: 'standard', label: 'Standard' },
@@ -84,10 +97,14 @@ export const DEFAULT_IMAGE_SETTINGS = {
   aspectRatio: '1:1',
   carousel: false,
   slides: 5,
-  style: 'realistic',
+  style: 'corporate',
   quality: 'standard',
   negative: '',
   promptEnhancer: false,
+  // Independent of the post prompt. When blank, the image prompt is derived
+  // from the post content as before — so the existing flow is unchanged for
+  // anyone who never touches this field.
+  imagePrompt: '',
 }
 
 // ---- AI Content Planner (mirror backend app/services/planner/constants.py) --

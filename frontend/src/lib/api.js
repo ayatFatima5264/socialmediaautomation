@@ -90,11 +90,19 @@ export const api = {
   meta: () => request('/api/meta', { auth: false }),
   generate: (body) => request('/api/generate-post', { method: 'POST', body }),
   generateImage: (body) => request('/api/generate-image', { method: 'POST', body, auth: false }),
-  generateImages: (body) => request('/api/generate-images', { method: 'POST', body, auth: false }),
+  // Authenticated when a token exists (the endpoint treats the user as
+  // optional): a signed-in user's business profile grounds the image brief in
+  // their actual industry, which is what keeps the visual on topic.
+  generateImages: (body) => request('/api/generate-images', { method: 'POST', body }),
   // Free stock-photo search (Openverse by default; Pexels/Pixabay/Unsplash if keyed).
   stockImages: (query, perPage = 12) =>
     request(`/api/stock-images?query=${encodeURIComponent(query)}&per_page=${perPage}`, { auth: false }),
   generateArticle: (body) => request('/api/generate-article', { method: 'POST', body }),
+  // On-image text sized to a template's slots (Phase 2 template system).
+  generateTemplateContent: (body) =>
+    request('/api/generate-template-content', { method: 'POST', body }),
+  // Natural-language image editing -> structured layer operations.
+  imageEdit: (body) => request('/api/image-edit', { method: 'POST', body }),
 
   // AI text assist (in-place edits for the manual composer)
   assist: (body) => request('/api/assist', { method: 'POST', body, auth: false }),

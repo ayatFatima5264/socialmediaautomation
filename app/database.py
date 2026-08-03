@@ -104,6 +104,14 @@ _ADDED_COLUMNS: dict[str, dict[str, str]] = {
         "theme": "VARCHAR(200)",
         "summary": "TEXT",
     },
+    # Brand Kit — branding overlaid on generated images.
+    "business_profiles": {
+        "logo_url": "TEXT",
+        "brand_colors": "JSON",
+        "phone": "VARCHAR(40)",
+        "email": "VARCHAR(255)",
+        "address": "VARCHAR(500)",
+    },
 }
 
 
