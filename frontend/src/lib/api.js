@@ -80,6 +80,7 @@ export const api = {
   login: (email, password) =>
     request('/auth/login', { method: 'POST', form: { username: email, password }, auth: false }),
   me: () => request('/auth/me'),
+  updateMe: (body) => request('/auth/me', { method: 'PATCH', body }),
   forgotPassword: (email) =>
     request('/auth/forgot-password', { method: 'POST', body: { email }, auth: false }),
   resetPassword: (token, password) =>

@@ -28,6 +28,7 @@ from app.schemas.user import (
     Token,
     UserCreate,
     UserRead,
+    UserUpdate,
 )
 from app.services import email_service
 
@@ -76,6 +77,29 @@ def login(
 
 @router.get("/me", response_model=UserRead)
 def read_me(current_user: User = Depends(get_current_user)) -> User:
+    return current_user
+
+
+@router.patch("/me", response_model=UserRead)
+def update_me(
+    data: UserUpdate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> User:
+    """Update the signed-in user's own profile.
+
+    Only fields present in the request body are touched, so a client sending
+    just `full_name` can't accidentally null out anything else.
+    """
+    fields = data.model_dump(exclude_unset=True)
+
+    if "full_name" in fields:
+        name = (fields["full_name"] or "").strip()
+        # Treat an all-whitespace name as "cleared" rather than storing blanks.
+        current_user.full_name = name or None
+
+    db.commit()
+    db.refresh(current_user)
     return current_user
 
 

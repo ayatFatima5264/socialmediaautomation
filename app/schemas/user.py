@@ -12,6 +12,17 @@ class UserCreate(BaseModel):
     full_name: str | None = Field(default=None, max_length=255)
 
 
+class UserUpdate(BaseModel):
+    """Fields a signed-in user may change about their own account.
+
+    Deliberately narrow. Email is excluded because changing it requires a
+    verification round-trip we don't have yet, and password changes go through
+    the existing reset-token flow rather than a plain field here.
+    """
+
+    full_name: str | None = Field(default=None, max_length=255)
+
+
 class UserRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
