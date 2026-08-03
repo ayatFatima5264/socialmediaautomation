@@ -1,12 +1,9 @@
 @import 'tailwindcss';
 
-/* Class-based dark mode — <html class="dark"> is toggled by ThemeContext. */
-@custom-variant dark (&:where(.dark, .dark *));
-
 /* ------------------------------------------------------------------ *
- * Design tokens — a single mint/emerald + plum system, theme-aware.
- * Values flip between light and dark; everything else references the
- * semantic --color-* utilities so the whole app re-skins from here.
+ * Design tokens — a single mint/emerald system. Everything else
+ * references the semantic --color-* utilities so the whole app
+ * re-skins from here.
  * ------------------------------------------------------------------ */
 :root {
   color-scheme: light;
@@ -33,33 +30,9 @@
   --shadow-pop: 0 8px 24px rgba(22, 40, 31, 0.12);
 }
 
-.dark {
-  color-scheme: dark;
-
-  --page: #2e1b2a;
-  --sidebar: #241521;
-  --surface: #382334;
-  --inset: #241521;
-  --line: #4a3546;
-
-  --accent: #4fddb0;
-  --accent-hover: #6fe8c1;
-  --accent-contrast: #16281f;
-  --accent-soft: rgba(79, 221, 176, 0.16);
-  --accent-line: rgba(79, 221, 176, 0.45);
-
-  --text: #eaf5f0;
-  --muted: #b9ddd0;
-
-  --field: #241521;
-  --field-border: rgba(79, 221, 176, 0.38);
-
-  --shadow: none;
-  --shadow-pop: 0 12px 32px rgba(0, 0, 0, 0.45);
-}
-
 /* Register the tokens as Tailwind color utilities (bg-*, text-*, border-*,
- * ring-*). `inline` keeps the var() reference so they stay theme-aware. */
+ * ring-*). `inline` keeps the var() reference so a token change flows
+ * through to every utility. */
 @theme inline {
   --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
 
@@ -159,7 +132,7 @@ body {
     border-color: var(--accent-line);
   }
   .btn-danger {
-    @apply border border-rose-400/40 bg-rose-500/10 text-rose-600 hover:bg-rose-500/20 dark:text-rose-300;
+    @apply border border-rose-400/40 bg-rose-500/10 text-rose-600 hover:bg-rose-500/20;
   }
   .btn-sm {
     @apply gap-1.5 rounded-lg px-3 py-1.5 text-xs;
@@ -182,7 +155,7 @@ body {
     border-color: var(--accent);
     box-shadow: 0 0 0 3px var(--accent-soft);
   }
-  /* Native select: theme-aware chevron + solid option list via color-scheme. */
+  /* Native select: custom chevron + solid option list via color-scheme. */
   .select {
     -webkit-appearance: none;
     appearance: none;
@@ -190,9 +163,6 @@ body {
     background-repeat: no-repeat;
     background-position: right 0.65rem center;
     padding-right: 2.25rem;
-  }
-  .dark .select {
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23b9ddd0' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
   }
   .label {
     @apply mb-1.5 block text-sm font-medium;

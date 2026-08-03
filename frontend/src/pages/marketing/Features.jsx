@@ -88,10 +88,7 @@ const FEATURES = [
 export default function Features() {
   return (
     <>
-      <Seo
-        title="Features"
-        description="Explore AutoSocial AI: AI post, image, carousel, caption, and hashtag generation, brand personalization, multi-platform publishing, smart scheduling, and account management."
-      />
+      <Seo />
       <PageHero
         eyebrow="Features"
         title="One studio for your entire social workflow"

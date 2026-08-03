@@ -919,7 +919,7 @@ export default function CreatePost() {
             {(typeWarnings.length > 0 || (warnings[activeTab] || []).length > 0) && (
               <div className="mt-3 space-y-1">
                 {[...typeWarnings, ...(warnings[activeTab] || [])].map((w) => (
-                  <div key={w} className="flex items-start gap-2 rounded-lg bg-amber-500/10 px-2.5 py-1.5 text-xs text-amber-600 dark:text-amber-300">
+                  <div key={w} className="flex items-start gap-2 rounded-lg bg-amber-500/10 px-2.5 py-1.5 text-xs text-amber-600">
                     <span>⚠️</span>
                     {w}
                   </div>

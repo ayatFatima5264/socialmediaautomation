@@ -98,10 +98,7 @@ const SECTIONS = [
 export default function Terms() {
   return (
     <>
-      <Seo
-        title="Terms of Service"
-        description="The terms governing your use of AutoSocial AI, including acceptable use, connected accounts, AI-generated content, and account terms."
-      />
+      <Seo />
       <LegalPage title="Terms of Service" updated="July 8, 2026" sections={SECTIONS} />
     </>
   )

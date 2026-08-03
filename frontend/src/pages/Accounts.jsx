@@ -230,7 +230,7 @@ function ConnectErrorBanner({ platform, message, onDismiss }) {
           ⚠️
         </div>
         <div className="min-w-0 flex-1">
-          <h3 className="font-semibold text-rose-700 dark:text-rose-300">
+          <h3 className="font-semibold text-rose-700">
             {label} was not connected
           </h3>
           <p className="mt-1 text-sm text-body">{message}</p>

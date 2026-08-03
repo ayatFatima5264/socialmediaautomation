@@ -34,8 +34,8 @@ export function ToastProvider({ children }) {
 }
 
 const TONE = {
-  success: 'border-emerald-500/40 text-emerald-600 dark:text-emerald-300',
-  error: 'border-rose-500/40 text-rose-600 dark:text-rose-300',
+  success: 'border-emerald-500/40 text-emerald-600',
+  error: 'border-rose-500/40 text-rose-600',
   info: 'border-accent-line text-accent',
 }
 

@@ -87,11 +87,7 @@ const FAQ = [
 export default function Home() {
   return (
     <>
-      <Seo
-        title={null}
-        description="AutoSocial AI helps businesses, agencies, and creators create content, generate AI images, schedule posts, and publish across every platform from one dashboard. Start free."
-        jsonLd={JSON_LD}
-      />
+      <Seo jsonLd={JSON_LD} />
 
       {/* Hero */}
       <section className="pt-20 pb-12 text-center md:pt-28">

@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext.jsx'
-import { useTheme } from '../../context/ThemeContext.jsx'
 import { MARKETING_NAV, FOOTER_COLUMNS, SITE } from '../../config/site'
 import { trackPageView } from '../../lib/analytics'
 import Logo from '../Logo.jsx'
+import CookieConsent from './CookieConsent.jsx'
 
 function Brand() {
   return (
@@ -91,7 +91,6 @@ function AuthArea({ onNavigate }) {
 }
 
 export default function PublicLayout() {
-  const { theme, toggle } = useTheme()
   const { user } = useAuth()
   const [menuOpen, setMenuOpen] = useState(false)
   const closeMenu = () => setMenuOpen(false)
@@ -104,6 +103,15 @@ export default function PublicLayout() {
 
   return (
     <div className="app-bg flex min-h-screen flex-col">
+      {/* Keyboard users can jump past the nav straight to the content. Visible
+          only while focused, per the standard skip-link pattern. */}
+      <a
+        href="#main"
+        className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded-lg focus:bg-accent focus:px-4 focus:py-2 focus:font-semibold focus:text-accent-contrast"
+      >
+        Skip to main content
+      </a>
+
       {/* Top navigation */}
       <header className="sticky top-0 z-30 border-b border-line bg-sidebar backdrop-blur-xl">
         <div className="mx-auto flex max-w-6xl items-center gap-4 px-4 py-3 md:px-6">
@@ -123,9 +131,6 @@ export default function PublicLayout() {
           </nav>
 
           <div className="ml-auto flex items-center gap-2">
-            <button onClick={toggle} className="btn btn-ghost btn-sm" title="Toggle theme">
-              {theme === 'dark' ? '☀' : '☾'}
-            </button>
             <div className="hidden items-center gap-2 md:flex">
               <AuthArea />
             </div>
@@ -163,11 +168,12 @@ export default function PublicLayout() {
       </header>
 
       {/* Page content */}
-      <main className="flex-1">
+      <main id="main" className="flex-1">
         <Outlet />
       </main>
 
       <PublicFooter />
+      <CookieConsent />
     </div>
   )
 }

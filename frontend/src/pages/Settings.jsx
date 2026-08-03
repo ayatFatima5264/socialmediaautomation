@@ -1,11 +1,9 @@
 import { Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
-import { useTheme } from '../context/ThemeContext.jsx'
 import { formatDateTime } from '../lib/datetime'
 
 export default function Settings() {
   const { user, logout } = useAuth()
-  const { theme, toggle } = useTheme()
 
   return (
     <div className="max-w-2xl space-y-6">
@@ -33,19 +31,6 @@ export default function Settings() {
         </div>
         <span className="text-muted">→</span>
       </Link>
-
-      <section className="card p-5">
-        <h2 className="mb-4 font-semibold">Appearance</h2>
-        <div className="flex items-center justify-between">
-          <div>
-            <div className="text-sm font-medium">Theme</div>
-            <div className="text-xs text-muted">Currently {theme}</div>
-          </div>
-          <button onClick={toggle} className="btn btn-ghost">
-            Switch to {theme === 'dark' ? 'light' : 'dark'}
-          </button>
-        </div>
-      </section>
 
       <section className="card p-5 opacity-70">
         <h2 className="mb-2 font-semibold">Notifications & API limits</h2>

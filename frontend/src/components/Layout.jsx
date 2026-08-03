@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
-import { useTheme } from '../context/ThemeContext.jsx'
 import Logo from './Logo.jsx'
 
 const NAV = [
@@ -48,7 +47,6 @@ function NavItems({ onNavigate }) {
 
 export default function Layout() {
   const { user, logout } = useAuth()
-  const { theme, toggle } = useTheme()
   const navigate = useNavigate()
   const location = useLocation()
   const [menuOpen, setMenuOpen] = useState(false)
@@ -131,15 +129,6 @@ export default function Layout() {
           />
 
           <div className="ml-auto flex items-center gap-2">
-            <button
-              onClick={toggle}
-              className="btn btn-ghost btn-sm shrink-0"
-              title="Toggle theme"
-              aria-label="Toggle light or dark mode"
-            >
-              {theme === 'dark' ? '☀' : '☾'}
-              <span className="hidden sm:inline">{theme === 'dark' ? 'Light' : 'Dark'}</span>
-            </button>
             <button
               onClick={() => navigate('/generate')}
               className="btn btn-primary btn-sm hidden shrink-0 sm:inline-flex"

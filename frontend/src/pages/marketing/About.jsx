@@ -18,10 +18,7 @@ const ROADMAP = [
 export default function About() {
   return (
     <>
-      <Seo
-        title="About"
-        description="AutoSocial AI helps businesses, agencies, and creators stay consistently visible online. Learn about our mission, our values, and where we're headed."
-      />
+      <Seo />
       <PageHero
         eyebrow="About"
         title="We help teams show up online — consistently"
@@ -96,7 +93,7 @@ export default function About() {
                     <span
                       className={`badge ${
                         r.done
-                          ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-300'
+                          ? 'bg-emerald-500/15 text-emerald-600'
                           : 'bg-accent-soft text-accent'
                       }`}
                     >

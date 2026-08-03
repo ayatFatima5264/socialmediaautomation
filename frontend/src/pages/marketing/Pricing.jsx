@@ -106,10 +106,7 @@ function Cell({ value }) {
 export default function Pricing() {
   return (
     <>
-      <Seo
-        title="Pricing"
-        description="Simple, scalable pricing for AutoSocial AI. Start free, upgrade to Pro or Business for unlimited AI generations and images, or contact us for Enterprise."
-      />
+      <Seo />
       <PageHero
         eyebrow="Pricing"
         title="Pricing that grows with you"

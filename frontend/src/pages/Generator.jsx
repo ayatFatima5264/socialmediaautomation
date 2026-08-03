@@ -1685,7 +1685,7 @@ function PostCard({
           )}
 
           {!c.imgLoading && c.imgError && (
-            <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-3 text-sm text-rose-500 dark:text-rose-300">
+            <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-3 text-sm text-rose-500">
               <div className="font-medium">Caption generated. Image generation failed.</div>
               <div className="mt-0.5 text-xs opacity-80">{c.imgError}</div>
               <button onClick={onRegenImages} className="btn btn-danger btn-sm mt-2">
@@ -1845,11 +1845,11 @@ function SmartImage({ candidates, alt, aspectRatio, onResolved }) {
 function StatusChip({ status, error }) {
   if (!status) return null
   const map = {
-    publishing: { text: '⏳ Publishing…', cls: 'bg-sky-500/15 text-sky-500 dark:text-sky-300' },
-    published: { text: '✓ Published', cls: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-300' },
+    publishing: { text: '⏳ Publishing…', cls: 'bg-sky-500/15 text-sky-500' },
+    published: { text: '✓ Published', cls: 'bg-emerald-500/15 text-emerald-600' },
     saved: { text: '✓ Saved', cls: 'bg-inset text-muted' },
-    scheduled: { text: '🗓 Scheduled', cls: 'bg-amber-500/15 text-amber-600 dark:text-amber-300' },
-    failed: { text: '❌ Failed', cls: 'bg-rose-500/15 text-rose-600 dark:text-rose-300' },
+    scheduled: { text: '🗓 Scheduled', cls: 'bg-amber-500/15 text-amber-600' },
+    failed: { text: '❌ Failed', cls: 'bg-rose-500/15 text-rose-600' },
   }
   const s = map[status]
   if (!s) return null

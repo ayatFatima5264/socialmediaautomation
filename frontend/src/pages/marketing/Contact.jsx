@@ -48,10 +48,7 @@ export default function Contact() {
 
   return (
     <>
-      <Seo
-        title="Contact"
-        description="Questions, feedback, or partnership ideas? Get in touch with the AutoSocial AI team — we respond within one business day."
-      />
+      <Seo />
       <PageHero
         eyebrow="Contact"
         title="Get in touch"

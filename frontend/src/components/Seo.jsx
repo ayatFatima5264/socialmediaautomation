@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { useLocation } from 'react-router-dom'
 import { SITE } from '../config/site'
+import { pageSeo } from '../seo/pages.data.js'
 
 // ---------------------------------------------------------------------------
 // Dependency-free SEO head manager for our Vite SPA. Renders no DOM of its own;
@@ -46,29 +47,44 @@ function upsertLink(rel, href) {
 
 export default function Seo({
   title,
-  description = SITE.description,
+  description,
   image = SITE.ogImage,
   type = 'website',
   noindex = false,
   jsonLd,
 }) {
   const { pathname } = useLocation()
-  const fullTitle = title ? `${title} — ${SITE.name}` : `${SITE.name} — ${SITE.tagline}`
-  const canonical = `${SITE.url}${pathname}`
+
+  // Marketing routes take their title and description from the shared registry
+  // in seo/pages.data.js — the same module the build-time prerenderer reads.
+  // That is what guarantees the tags a JS-capable crawler sees at runtime are
+  // identical to the ones baked into the static HTML. Explicit props still win,
+  // which is how dynamic pages (blog articles) supply their own.
+  const registry = pageSeo(pathname)
+  const resolvedTitle = title !== undefined ? title : registry?.title ?? null
+  const resolvedDescription = description ?? registry?.description ?? SITE.description
+
+  const fullTitle = resolvedTitle
+    ? `${resolvedTitle} — ${SITE.name}`
+    : `${SITE.name} — ${SITE.tagline}`
+
+  // Canonical must never include query strings or hashes — those create
+  // duplicate-content variants that dilute the page in search results.
+  const canonical = `${SITE.url}${pathname === '/' ? '/' : pathname.replace(/\/$/, '')}`
 
   useEffect(() => {
     const prevTitle = document.title
     document.title = fullTitle
 
     const cleanups = [
-      upsertMeta('name', 'description', description),
+      upsertMeta('name', 'description', resolvedDescription),
       upsertMeta('name', 'robots', noindex ? 'noindex, nofollow' : 'index, follow'),
       upsertLink('canonical', canonical),
       // Open Graph
       upsertMeta('property', 'og:type', type),
       upsertMeta('property', 'og:site_name', SITE.name),
       upsertMeta('property', 'og:title', fullTitle),
-      upsertMeta('property', 'og:description', description),
+      upsertMeta('property', 'og:description', resolvedDescription),
       upsertMeta('property', 'og:url', canonical),
       upsertMeta('property', 'og:image', image),
       upsertMeta('property', 'og:locale', SITE.locale),
@@ -76,7 +92,7 @@ export default function Seo({
       upsertMeta('name', 'twitter:card', 'summary_large_image'),
       upsertMeta('name', 'twitter:site', SITE.twitter),
       upsertMeta('name', 'twitter:title', fullTitle),
-      upsertMeta('name', 'twitter:description', description),
+      upsertMeta('name', 'twitter:description', resolvedDescription),
       upsertMeta('name', 'twitter:image', image),
     ]
 
@@ -94,7 +110,7 @@ export default function Seo({
       cleanups.forEach((fn) => fn())
       if (scriptEl) scriptEl.remove()
     }
-  }, [fullTitle, description, image, type, noindex, canonical, jsonLd])
+  }, [fullTitle, resolvedDescription, image, type, noindex, canonical, jsonLd])
 
   return null
 }

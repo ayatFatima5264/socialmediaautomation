@@ -59,7 +59,6 @@ Both are declared in `App.jsx`. The marketing routes live under a
 
 - **Design system** — Tailwind component classes in `index.css`
   (`card`, `btn`, `input`, `nav-link`, `app-bg`, brand gradient).
-- **Theme** — `context/ThemeContext.jsx` (light/dark, persisted).
 - **Auth** — `context/AuthContext.jsx` + `lib/api.js`. Never duplicated.
 - **Toasts** — `context/ToastContext.jsx`.
 - **Site config** — `config/site.js` (brand facts, nav, footer, SEO defaults).

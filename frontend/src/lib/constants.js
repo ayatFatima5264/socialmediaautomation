@@ -134,56 +134,56 @@ export const PLANNER_TIMEZONES = [
   'Australia/Sydney',
 ]
 
-// Badge colors per planned content type (light + dark).
+// Badge colors per planned content type.
 export const CONTENT_TYPE_STYLES = {
-  Educational: 'bg-sky-500/15 text-sky-600 dark:text-sky-300',
-  Promotional: 'bg-rose-500/15 text-rose-600 dark:text-rose-300',
-  Tips: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-300',
-  Engagement: 'bg-amber-500/15 text-amber-600 dark:text-amber-300',
-  'Industry News': 'bg-indigo-500/15 text-indigo-600 dark:text-indigo-300',
-  'Case Study': 'bg-violet-500/15 text-violet-600 dark:text-violet-300',
-  'Behind the Scenes': 'bg-teal-500/15 text-teal-600 dark:text-teal-300',
-  Testimonial: 'bg-pink-500/15 text-pink-600 dark:text-pink-300',
-  'Product Update': 'bg-cyan-500/15 text-cyan-600 dark:text-cyan-300',
-  Story: 'bg-orange-500/15 text-orange-600 dark:text-orange-300',
-  Inspirational: 'bg-fuchsia-500/15 text-fuchsia-600 dark:text-fuchsia-300',
+  Educational: 'bg-sky-500/15 text-sky-600',
+  Promotional: 'bg-rose-500/15 text-rose-600',
+  Tips: 'bg-emerald-500/15 text-emerald-600',
+  Engagement: 'bg-amber-500/15 text-amber-600',
+  'Industry News': 'bg-indigo-500/15 text-indigo-600',
+  'Case Study': 'bg-violet-500/15 text-violet-600',
+  'Behind the Scenes': 'bg-teal-500/15 text-teal-600',
+  Testimonial: 'bg-pink-500/15 text-pink-600',
+  'Product Update': 'bg-cyan-500/15 text-cyan-600',
+  Story: 'bg-orange-500/15 text-orange-600',
+  Inspirational: 'bg-fuchsia-500/15 text-fuchsia-600',
 }
 
 export const STATUS_STYLES = {
-  draft: 'bg-slate-500/15 text-slate-500 dark:text-slate-300',
-  scheduled: 'bg-amber-500/15 text-amber-600 dark:text-amber-300',
-  publishing: 'bg-sky-500/15 text-sky-600 dark:text-sky-300',
-  published: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-300',
-  failed: 'bg-rose-500/15 text-rose-600 dark:text-rose-300',
+  draft: 'bg-slate-500/15 text-slate-500',
+  scheduled: 'bg-amber-500/15 text-amber-600',
+  publishing: 'bg-sky-500/15 text-sky-600',
+  published: 'bg-emerald-500/15 text-emerald-600',
+  failed: 'bg-rose-500/15 text-rose-600',
 }
 
 // ---- Connected social account statuses (mirror backend AccountStatus) ------
 // Each entry drives the card's status badge: a label, the pill colors, and the
-// leading dot color. Light + dark variants included.
+// leading dot color.
 export const ACCOUNT_STATUS = {
   not_connected: {
     label: 'Not Connected',
-    badge: 'bg-slate-500/15 text-slate-500 dark:text-slate-300',
+    badge: 'bg-slate-500/15 text-slate-500',
     dot: 'bg-slate-400',
   },
   connected: {
     label: 'Connected',
-    badge: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-300',
+    badge: 'bg-emerald-500/15 text-emerald-600',
     dot: 'bg-emerald-400',
   },
   token_expired: {
     label: 'Token Expired',
-    badge: 'bg-amber-500/15 text-amber-600 dark:text-amber-300',
+    badge: 'bg-amber-500/15 text-amber-600',
     dot: 'bg-amber-400',
   },
   syncing: {
     label: 'Syncing',
-    badge: 'bg-sky-500/15 text-sky-600 dark:text-sky-300',
+    badge: 'bg-sky-500/15 text-sky-600',
     dot: 'bg-sky-400 animate-pulse',
   },
   error: {
     label: 'Error',
-    badge: 'bg-rose-500/15 text-rose-600 dark:text-rose-300',
+    badge: 'bg-rose-500/15 text-rose-600',
     dot: 'bg-rose-400',
   },
 }

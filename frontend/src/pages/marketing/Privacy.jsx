@@ -44,7 +44,7 @@ const SECTIONS = [
   {
     heading: '6. Cookies and Analytics',
     body: [
-      'We use essential cookies to keep you signed in and remember preferences such as your theme. With your consent where required, we may use privacy-respecting analytics to understand how the Service is used so we can improve it. You can control cookies through your browser settings.',
+      'We use essential cookies to keep you signed in and remember your preferences. With your consent where required, we may use privacy-respecting analytics to understand how the Service is used so we can improve it. You can control cookies through your browser settings.',
     ],
   },
   {
@@ -100,10 +100,7 @@ const SECTIONS = [
 export default function Privacy() {
   return (
     <>
-      <Seo
-        title="Privacy Policy"
-        description="How AutoSocial AI collects, uses, and protects your account, business profile, AI prompts, and connected social accounts."
-      />
+      <Seo />
       <LegalPage title="Privacy Policy" updated="July 8, 2026" sections={SECTIONS} />
     </>
   )

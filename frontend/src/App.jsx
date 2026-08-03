@@ -22,8 +22,11 @@ import Features from './pages/marketing/Features.jsx'
 import Pricing from './pages/marketing/Pricing.jsx'
 import About from './pages/marketing/About.jsx'
 import Contact from './pages/marketing/Contact.jsx'
+import Blog from './pages/marketing/Blog.jsx'
+import BlogPost from './pages/marketing/BlogPost.jsx'
 import Privacy from './pages/marketing/Privacy.jsx'
 import Terms from './pages/marketing/Terms.jsx'
+import Cookies from './pages/marketing/Cookies.jsx'
 import NotFound from './pages/NotFound.jsx'
 import FullScreenLoader from './components/FullScreenLoader.jsx'
 
@@ -56,8 +59,11 @@ export default function App() {
         <Route path="/pricing" element={<Pricing />} />
         <Route path="/about" element={<About />} />
         <Route path="/contact" element={<Contact />} />
+        <Route path="/blog" element={<Blog />} />
+        <Route path="/blog/:slug" element={<BlogPost />} />
         <Route path="/privacy" element={<Privacy />} />
         <Route path="/terms" element={<Terms />} />
+        <Route path="/cookies" element={<Cookies />} />
         {/* Custom 404 — rendered with the public nav + footer. */}
         <Route path="*" element={<NotFound />} />
       </Route>

@@ -186,7 +186,7 @@ function StepRail({ current }) {
                 active
                   ? 'border-accent bg-accent-soft text-accent'
                   : done
-                    ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-300'
+                    ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-600'
                     : 'border-line text-muted'
               }`}
             >
@@ -276,11 +276,11 @@ function Hub({ plans, settings, onQuick, onAdvanced, onOpenPlan, onDeletePlan })
 
 function PlanStatusBadge({ status }) {
   const map = {
-    strategy: 'bg-slate-500/15 text-slate-500 dark:text-slate-300',
-    generating: 'bg-sky-500/15 text-sky-600 dark:text-sky-300',
-    ready: 'bg-amber-500/15 text-amber-600 dark:text-amber-300',
-    scheduled: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-300',
-    failed: 'bg-rose-500/15 text-rose-600 dark:text-rose-300',
+    strategy: 'bg-slate-500/15 text-slate-500',
+    generating: 'bg-sky-500/15 text-sky-600',
+    ready: 'bg-amber-500/15 text-amber-600',
+    scheduled: 'bg-emerald-500/15 text-emerald-600',
+    failed: 'bg-rose-500/15 text-rose-600',
   }
   const label = { strategy: 'Draft', generating: 'Generating', ready: 'Ready to review', scheduled: 'Scheduled', failed: 'Failed' }
   return <span className={`badge ${map[status] || map.strategy}`}>{label[status] || status}</span>
@@ -751,8 +751,8 @@ function PostCard({ post, selected, onToggle, onChanged }) {
             </span>
             {post.content_type && <span className={`badge ${CONTENT_TYPE_STYLES[post.content_type] || 'bg-slate-500/15 text-slate-500'}`}>{post.content_type}</span>}
             {approved
-              ? <span className="badge bg-emerald-500/15 text-emerald-600 dark:text-emerald-300">Approved</span>
-              : <span className="badge bg-amber-500/15 text-amber-600 dark:text-amber-300">Pending</span>}
+              ? <span className="badge bg-emerald-500/15 text-emerald-600">Approved</span>
+              : <span className="badge bg-amber-500/15 text-amber-600">Pending</span>}
             <span className="ml-auto text-xs text-muted">{post.character_count} chars</span>
           </div>
 

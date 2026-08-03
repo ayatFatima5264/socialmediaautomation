@@ -36,7 +36,7 @@ export default function ConnectionSummary({ summary, connectedCount, total }) {
               title={`${PLATFORMS[s.platform]?.label}: ${s.connected ? 'connected' : 'not connected'}`}
               className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs ${
                 s.connected
-                  ? 'border-emerald-500/30 text-emerald-600 dark:text-emerald-300'
+                  ? 'border-emerald-500/30 text-emerald-600'
                   : 'border-line text-muted'
               }`}
             >

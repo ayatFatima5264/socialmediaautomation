@@ -31,7 +31,7 @@ function Spinner() {
 }
 
 // One platform card. Fixed height across the grid (h-full + flex column with the
-// action pinned to the bottom via mt-auto), subtle hover lift, light/dark aware.
+// action pinned to the bottom via mt-auto), subtle hover lift.
 export default function AccountCard({
   platform,
   account,
@@ -99,7 +99,7 @@ export default function AccountCard({
           Not disconnected: text-only publishing still works. */}
       {connected && needsReauth && (
         <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs">
-          <p className="font-semibold text-amber-700 dark:text-amber-300">
+          <p className="font-semibold text-amber-700">
             Reconnect required
           </p>
           <p className="mt-1 text-body">
