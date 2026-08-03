@@ -268,6 +268,30 @@ export default function seoPlugin() {
         count++
       }
 
+      // ---- SPA fallback shell --------------------------------------------
+      // Vercel serves static files first and falls back to a rewrite for
+      // anything with no matching file. That fallback MUST NOT be the
+      // prerendered homepage: it would answer every unknown URL — including
+      // draft article URLs — with the homepage's HTML and its "index, follow",
+      // telling crawlers that arbitrary paths are real, indexable pages.
+      //
+      // This shell is the rewrite target instead. It carries noindex and no
+      // canonical, while still loading the app, so React renders the branded
+      // 404 for unknown routes and the real app for private routes (which
+      // should be noindex anyway).
+      writeFileSync(
+        join(root, '404.html'),
+        inject(
+          base,
+          [
+            `<title>Page Not Found — ${esc(BRAND.name)}</title>`,
+            `<meta name="description" content="The page you are looking for could not be found." />`,
+            `<meta name="robots" content="noindex, nofollow" />`,
+          ].join('\n    '),
+        ),
+        'utf8',
+      )
+
       // ---- robots.txt ----------------------------------------------------
       const robots = [
         `# ${BRAND.name} — robots.txt (generated at build time)`,
