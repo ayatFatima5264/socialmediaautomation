@@ -1,6 +1,7 @@
-import { useCallback, useRef } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import BrandOverlay from '../brand/BrandOverlay.jsx'
 import { resolveLayer, sortLayers, LAYER_TYPES } from '../../lib/brandKit/layers'
+import { boxRatio, measureImage } from '../../lib/brandKit/editor/imageBox'
 
 // ---------------------------------------------------------------------------
 // The interactive editing surface.
@@ -32,6 +33,25 @@ export default function EditorCanvas({
 
   const aspect = doc.size.width / doc.size.height
   const frame = { width: 1000, height: 1000 / aspect }
+
+  // Every image's real proportions, keyed by source.
+  //
+  // A ref rather than state because nothing rendered depends on it: the only
+  // reader is the resize gesture below, which runs imperatively. And measured
+  // here rather than stored on the layer because it is a property of the
+  // bytes, not of the document — writing it in would push a measurement onto
+  // the undo stack and mark a freshly opened document dirty.
+  const naturals = useRef(new Map())
+  useEffect(() => {
+    for (const layer of doc.layers) {
+      if (layer.type !== LAYER_TYPES.IMAGE || !layer.src) continue
+      if (naturals.current.has(layer.src)) continue
+      naturals.current.set(layer.src, null) // claim it, so it is measured once
+      measureImage(layer.src)
+        .then((n) => naturals.current.set(layer.src, n))
+        .catch(() => {}) // stays null; the gesture falls back to the box
+    }
+  }, [doc.layers])
 
   // Screen pixels -> frame fractions.
   const toFraction = useCallback((e) => {
@@ -74,7 +94,8 @@ export default function EditorCanvas({
 
     if (mode === 'resize') {
       const min = 0.02
-      const w = Math.max(min, (start.size?.w ?? 0.2) + dx)
+      const startW = start.size?.w ?? 0.2
+      let w = Math.max(min, startW + dx)
       let h
       if (layer.type === LAYER_TYPES.TEXT) {
         // Text uses size.h as its font size, so resizing it should change the
@@ -84,8 +105,20 @@ export default function EditorCanvas({
         // A picture is letterboxed inside its box, so moving width and height
         // independently reintroduces the empty bands the box was sized to
         // avoid — dragging a corner to fill the frame only widened the gap.
-        // Holding the box's ratio keeps the image filling it at every size.
-        const ratio = (start.size?.h ?? 0.2) / (start.size?.w ?? 0.2)
+        // Holding the PICTURE's ratio keeps it filling the box at every size.
+        //
+        // Reading the ratio off the box instead would only preserve whatever
+        // shape it already has, so a box that does not match its image — one
+        // from a template, or from before boxes were derived from pictures —
+        // could never be dragged out of letterboxing. That is the one case
+        // this handle exists for.
+        const natural = naturals.current.get(layer.src)
+        const ratio = natural ? boxRatio(natural, frame) : (start.size?.h ?? 0.2) / startW
+        // Height follows width, so a mostly-vertical drag on the corner would
+        // otherwise do nothing at all and read as a broken handle. Whichever
+        // axis the pointer moved further along drives the size.
+        const byHeight = dy / ratio
+        w = Math.max(min, startW + (Math.abs(byHeight) > Math.abs(dx) ? byHeight : dx))
         h = Math.max(min, w * ratio)
       } else {
         h = Math.max(min, (start.size?.h ?? 0.2) + dy)

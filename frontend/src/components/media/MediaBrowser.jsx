@@ -89,7 +89,11 @@ function AssetTile({
 
   return (
     <div
-      draggable={draggable || undefined}
+      // Dropped while renaming: the input is inside this element, so a
+      // draggable ancestor turns a click-drag across the text into a drag of
+      // the whole tile — the name cannot be selected, and letting go over the
+      // canvas adds an image nobody asked for.
+      draggable={(draggable && !renaming) || undefined}
       onDragStart={
         draggable
           ? (e) => {
@@ -194,6 +198,11 @@ function AssetTile({
             onKeyDown={(e) => {
               if (e.key === 'Enter') commitRename()
               if (e.key === 'Escape') {
+                // Escape here means "cancel the rename". The drawer around
+                // this grid closes on Escape, and the editor around THAT one
+                // closes on it too, so an uncaught keypress would abandon the
+                // whole document to undo a typo.
+                e.stopPropagation()
                 setDraft(asset.title || '')
                 setRenaming(false)
               }
@@ -466,21 +475,26 @@ export default function MediaBrowser({
           Dropping anywhere over the results uploads, which is where a user
           aims when they drag a photo in.
 
-          Only files count. Tiles are themselves draggable in the editor, and a
-          drag that starts and ends inside the grid carries no files — treating
-          that as an upload reported "those files are not images". */}
+          Cancelling dragover is unconditional, and has to be: an element that
+          does not cancel it is not a drop target at all, so the browser
+          handles the drop itself — and its default for a dragged link or an
+          image from another tab is to NAVIGATE there, tearing down the editor
+          this grid may be sitting inside along with every unsaved edit.
+
+          Only the highlight and the upload are conditional. Tiles are
+          themselves draggable in the editor, and a drag that starts and ends
+          inside the grid carries no files — treating that as an upload
+          reported "those files are not images". */}
       <div
         onDragOver={(e) => {
-          if (!e.dataTransfer.types?.includes('Files')) return
           e.preventDefault()
-          setDragging(true)
+          if (e.dataTransfer.types?.includes('Files')) setDragging(true)
         }}
         onDragLeave={() => setDragging(false)}
         onDrop={(e) => {
-          setDragging(false)
-          if (!e.dataTransfer.files?.length) return
           e.preventDefault()
-          upload(e.dataTransfer.files)
+          setDragging(false)
+          if (e.dataTransfer.files?.length) upload(e.dataTransfer.files)
         }}
         className={`mt-3 rounded-xl transition ${
           fill ? 'min-h-0 flex-1 overflow-y-auto' : ''

@@ -14,6 +14,7 @@ import {
   newTextLayer,
   layerLabel,
 } from '../../lib/brandKit/editor/document'
+import { boxForImage, measureImage, refitBox } from '../../lib/brandKit/editor/imageBox'
 import { LAYER_TYPES, sortLayers } from '../../lib/brandKit/layers'
 import { rasterizeBranded, RasterizeError } from '../../lib/brandKit/rasterize'
 import { applyOperations, summarizeLayers } from '../../lib/brandKit/editor/aiOps'
@@ -86,50 +87,6 @@ function readFile(file) {
   })
 }
 
-/** The picture's own pixel dimensions, read from the decoded source. */
-function measureImage(src) {
-  return new Promise((resolve, reject) => {
-    const img = new Image()
-    img.onload = () => resolve({ w: img.naturalWidth, h: img.naturalHeight })
-    img.onerror = () => reject(new Error('Could not read that image.'))
-    img.src = src
-  })
-}
-
-// ---------------------------------------------------------------------------
-// Sizing an image layer
-//
-// Layer geometry is per-axis fractions: size.w is a share of the frame's WIDTH
-// and size.h a share of its HEIGHT. So equal fractions are only a square on a
-// square frame, and a box's on-screen ratio is (w / h) * (frameW / frameH).
-// Both helpers below solve that equation for the shape the picture actually
-// is, which is what stops an image letterboxing inside its own holder.
-// ---------------------------------------------------------------------------
-
-const boxRatio = (natural, frame) => {
-  const frameAspect = frame.width / frame.height
-  const imgAspect = natural.w / natural.h
-  return frameAspect > 0 && imgAspect > 0 ? frameAspect / imgAspect : 1
-}
-
-/** A fresh box with the picture's proportions, bounded so it lands visible. */
-function boxForImage(natural, frame, max = 0.6) {
-  const ratio = boxRatio(natural, frame)
-  let w = max
-  let h = w * ratio
-  if (h > max) {
-    h = max
-    w = h / ratio
-  }
-  return { w, h }
-}
-
-/** The same shape, keeping the box's existing width so it stays anchored. */
-function refitBox(size, natural, frame) {
-  const w = size?.w ?? 0.4
-  return { w, h: w * boxRatio(natural, frame) }
-}
-
 export default function ImageEditor({
   open, imageUrl, size, layers = [], brandKit, style, onSave, onClose, onRegenerate,
   // Which panel the editor opens on. "AI Edit" is the same editor as "Edit" —
@@ -196,6 +153,9 @@ export default function ImageEditor({
 
   const artRef = useRef(null)
   const [dropping, setDropping] = useState(false)
+  // An asset fetch in flight, and the lock that stops a second one starting.
+  const [placing, setPlacing] = useState(false)
+  const placingRef = useRef(false)
 
   /** Where a drop landed, as the centre-relative fraction a layer's offset wants. */
   function offsetFromDrop(e) {
@@ -218,6 +178,9 @@ export default function ImageEditor({
   function onStageDragOver(e) {
     if (!dragCarriesImage(e)) return
     e.preventDefault() // without this the browser refuses the drop
+    // The shell below refuses drops everywhere else in the overlay; stopping
+    // here keeps it from overriding this one back to "no drop".
+    e.stopPropagation()
     e.dataTransfer.dropEffect = 'copy'
     setDropping(true)
   }
@@ -225,6 +188,7 @@ export default function ImageEditor({
   function onStageDrop(e) {
     if (!dragCarriesImage(e)) return
     e.preventDefault()
+    e.stopPropagation()
     setDropping(false)
     const at = offsetFromDrop(e)
 
@@ -238,7 +202,26 @@ export default function ImageEditor({
       return
     }
     const file = [...(e.dataTransfer.files || [])].find((f) => f.type?.startsWith('image/'))
+    // Saying so matters: the drop highlight clears either way, so a rejected
+    // file is otherwise indistinguishable from one the editor swallowed. It
+    // catches formats the browser reports no type for, HEIC among them.
     if (file) addFile(file, false, at)
+    else setError('That file is not an image the browser can open.')
+  }
+
+  /**
+   * Refuse image drops everywhere else in the editor overlay.
+   *
+   * The editor covers the viewport and now invites dragging, so a drop that
+   * misses the canvas by a few pixels lands on the toolbar or the drawer. An
+   * unhandled one is a navigation — the browser opens the dropped file and the
+   * whole unsaved document goes with the page. Cancelling dragover both stops
+   * that and turns the cursor to "no drop" outside the canvas.
+   */
+  function onShellDragOver(e) {
+    if (!dragCarriesImage(e)) return
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'none'
   }
 
   const toggleSection = (id) => setSection((s) => (s === id ? null : id))
@@ -280,7 +263,9 @@ export default function ImageEditor({
     async (src, at) => {
       const layer = newImageLayer(src)
       const size = boxForImage(await measureImage(src), ed.document.size)
-      ed.addLayer({ ...layer, size, ...(at ? { offset: at } : null) })
+      // Flagged so a later replace knows this box is the editor's own guess at
+      // a shape, safe to re-derive — see applySource.
+      ed.addLayer({ ...layer, size, boxFromImage: true, ...(at ? { offset: at } : null) })
     },
     [ed],
   )
@@ -288,17 +273,18 @@ export default function ImageEditor({
   /**
    * Point an existing layer at new bytes.
    *
-   * Layers that letterbox get their box re-proportioned to the incoming
-   * picture, so replacing a portrait shot with a landscape one does not leave
-   * the holder half empty. Layers that fill their box by stretching — the
-   * background — and square-locked ones like a logo keep their geometry,
-   * because theirs is the point rather than an accident.
+   * Layers whose box this editor derived from a picture get it re-derived from
+   * the incoming one, so replacing a portrait shot with a landscape one does
+   * not leave the holder half empty. Everything else keeps its geometry: a
+   * template places its logo against a name laid out beside it, and a replace
+   * is a swap of bytes, not a licence to move the furniture. Those layers can
+   * still be reshaped by dragging a corner, which now follows the picture.
    */
   const applySource = useCallback(
     async (layerId, src) => {
       const target = ed.document.layers.find((l) => l.id === layerId)
       const patch = { src }
-      if (target && target.keepAspect !== false && !target.square) {
+      if (target?.boxFromImage && target.keepAspect !== false && !target.square) {
         patch.size = refitBox(target.size, await measureImage(src), ed.document.size)
       }
       ed.updateLayer(layerId, patch)
@@ -334,6 +320,15 @@ export default function ImageEditor({
    */
   const placeAsset = useCallback(
     async (asset, { at, layerId } = {}) => {
+      // Fetching an asset can take seconds, and picking one closes the drawer
+      // — so with nothing on screen to say why the canvas is still empty, the
+      // obvious move is to reopen the library and click the same tile again.
+      // Both fetches would land, stacking a duplicate exactly on the original
+      // where it stays invisible until export. The ref is what actually locks:
+      // state would not be updated yet on a fast second click.
+      if (placingRef.current) return
+      placingRef.current = true
+      setPlacing(true)
       setError('')
       try {
         const src = await readFile(await assetToFile(asset))
@@ -343,6 +338,9 @@ export default function ImageEditor({
         mediaStore.markUsed(asset.id).catch(() => {})
       } catch (err) {
         setError(err.message || 'Could not load that image')
+      } finally {
+        placingRef.current = false
+        setPlacing(false)
       }
     },
     [addImageSrc, applySource],
@@ -539,7 +537,11 @@ export default function ImageEditor({
   )
 
   return (
-    <div className="fixed inset-0 z-50 flex h-full flex-col overflow-hidden bg-page">
+    <div
+      className="fixed inset-0 z-50 flex h-full flex-col overflow-hidden bg-page"
+      onDragOver={onShellDragOver}
+      onDrop={(e) => dragCarriesImage(e) && e.preventDefault()}
+    >
       {/* ---- Toolbar ---------------------------------------------------- */}
       <header className="flex shrink-0 items-center gap-2 border-b border-line bg-surface px-3 py-2">
         <button
@@ -573,6 +575,14 @@ export default function ImageEditor({
       {error && (
         <div className="shrink-0 border-b border-rose-400/40 bg-rose-500/10 px-3 py-2 text-xs text-rose-600">
           {error}
+        </div>
+      )}
+
+      {/* Picking from the library closes it, so without this the canvas simply
+          sits unchanged while the asset downloads. */}
+      {placing && (
+        <div className="shrink-0 border-b border-line bg-inset px-3 py-2 text-xs text-muted" role="status">
+          Adding image…
         </div>
       )}
 
