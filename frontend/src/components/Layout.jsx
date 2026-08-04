@@ -2,12 +2,14 @@ import { useEffect, useState } from 'react'
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
 import Logo from './Logo.jsx'
+import Seo from './Seo.jsx'
 
 const NAV = [
   { to: '/dashboard', label: 'Dashboard', icon: '◧', end: true },
   { to: '/planner', label: 'Content Planner', icon: '🗓️' },
   { to: '/generate', label: 'AI Generator', icon: '✦' },
   { to: '/create', label: 'Create Post', icon: '✍' },
+  { to: '/media', label: 'Media Library', icon: '🖼️' },
   { to: '/scheduler', label: 'Scheduler', icon: '◷' },
   { to: '/history', label: 'Post History', icon: '≡' },
   { to: '/accounts', label: 'Social Accounts', icon: '⬡' },
@@ -61,6 +63,11 @@ export default function Layout() {
 
   return (
     <div className="app-bg flex h-screen overflow-hidden">
+      {/* Titles every route rendered inside this shell. Without it the app
+          inherits the prerendered 404 shell's "Page Not Found" title, because
+          private routes are served that shell by design. */}
+      <Seo />
+
       {/* ---- Desktop sidebar ---------------------------------------- */}
       <aside className="sticky top-0 hidden h-screen w-64 shrink-0 flex-col border-r border-line bg-sidebar p-4 md:flex">
         <div className="mb-8">

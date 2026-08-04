@@ -160,6 +160,13 @@ export const api = {
   quickGenerate: () => request('/api/planner/quick-generate', { method: 'POST' }),
   listPlans: () => request('/api/planner'),
   getPlan: (id) => request(`/api/planner/${id}`),
+  // Plan-level template / size / image-style defaults, applied to every post
+  // that has not overridden them.
+  updatePlanImageDefaults: (id, imageDefaults) =>
+    request(`/api/planner/${id}/image-defaults`, {
+      method: 'PATCH',
+      body: { image_defaults: imageDefaults },
+    }),
   updatePlanTopics: (id, topics) =>
     request(`/api/planner/${id}/topics`, { method: 'PATCH', body: { topics } }),
   regeneratePlanTopic: (id, topicId) =>

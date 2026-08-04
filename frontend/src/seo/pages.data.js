@@ -119,6 +119,37 @@ export function fullTitle(title) {
   return title ? `${title} — ${BRAND.name}` : `${BRAND.name} — ${BRAND.tagline}`
 }
 
+// Browser-tab titles for the authenticated app.
+//
+// These routes are deliberately not prerendered, so the host answers them with
+// the noindex 404 shell and React takes over. That shell's <title> says "Page
+// Not Found", which is right for a crawler and wrong for the user staring at a
+// working page — so every private route names itself here and <Seo> applies it
+// on mount. A route missing from this map falls back to the plain brand title,
+// never to the shell's.
+export const PRIVATE_PAGE_TITLES = {
+  '/dashboard': 'Dashboard',
+  '/planner': 'Content Planner',
+  '/generate': 'AI Generator',
+  '/create': 'Create Post',
+  '/media': 'Media Library',
+  '/scheduler': 'Scheduler',
+  '/history': 'Post History',
+  '/accounts': 'Social Accounts',
+  '/settings': 'Settings',
+  '/business-profile': 'Business Profile',
+  '/onboarding': 'Get Started',
+  '/login': 'Log In',
+  '/register': 'Create Account',
+  '/forgot-password': 'Reset Your Password',
+  '/reset-password': 'Choose a New Password',
+}
+
+/** Tab title for a private route, or null if the path is not one. */
+export function privatePageTitle(path) {
+  return PRIVATE_PAGE_TITLES[path] ?? null
+}
+
 // Routes behind authentication — excluded from the sitemap and disallowed in
 // robots.txt. Keeping the list here means adding a private route updates both.
 export const PRIVATE_ROUTES = [
@@ -126,6 +157,7 @@ export const PRIVATE_ROUTES = [
   '/planner',
   '/generate',
   '/create',
+  '/media',
   '/scheduler',
   '/history',
   '/accounts',

@@ -10,6 +10,7 @@ import { useAuth } from '../context/AuthContext.jsx'
 import { useToast } from '../context/ToastContext.jsx'
 import { api, ApiError } from '../lib/api'
 import ChipSelect from '../components/ChipSelect.jsx'
+import Seo from '../components/Seo.jsx'
 
 // Business Onboarding Wizard — shown once to new users. Welcome → 5 questions →
 // completion. Every question can be skipped; whatever's filled is saved and the
@@ -255,6 +256,9 @@ export default function Onboarding() {
 function Shell({ children }) {
   return (
     <div className="app-bg grid min-h-screen place-items-center p-4">
+      {/* Without this the tab keeps the prerendered 404 shell's title, since
+          /onboarding is a private route and is never prerendered. */}
+      <Seo />
       <div className="card w-full max-w-xl p-8">{children}</div>
     </div>
   )

@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useRef, useState } from 'react'
+import { createContext, useCallback, useContext, useMemo, useRef, useState } from 'react'
 
 const ToastContext = createContext(null)
 
@@ -19,11 +19,18 @@ export function ToastProvider({ children }) {
     [remove],
   )
 
-  const toast = {
-    success: (m) => push('success', m),
-    error: (m) => push('error', m),
-    info: (m) => push('info', m),
-  }
+  // Memoised because this is the value every consumer sees. Rebuilt inline it
+  // changed identity on each provider render — and the provider re-renders
+  // whenever a toast appears or expires — so any effect or callback that
+  // depends on `toast` re-ran on every unrelated notification.
+  const toast = useMemo(
+    () => ({
+      success: (m) => push('success', m),
+      error: (m) => push('error', m),
+      info: (m) => push('info', m),
+    }),
+    [push],
+  )
 
   return (
     <ToastContext.Provider value={toast}>

@@ -78,6 +78,16 @@ class PlannerImageRequest(BaseModel):
     prompt: str | None = Field(default=None, max_length=500)
 
 
+class ImageDefaultsUpdate(BaseModel):
+    """Replace the plan's default template / size / image settings.
+
+    Deliberately opaque: the shape belongs to the client's image studio, and
+    pinning it here would mean a schema change every time a style option is
+    added. Pass null to clear back to the client's own defaults.
+    """
+    image_defaults: dict | None = None
+
+
 class GenerateRequest(BaseModel):
     # When true, every generated post also gets an AI-generated image.
     with_images: bool = False
@@ -124,6 +134,7 @@ class PlanRead(BaseModel):
     theme: str | None = None
     summary: str | None = None
     topics: list[TopicItem]
+    image_defaults: dict | None = None
     status: str
     total_posts: int
     generated_posts: int

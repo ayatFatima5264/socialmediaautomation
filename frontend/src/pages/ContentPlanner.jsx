@@ -1,9 +1,23 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api, ApiError } from '../lib/api'
-import { loadFirstAvailable } from '../lib/imageLoader'
+import { downloadImage, loadFirstAvailable } from '../lib/imageLoader'
 import { useToast } from '../context/ToastContext.jsx'
 import ChipSelect from '../components/ChipSelect.jsx'
+import HelpTip from '../components/HelpTip.jsx'
+// The AI Generator's image studio, reused wholesale — same pipeline, same
+// template library, same editor, same brand kit.
+import useImageStudio, {
+  mergeStudioSettings,
+  studioValue,
+} from '../hooks/useImageStudio'
+import ImageStudioControls from '../components/brand/ImageStudioControls.jsx'
+import ImageActionBar from '../components/editor/ImageActionBar.jsx'
+import MediaLibraryModal from '../components/media/MediaLibraryModal.jsx'
+import ImageEditor from '../components/editor/ImageEditor.jsx'
+import BrandOverlay from '../components/brand/BrandOverlay.jsx'
+import { aspectOf } from '../lib/brandKit/platformSizes'
+import { PREVIEW_SAMPLE } from '../lib/brandKit/contentTemplates'
 import { PLATFORMS, PLATFORM_KEYS } from '../lib/constants'
 import {
   PLANNER_DURATIONS,
@@ -45,6 +59,28 @@ function formatWhen(iso) {
   })
 }
 
+/**
+ * Persist `value` a beat after it stops changing, skipping the initial render.
+ *
+ * The image settings are edited through selects and a textarea; saving on every
+ * change would mean a request per keystroke, and — worse — a plan reload that
+ * yanks focus out of the field being typed in.
+ */
+function useDebouncedSave(value, save, delay = 700) {
+  const first = useRef(true)
+  const saveRef = useRef(save)
+  saveRef.current = save
+
+  useEffect(() => {
+    if (first.current) {
+      first.current = false
+      return
+    }
+    const t = setTimeout(() => saveRef.current(value), delay)
+    return () => clearTimeout(t)
+  }, [value, delay])
+}
+
 function toLocalInput(iso) {
   const d = asUtc(iso)
   const pad = (n) => String(n).padStart(2, '0')
@@ -83,17 +119,15 @@ export default function ContentPlanner() {
   const stepIndex = STEPS.findIndex((s) => s.key === (mode === 'generating' ? 'generate' : mode))
 
   return (
-    <div className="mx-auto max-w-6xl">
+    <div className="mx-auto -mt-1 max-w-6xl pb-4 md:-mt-3">
       {/* Header */}
-      <div className="mb-6 flex flex-wrap items-center gap-3">
-        <div>
-          <h1 className="flex items-center gap-2 text-2xl font-bold">
-            <span>🗓️</span> AI Content Planner
-          </h1>
-          <p className="text-sm text-muted">
+      <div className="mb-3 flex flex-wrap items-center gap-3">
+        <h1 className="flex items-center gap-2 text-lg font-bold">
+          <span>🗓️</span> AI Content Planner
+          <HelpTip label="About the Content Planner">
             Let AI plan, write, and schedule your entire content calendar.
-          </p>
-        </div>
+          </HelpTip>
+        </h1>
         <div className="ml-auto flex gap-2">
           {mode !== 'hub' && (
             <button onClick={() => { setPlan(null); setMode('hub'); reloadHub() }} className="btn btn-ghost btn-sm">
@@ -593,6 +627,21 @@ function ReviewStep({ plan, setPlan, onApproved }) {
   const toast = useToast()
   const [selected, setSelected] = useState(() => new Set())
   const [busy, setBusy] = useState(false)
+  const [defaultsOpen, setDefaultsOpen] = useState(false)
+
+  // The plan's image defaults. Held locally so typing stays responsive, and
+  // written back on a delay — the AI prompt is a textarea, and saving per
+  // keystroke would be a request per character.
+  const [defaults, setDefaults] = useState(() => studioValue(plan.image_defaults))
+  const defaultStudio = useImageStudio(defaults)
+
+  const saveDefaults = (patch) => setDefaults((d) => ({ ...d, ...patch }))
+
+  useDebouncedSave(defaults, (value) => {
+    api
+      .updatePlanImageDefaults(plan.id, value)
+      .catch(() => toast.error('Could not save the plan’s image defaults'))
+  })
 
   const pending = plan.posts.filter((p) => p.approval_status === 'pending')
   const reload = async () => { try { setPlan(await api.getPlan(plan.id)) } catch { /* ignore */ } }
@@ -650,7 +699,51 @@ function ReviewStep({ plan, setPlan, onApproved }) {
         </div>
       </div>
 
-      <div className="space-y-6">
+      {/* ---- Plan image defaults ------------------------------------------
+          One template, style and brand kit for the whole plan. Every post
+          inherits these unless it overrides them, which is what keeps a
+          twenty-post calendar from becoming twenty sets of controls. */}
+      <section className="card mb-3 p-3">
+        <button
+          type="button"
+          onClick={() => setDefaultsOpen((v) => !v)}
+          aria-expanded={defaultsOpen}
+          className="flex w-full items-center gap-3 text-left"
+        >
+          <TemplateThumb studio={defaultStudio} />
+          <span className="min-w-0 flex-1">
+            <span className="block text-sm font-semibold">Image settings for this plan</span>
+            <span className="block truncate text-xs text-muted">
+              {defaultStudio.template.label} · {defaultStudio.size.dimensions.join(' × ')} px ·{' '}
+              {defaultStudio.brandSettings.enabled && defaultStudio.brandAvailable
+                ? 'Brand Kit on'
+                : 'no Brand Kit'}
+            </span>
+          </span>
+          <span className="shrink-0 text-muted">{defaultsOpen ? '▾' : '▸'}</span>
+        </button>
+
+        {defaultsOpen && (
+          <div className="mt-3 border-t border-line pt-3">
+            <ImageStudioControls
+              value={defaults}
+              onChange={saveDefaults}
+              brandKit={defaultStudio.brandKit}
+              brandSettings={defaultStudio.brandSettings}
+              // Brand belongs to the plan here, not to the device. Until the
+              // user touches it the plan follows their global preference;
+              // the first change pins it to this plan.
+              onBrandSettingsChange={(patch) =>
+                saveDefaults({ brand: { ...defaultStudio.brandSettings, ...patch } })
+              }
+              brandAvailable={defaultStudio.brandAvailable}
+              idPrefix={`plan-${plan.id}`}
+            />
+          </div>
+        )}
+      </section>
+
+      <div className="space-y-4">
         {groups.map(([day, posts]) => (
           <div key={day}>
             <div className="mb-2 flex items-center gap-2">
@@ -660,7 +753,14 @@ function ReviewStep({ plan, setPlan, onApproved }) {
             </div>
             <div className="space-y-3">
               {posts.map((post) => (
-                <PostCard key={post.id} post={post} selected={selected.has(post.id)} onToggle={() => toggle(post.id)} onChanged={reload} />
+                <PostCard
+                  key={post.id}
+                  post={post}
+                  planDefaults={defaults}
+                  selected={selected.has(post.id)}
+                  onToggle={() => toggle(post.id)}
+                  onChanged={reload}
+                />
               ))}
             </div>
           </div>
@@ -670,36 +770,144 @@ function ReviewStep({ plan, setPlan, onApproved }) {
   )
 }
 
-function PostCard({ post, selected, onToggle, onChanged }) {
+function PostCard({ post, planDefaults, selected, onToggle, onChanged }) {
   const toast = useToast()
   const [editing, setEditing] = useState(false)
   const [content, setContent] = useState(post.content)
   const [busy, setBusy] = useState(false)
   const [imgBusy, setImgBusy] = useState(false)
   const [showStock, setShowStock] = useState(false)
+  const [showLibrary, setShowLibrary] = useState(false)
+  const [ovOpen, setOvOpen] = useState(false)
+  // null, or { section, url } — the panel to open on and the candidate that
+  // actually loads. Both are settled before the editor mounts.
+  const [editorOn, setEditorOn] = useState(null)
   const p = PLATFORMS[post.platform] || { label: post.platform, color: '#64748b', initial: '?' }
   const approved = post.approval_status === 'approved'
-  const image = Array.isArray(post.media) ? post.media.find((m) => m?.type === 'image' || m?.url) : null
 
+  // Media carries two kinds of entry: the picture itself, and this post's
+  // settings override. Keeping them separate means an override survives having
+  // its image removed, and a stock photo keeps working untouched.
+  const image = readImage(post)
+  const saved = readOverride(post)
+
+  // Edited locally, written back on a delay. Without the local copy every
+  // keystroke in the image prompt would round-trip and reload the plan.
+  const [override, setOverrideLocal] = useState(saved)
+  const savedKey = JSON.stringify(saved)
+  useEffect(() => {
+    setOverrideLocal(saved)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [savedKey])
+
+  // Plan default unless this post says otherwise. One resolution point, so the
+  // preview, the editor and the regenerate call cannot disagree.
+  const resolved = useMemo(
+    () => mergeStudioSettings(planDefaults, override),
+    [planDefaults, override],
+  )
+  const studio = useImageStudio(resolved)
+
+  // Persist a media change. Always writes both entries so a partial update
+  // cannot drop the other one.
+  const writeMedia = async ({ image: nextImage, override: nextOverride }) => {
+    const media = []
+    const img = nextImage === undefined ? image : nextImage
+    const ov = nextOverride === undefined ? override : nextOverride
+    if (img?.url) media.push({ ...img, type: 'image' })
+    if (ov?.enabled) media.push({ type: 'image_settings', override: ov })
+    await api.updatePlannerPost(post.id, { media })
+  }
+
+  // What the artwork should depict: this post's explicit image prompt, else
+  // its topic, else the caption — the same resolution order the generator uses.
+  const promptFor = () =>
+    resolved.img.imagePrompt?.trim() || post.topic || post.content?.slice(0, 200) || ''
+
+  // Regenerate through the shared pipeline — the same call the AI Generator
+  // makes, so a planned post and a generated draft come out the same.
   const genImage = async () => {
     setImgBusy(true)
     try {
-      await api.generatePlannerPostImage(post.id)
+      const { images, templateContent } = await studio.generateImages({
+        prompt: promptFor(),
+        platform: post.platform,
+        audience: null,
+      })
+      const first = images?.[0]
+      if (!first?.url) throw new Error('No image was returned')
+      await writeMedia({
+        image: {
+          type: 'image',
+          source: 'ai',
+          url: first.url,
+          fallbacks: first.fallbacks || [],
+          prompt: promptFor(),
+          // Everything needed to redraw this exact design after a refresh.
+          settings: resolved,
+          templateContent,
+          placement: first.placement || null,
+        },
+      })
       toast.success('AI image generated')
       onChanged()
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : 'Could not generate image')
+      toast.error(err instanceof ApiError ? err.message : err.message || 'Could not generate image')
     } finally { setImgBusy(false) }
+  }
+
+  // Local first, persisted on a delay. No onChanged() here: reloading the plan
+  // mid-edit would replace the card and drop focus.
+  const setOverride = (next) => setOverrideLocal(next)
+
+  useDebouncedSave(override, (value) => {
+    const media = []
+    if (image?.url) media.push({ ...image, type: 'image' })
+    if (value?.enabled) media.push({ type: 'image_settings', override: value })
+    api
+      .updatePlannerPost(post.id, { media })
+      .catch(() => toast.error('Could not save this post’s settings'))
+  })
+
+  const replaceImage = async (file) => {
+    setImgBusy(true)
+    try {
+      const dataUrl = await fileToDataUrl(file)
+      await writeMedia({
+        image: { ...(image || {}), type: 'image', source: 'upload', url: dataUrl, fallbacks: [] },
+      })
+      toast.success('Image replaced')
+      onChanged()
+    } catch {
+      toast.error('Could not read that file')
+    } finally { setImgBusy(false) }
+  }
+
+  // Resolve the live candidate before mounting the editor: useEditor only
+  // reads its document once, so swapping the URL afterwards would do nothing.
+  const openEditor = async (section) => {
+    if (!image?.url) return
+    const live = await loadFirstAvailable([image.url, ...(image.fallbacks || [])])
+    setEditorOn({ section, url: live || image.url })
+  }
+
+  const saveEditedImage = async (dataUrl) => {
+    await writeMedia({
+      image: { ...image, url: dataUrl, fallbacks: [], edited: true },
+    })
+    setEditorOn(null)
+    toast.success('Image updated')
+    onChanged()
   }
   const attachStock = async (item) => {
     setImgBusy(true)
     try {
-      await api.updatePlannerPost(post.id, {
-        media: [{
+      await writeMedia({
+        image: {
           type: 'image', source: 'stock', provider: item.source,
           url: item.url, thumb: item.thumb, credit: item.credit, link: item.link,
           fallbacks: [],
-        }],
+        },
       })
       setShowStock(false)
       toast.success('Stock photo attached')
@@ -708,10 +916,12 @@ function PostCard({ post, selected, onToggle, onChanged }) {
       toast.error(err instanceof ApiError ? err.message : 'Could not attach photo')
     } finally { setImgBusy(false) }
   }
+  // Drops the picture but keeps the override — removing an image is not a
+  // request to forget which template the post was set to.
   const removeImage = async () => {
     setImgBusy(true)
     try {
-      await api.updatePlannerPost(post.id, { media: [] })
+      await writeMedia({ image: null })
       onChanged()
     } catch { toast.error('Could not remove image') } finally { setImgBusy(false) }
   }
@@ -753,6 +963,16 @@ function PostCard({ post, selected, onToggle, onChanged }) {
             {approved
               ? <span className="badge bg-emerald-500/15 text-emerald-600">Approved</span>
               : <span className="badge bg-amber-500/15 text-amber-600">Pending</span>}
+            {/* Visible without scrolling to the image section, so a post that
+                does not follow the plan says so up front. */}
+            {override?.enabled && (
+              <span
+                className="badge border border-accent-line bg-accent-soft text-accent"
+                title="This post overrides the plan's image settings"
+              >
+                ✓ Custom
+              </span>
+            )}
             <span className="ml-auto text-xs text-muted">{post.character_count} chars</span>
           </div>
 
@@ -770,22 +990,37 @@ function PostCard({ post, selected, onToggle, onChanged }) {
             </div>
           )}
 
-          {/* Attached visual (AI-generated or stock) */}
+          {/* Attached visual. Brand and content layers are drawn over the
+              artwork exactly as on the AI Generator, so what is on screen here
+              is what the editor opens and what gets published. */}
           {image && (
             <div className="mt-3">
-              <div className="relative w-full max-w-xs overflow-hidden rounded-xl border border-line">
+              <div
+                className="relative w-full max-w-xs overflow-hidden rounded-xl border border-line"
+                style={{ aspectRatio: studio.size.dimensions.join(' / ') }}
+              >
                 <PlannerImage
                   candidates={[image.url, ...(image.fallbacks || [])]}
                   alt={image.prompt || 'Post image'}
                 />
+                {image.templateContent && !image.edited && (
+                  <BrandOverlay
+                    layers={studio.composeForEditor(
+                      image.templateContent,
+                      undefined,
+                      image.placement,
+                    )}
+                    aspect={aspectOf(resolved.sizeId)}
+                    idPrefix={`plan-post-${post.id}`}
+                  />
+                )}
                 <span className="absolute left-2 top-2 rounded-full bg-black/60 px-2 py-0.5 text-[10px] font-semibold text-white">
-                  {image.source === 'stock' ? `Stock · ${image.provider || 'photo'}` : 'AI'}
+                  {image.source === 'stock'
+                    ? `Stock · ${image.provider || 'photo'}`
+                    : image.source === 'upload'
+                      ? 'Uploaded'
+                      : 'AI'}
                 </span>
-                <button
-                  type="button" onClick={removeImage} disabled={imgBusy}
-                  className="absolute right-2 top-2 grid h-6 w-6 place-items-center rounded-full bg-black/60 text-xs text-white hover:bg-rose-500"
-                  title="Remove image"
-                >✕</button>
               </div>
               {image.credit && (
                 <div className="mt-1 text-[11px] text-muted">Photo: {image.credit}</div>
@@ -793,14 +1028,98 @@ function PostCard({ post, selected, onToggle, onChanged }) {
             </div>
           )}
 
-          {/* Image actions */}
+          {/* Image actions — the shared bar, so the verbs match the generator. */}
           <div className="mt-3 flex flex-wrap items-center gap-2">
-            <button onClick={genImage} disabled={imgBusy || busy} className="btn btn-ghost btn-sm">
-              {imgBusy ? '…' : image ? '🖼 Regenerate image' : '🖼 Generate AI image'}
-            </button>
+            {image ? (
+              <ImageActionBar
+                busy={imgBusy || busy}
+                onEdit={() => openEditor('text')}
+                onAiEdit={() => openEditor('ai')}
+                onRegenerate={genImage}
+                onBrowseLibrary={() => setShowLibrary(true)}
+                onReplace={replaceImage}
+                onDownload={() =>
+                  downloadImage(image.url, `plan-post-${post.id}.png`)
+                }
+                onRemove={removeImage}
+              />
+            ) : (
+              <>
+                <button onClick={genImage} disabled={imgBusy || busy} className="btn btn-ghost btn-sm">
+                  {imgBusy ? 'Generating…' : '🖼 Generate AI image'}
+                </button>
+                {/* The action bar carries this once a post has an image; with
+                    no image there is no bar, and picking one is exactly what
+                    an empty post needs offering. */}
+                <button
+                  onClick={() => setShowLibrary(true)}
+                  disabled={imgBusy || busy}
+                  className="btn btn-ghost btn-sm"
+                >
+                  🖼 Library
+                </button>
+              </>
+            )}
             <button onClick={() => setShowStock(true)} disabled={imgBusy || busy} className="btn btn-ghost btn-sm">
               🔎 Stock photo
             </button>
+          </div>
+
+          {/* Per-post override. Off, the post follows the plan; on, only the
+              fields it actually changes diverge. */}
+          <div className="mt-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  if (override?.enabled) setOverride({ ...override, enabled: false })
+                  else { setOverride({ ...studioValue(planDefaults), enabled: true }); setOvOpen(true) }
+                }}
+                disabled={imgBusy}
+                aria-pressed={!!override?.enabled}
+                className={`rounded-lg border px-2.5 py-1 text-xs font-medium transition ${
+                  override?.enabled
+                    ? 'border-accent bg-accent-soft text-accent'
+                    : 'border-line text-muted hover:bg-inset'
+                }`}
+              >
+                {override?.enabled ? '✓ Custom settings' : '+ Override settings'}
+              </button>
+              <span className="truncate text-xs text-muted">
+                {studio.template.label} · {studio.size.dimensions.join(' × ')} px
+              </span>
+              {override?.enabled && (
+                <button
+                  type="button"
+                  onClick={() => setOvOpen((v) => !v)}
+                  className="ml-auto text-xs text-muted hover:text-body"
+                >
+                  {ovOpen ? 'Hide' : 'Edit'} settings
+                </button>
+              )}
+            </div>
+
+            {override?.enabled && ovOpen && (
+              <div className="mt-2 rounded-xl border border-line p-3">
+                <ImageStudioControls
+                  value={override}
+                  onChange={(patch) => setOverride({ ...override, ...patch, enabled: true })}
+                  brandKit={studio.brandKit}
+                  brandSettings={studio.brandSettings}
+                  // Brand is scoped to this post, so one post can drop the
+                  // branding without changing it for the rest of the plan.
+                  onBrandSettingsChange={(patch) =>
+                    setOverride({
+                      ...override,
+                      enabled: true,
+                      brand: { ...studio.brandSettings, ...patch },
+                    })
+                  }
+                  brandAvailable={studio.brandAvailable}
+                  idPrefix={`post-${post.id}`}
+                />
+              </div>
+            )}
           </div>
 
           <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -826,6 +1145,17 @@ function PostCard({ post, selected, onToggle, onChanged }) {
         </div>
       </div>
 
+      {/* The library hands back a File, which is exactly what an upload is —
+          so choosing a library image and dropping one in take the same path. */}
+      <MediaLibraryModal
+        open={showLibrary}
+        onCancel={() => setShowLibrary(false)}
+        onSelect={(file) => {
+          setShowLibrary(false)
+          replaceImage(file)
+        }}
+      />
+
       {showStock && (
         <StockPickerModal
           defaultQuery={post.topic || post.content_type || ''}
@@ -834,7 +1164,88 @@ function PostCard({ post, selected, onToggle, onChanged }) {
           onClose={() => setShowStock(false)}
         />
       )}
+
+      {/* The same editor the AI Generator opens — same canvas, same layers,
+          same AI panel. "AI Edit" only differs in which panel it starts on. */}
+      {editorOn && image?.url && (
+        <ImageEditor
+          open
+          initialSection={editorOn.section}
+          // Whichever candidate actually loads — the card resolves fallbacks,
+          // so opening the editor on the raw primary could show a blank canvas
+          // for an image that is visibly fine behind it.
+          imageUrl={editorOn.url || image.url}
+          size={{
+            width: studio.size.dimensions[0],
+            height: studio.size.dimensions[1],
+          }}
+          layers={
+            image.edited
+              ? []
+              : studio.composeForEditor(image.templateContent, undefined, image.placement)
+          }
+          brandKit={studio.brandKit}
+          style={resolved.img.style}
+          onClose={() => setEditorOn(null)}
+          onRegenerate={async ({ style, prompt }) => {
+            const { images } = await studio.generateImages({
+              prompt: prompt || image.prompt || promptFor(),
+              platform: post.platform,
+              settings: style ? { style } : undefined,
+              // Written in the user's own words, so it is used as given rather
+              // than re-briefed from the post.
+              skipCopy: !!prompt,
+            })
+            return images?.[0]?.url || null
+          }}
+          onSave={saveEditedImage}
+        />
+      )}
     </div>
+  )
+}
+
+// Media carries the picture and the settings override as separate entries, so
+// one can change without disturbing the other.
+function readImage(post) {
+  if (!Array.isArray(post.media)) return null
+  return post.media.find((m) => m?.url && m?.type !== 'image_settings') || null
+}
+
+function readOverride(post) {
+  if (!Array.isArray(post.media)) return null
+  return post.media.find((m) => m?.type === 'image_settings')?.override || null
+}
+
+function fileToDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader()
+    r.onload = () => resolve(r.result)
+    r.onerror = reject
+    r.readAsDataURL(file)
+  })
+}
+
+// The plan-default row's thumbnail. Renders through the real layer pipeline so
+// it shows the actual template, not an icon standing in for one.
+function TemplateThumb({ studio }) {
+  const [w, h] = studio.size.dimensions
+  return (
+    <span className="grid h-11 w-11 shrink-0 place-items-center rounded-lg bg-inset p-1">
+      <span
+        className={`relative block overflow-hidden rounded ${w > h ? 'w-full' : 'h-full'}`}
+        style={{
+          aspectRatio: studio.size.dimensions.join(' / '),
+          background: 'linear-gradient(140deg, var(--inset), var(--accent-soft))',
+        }}
+      >
+        <BrandOverlay
+          layers={studio.composeForEditor(PREVIEW_SAMPLE)}
+          aspect={aspectOf(studio.settings.sizeId)}
+          idPrefix="plan-default-thumb"
+        />
+      </span>
+    </span>
   )
 }
 
@@ -857,15 +1268,17 @@ function PlannerImage({ candidates, alt }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key])
 
+  // Fills its container rather than forcing a square: the wrapper carries the
+  // template's aspect ratio, so a 9:16 Story must not be letterboxed into 1:1.
   if (failed) {
     return (
-      <div className="grid aspect-square place-items-center bg-inset text-center text-xs text-muted">
+      <div className="grid h-full w-full place-items-center bg-inset text-center text-xs text-muted">
         Image unavailable
       </div>
     )
   }
-  if (!src) return <div className="skeleton aspect-square w-full" />
-  return <img src={src} alt={alt} loading="lazy" className="aspect-square w-full object-cover" />
+  if (!src) return <div className="skeleton h-full w-full" />
+  return <img src={src} alt={alt} loading="lazy" className="h-full w-full object-cover" />
 }
 
 // Search & pick a free stock photo (Openverse by default) to attach to a post.

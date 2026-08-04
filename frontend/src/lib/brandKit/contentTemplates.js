@@ -384,11 +384,20 @@ function product(content, opts) {
   const priceW = 0.28
   const headW = content.price ? 1 - m * 2 - priceW - 0.03 : 1 - m * 2
 
+  // The stack is laid out bottom-up with real separation between each element.
+  //
+  // It used to pack headline, price, subtitle and CTA into the lower 21% of the
+  // frame while its band offered 39% — leaving a 4-unit gap between the second
+  // headline line and the subtitle, and a 6-unit overlap between the subtitle
+  // and the CTA pill. The overlap went unreported because the pill is locked,
+  // and locked layers are exempt from the collision check. Nothing could fix
+  // that downstream: the validator's minimum gap is 14 units, so every attempt
+  // to space this stack pushed it into the pinned price chip instead.
   wrap(content.headline, 24, 2).forEach((line, i) =>
     layers.push(
       text(`headline-${i}`, line, {
         anchor: 'bottom-left',
-        offset: { x: m, y: 0.16 + (1 - i) * 0.07 },
+        offset: { x: m, y: 0.19 + (1 - i) * 0.075 },
         size: { w: headW, h: 0.062 },
         weight: 800,
       }),
@@ -400,7 +409,9 @@ function product(content, opts) {
       createLayer(LAYER_TYPES.RECT, {
         id: 'price-bg',
         anchor: 'bottom-right',
-        offset: { x: m, y: 0.15 },
+        // Aligned to the headline block; it used to sit low enough to cross
+        // the subtitle's row, which the locked-layer exemption hid.
+        offset: { x: m, y: 0.19 },
         size: { w: priceW, h: 0.09 },
         fill: primary,
         radius: 0.02,
@@ -409,7 +420,7 @@ function product(content, opts) {
       }),
       text('price', content.price, {
         anchor: 'bottom-right',
-        offset: { x: m + 0.02, y: 0.175 },
+        offset: { x: m + 0.02, y: 0.215 },
         size: { w: priceW - 0.04, h: 0.048 },
         fill: readableOn(primary),
         weight: 800,
@@ -422,7 +433,7 @@ function product(content, opts) {
     layers.push(
       text('sub-0', content.subtext, {
         anchor: 'bottom-left',
-        offset: { x: m, y: 0.105 },
+        offset: { x: m, y: 0.156 },
         size: { w: headW, h: 0.03 },
         opacity: 0.88,
         weight: 500,
@@ -515,34 +526,34 @@ function carouselSlide(content, opts) {
 
 // Shared CTA renderer — a solid pill or an underlined link, depending on
 // whether the layout wants emphasis.
+// The call to action, as type rather than a button.
+//
+// It used to be a filled pill with the label centred inside it. That pill was
+// the source of a whole class of collisions: it is `locked`, and locked layers
+// are exempt from the overlap check, so when it drifted onto the subtitle
+// nothing reported it — the design just looked broken and every test passed.
+// It was also the tallest element in the stack at 7.2% of the frame, which is
+// what made tight templates impossible to space.
+//
+// Set as bold type on the scrim with a trailing arrow, it still reads as an
+// action, occupies less than half the height, and cannot overlap anything
+// invisibly because it is a plain text layer like every other.
 function ctaLayers(content, opts, { anchor, y, solid }) {
   if (!content.cta) return []
   const m = marginOf(opts)
   const { primary } = paletteOf(opts.brandKit)
-  const fill = solid || primary
-  // The pill hugs its label, but never wider than the safe area — a long CTA
-  // must shrink to fit rather than run past the margin.
-  const width = Math.min(0.16 + String(content.cta).length * 0.021, 1 - m * 2)
   return [
-    createLayer(LAYER_TYPES.RECT, {
-      id: 'cta-bg',
-      anchor,
-      offset: { x: m, y },
-      size: { w: width, h: 0.072 },
-      fill,
-      radius: 0.036,
-      locked: true,
-      z: Z.CHIP,
-    }),
     createLayer(LAYER_TYPES.TEXT, {
       id: 'cta',
-      text: content.cta,
+      text: `${content.cta}  →`,
       anchor,
-      offset: { x: m + width / 2, y: y + 0.022 },
-      size: { w: width, h: 0.034 },
-      fill: readableOn(fill),
-      weight: 700,
-      align: 'center',
+      offset: { x: m, y },
+      size: { w: 1 - m * 2, h: 0.034 },
+      // Brand colour when it reads on the scrim, white when it would not.
+      fill: readableOn('#000000') === '#ffffff' ? solid || primary || '#ffffff' : '#ffffff',
+      weight: 800,
+      tracking: 0.02,
+      align: 'left',
       z: Z.TEXT,
     }),
   ]
@@ -560,6 +571,183 @@ const SLOTS = {
 }
 
 export const TEMPLATE_CATEGORIES = ['Platform', 'Purpose']
+
+// Placeholder copy for template previews — one definition for the library
+// modal, the sidebar thumbnail and the planner's default row.
+//
+// Deliberately shorter than the slot budgets. The budgets are the point at
+// which copy still *fits*, which at 1080px is fine but at a 200px thumbnail
+// puts every line hard against its box edge, so adjacent lines read as
+// overlapping even though the geometry is sound. Representative copy shows the
+// layout; worst-case copy shows a stress test.
+export const PREVIEW_SAMPLE = {
+  headline: 'Your headline here',
+  subtext: 'A supporting line',
+  cta: 'Learn more',
+  badge: 'New',
+  price: '£49',
+}
+
+// ---- Gallery previews ------------------------------------------------------
+//
+// The library used to render every tile with the user's Brand Kit palette and
+// one shared line of placeholder copy. That is right for the sidebar, which
+// shows YOUR design — but wrong for a catalogue: thirteen genuinely different
+// layouts all came out as the same green rectangle saying the same thing, so
+// nothing could be told apart.
+//
+// So the gallery previews each template as itself: its own palette, and copy
+// that shows what the layout is FOR. A Quote previews a quote, a Hiring post
+// previews a job ad, a Product Showcase shows a price. The layout geometry is
+// still the real one — only the paint and the words are per-template.
+//
+// `style` and `badge` are catalogue metadata, shown on the card.
+export const TEMPLATE_STYLES = ['Modern', 'Minimal', 'Bold', 'Corporate', 'Luxury', 'Editorial']
+
+export const TEMPLATE_PREVIEWS = {
+  'ig-post': {
+    style: 'Modern', badge: 'Popular',
+    palette: ['#F97362', '#7C2D5A'],
+    copy: { headline: 'Slow mornings, good coffee', subtext: 'Single-origin, roasted weekly', cta: 'Shop the blend' },
+  },
+  'ig-story': {
+    style: 'Bold', badge: 'Popular',
+    palette: ['#FDB927', '#C1272D'],
+    copy: { headline: 'Weekend flash sale', subtext: 'Today only', cta: 'Swipe up', badge: '40% off' },
+  },
+  'fb-post': {
+    style: 'Modern',
+    palette: ['#4F8DF7', '#14307A'],
+    copy: { headline: 'Now open on Sundays', subtext: 'Same kitchen, longer hours', cta: 'Book a table' },
+  },
+  'li-post': {
+    style: 'Corporate', badge: 'Popular',
+    palette: ['#2E7D8F', '#0C2A33'],
+    copy: { headline: 'We closed our Series A', subtext: 'Thank you to everyone who backed us', cta: 'Read the story' },
+  },
+  'x-post': {
+    style: 'Minimal',
+    palette: ['#4B5563', '#0B0F14'],
+    copy: { headline: 'One change. Ten hours back.', subtext: 'A thread on scheduling' },
+  },
+  pin: {
+    style: 'Editorial',
+    palette: ['#E8846B', '#8C2F39'],
+    copy: { headline: '12 small-kitchen ideas', subtext: 'Save this for the renovation', cta: 'See all twelve' },
+  },
+  carousel: {
+    style: 'Modern', badge: 'New',
+    palette: ['#6D8FE8', '#232B57'],
+    copy: { headline: 'Five habits of calm teams', subtext: 'Swipe for the rest' },
+  },
+  promotional: {
+    style: 'Bold', badge: 'Popular',
+    palette: ['#FF6B4A', '#7A1220'],
+    copy: { headline: 'Everything must go', subtext: 'Ends Sunday at midnight', cta: 'Shop the sale', badge: '50% off' },
+  },
+  product: {
+    style: 'Luxury', badge: 'Popular',
+    palette: ['#C9A227', '#2B2416'],
+    copy: { headline: 'The everyday tote', subtext: 'Full-grain leather, lined', cta: 'Add to bag', price: '£189' },
+  },
+  quote: {
+    style: 'Editorial',
+    palette: ['#8E7CC3', '#241B3A'],
+    copy: { headline: 'Do the hard thing first.', subtext: 'Anna Whitfield, founder' },
+  },
+  event: {
+    style: 'Bold', badge: 'New',
+    palette: ['#2DBE9F', '#0B3B40'],
+    copy: { headline: 'Design Summit 2027', subtext: 'March 14 · Manchester', cta: 'Get tickets', badge: 'Live' },
+  },
+  hiring: {
+    style: 'Corporate',
+    palette: ['#4C7CF0', '#111C3D'],
+    copy: { headline: "We're hiring a designer", subtext: 'Remote · UK hours', cta: 'See the role', badge: 'Open' },
+  },
+  announcement: {
+    style: 'Minimal', badge: 'New',
+    palette: ['#5B8DEF', '#101A2E'],
+    copy: { headline: 'Something new is coming', subtext: 'March 3' },
+  },
+}
+
+/** Palette + copy the gallery should preview a template with. */
+export function previewFor(templateId) {
+  const p = TEMPLATE_PREVIEWS[templateId] || {}
+  return {
+    style: p.style || 'Modern',
+    badge: p.badge || null,
+    palette: p.palette || ['#1f8a5b', '#0b3d2e'],
+    copy: { ...PREVIEW_SAMPLE, ...(p.copy || {}) },
+  }
+}
+
+// ---- Library facets --------------------------------------------------------
+//
+// The three axes the template library filters on. They are deliberately not
+// all-or-nothing: a template declares a facet only where that facet is really
+// part of what it is.
+//
+//   platform   — set only on templates shaped for one platform's proportions.
+//                A Quote layout works anywhere, so it declares none and is
+//                treated as matching every platform rather than being hidden
+//                the moment someone filters by Instagram.
+//   purpose    — likewise, set only on the purpose-built layouts.
+//   industries — a curation hint, not a property of the layout: which trades
+//                this template tends to suit. Templates with no obvious lean
+//                declare none and match every industry.
+//
+export const TEMPLATE_PLATFORMS = [
+  'Instagram',
+  'Facebook',
+  'LinkedIn',
+  'Twitter / X',
+  'Pinterest',
+  'Story',
+  'Carousel',
+]
+
+export const TEMPLATE_PURPOSES = [
+  'Promotional',
+  'Product Showcase',
+  'Hiring',
+  'Quote',
+  'Event',
+  'Announcement',
+]
+
+export const TEMPLATE_INDUSTRIES = [
+  'SaaS',
+  'Real Estate',
+  'Restaurant',
+  'Healthcare',
+  'Education',
+  'Ecommerce',
+]
+
+/** Facet axes the library exposes, in tab order. */
+export const TEMPLATE_FACETS = [
+  { key: 'platform', label: 'Platform', values: TEMPLATE_PLATFORMS },
+  { key: 'purpose', label: 'Purpose', values: TEMPLATE_PURPOSES },
+  { key: 'industry', label: 'Industry', values: TEMPLATE_INDUSTRIES },
+]
+
+/**
+ * Does `template` satisfy the chosen facet values? An undeclared facet is a
+ * wildcard, so filtering never hides a layout that genuinely fits.
+ */
+export function templateMatches(template, { search, platform, purpose, industry } = {}) {
+  if (platform && template.platform && template.platform !== platform) return false
+  if (purpose && template.purpose && template.purpose !== purpose) return false
+  if (industry && template.industries && !template.industries.includes(industry)) return false
+
+  const q = search?.trim().toLowerCase()
+  if (!q) return true
+  return [template.label, template.platform, template.purpose, ...(template.industries || [])]
+    .filter(Boolean)
+    .some((field) => field.toLowerCase().includes(q))
+}
 
 // Shared layout rules. Most templates are one of three shapes — a lower-third
 // text block, a full-frame centred statement, or a top-weighted vertical — so
@@ -594,24 +782,28 @@ export const CONTENT_TEMPLATES = [
   // --- Platform-shaped -------------------------------------------------
   {
     id: 'ig-post', label: 'Instagram Post', category: 'Platform',
+    platform: 'Instagram',
     defaultSize: 'ig-square', build: lowerThird, slots: SLOTS.cta,
     background: 'clean composition with uncluttered space in the lower half',
     layout: LOWER_THIRD_LAYOUT,
   },
   {
     id: 'ig-story', label: 'Instagram Story', category: 'Platform',
+    platform: 'Story',
     defaultSize: 'story', build: story, slots: SLOTS.offer,
     background: 'vertical composition, subject centred, clear space top and bottom',
     layout: STORY_LAYOUT,
   },
   {
     id: 'fb-post', label: 'Facebook Post', category: 'Platform',
+    platform: 'Facebook',
     defaultSize: 'facebook', build: lowerThird, slots: SLOTS.cta,
     background: 'warm approachable scene with clear space in the lower half',
     layout: LOWER_THIRD_LAYOUT,
   },
   {
     id: 'li-post', label: 'LinkedIn Post', category: 'Platform',
+    platform: 'LinkedIn', industries: ['SaaS', 'Real Estate', 'Healthcare'],
     defaultSize: 'linkedin', build: lowerThird, slots: SLOTS.cta,
     background: 'professional business setting, restrained palette, clear lower third',
     // Landscape: less height for text, so the copy budget is tighter.
@@ -619,18 +811,21 @@ export const CONTENT_TEMPLATES = [
   },
   {
     id: 'x-post', label: 'Twitter / X Post', category: 'Platform',
+    platform: 'Twitter / X',
     defaultSize: 'twitter', build: lowerThird, slots: SLOTS.basic,
     background: 'bold high-contrast composition, clear space in the lower third',
     layout: layoutOf({ ...LOWER_THIRD_LAYOUT, maxChars: { headline: 60, subtext: 90 } }),
   },
   {
     id: 'pin', label: 'Pinterest Pin', category: 'Platform',
+    platform: 'Pinterest', industries: ['Real Estate', 'Restaurant', 'Ecommerce'],
     defaultSize: 'pinterest', build: pin, slots: SLOTS.cta,
     background: 'tall vertical composition, bright and aspirational, clear lower half',
     layout: layoutOf({ zone: 'bottom', altZones: ['top'], band: 0.55, logo: 'top-right' }),
   },
   {
     id: 'carousel', label: 'Carousel', category: 'Platform',
+    platform: 'Carousel',
     defaultSize: 'ig-square', build: carouselSlide, slots: SLOTS.basic,
     background: 'cohesive series style, consistent palette, clear lower third',
     isCarousel: true,
@@ -641,19 +836,26 @@ export const CONTENT_TEMPLATES = [
   // --- Purpose-shaped ---------------------------------------------------
   {
     id: 'promotional', label: 'Promotional', category: 'Purpose',
+    purpose: 'Promotional', industries: ['Ecommerce', 'Restaurant', 'SaaS'],
     defaultSize: 'ig-square', build: offer, slots: SLOTS.offer,
     background: 'energetic promotional scene, vibrant, clear space in the lower half',
     layout: layoutOf({ zone: 'bottom', altZones: ['top'], band: 0.62, maxChars: { headline: 50 } }),
   },
   {
     id: 'product', label: 'Product Showcase', category: 'Purpose',
+    purpose: 'Product Showcase', industries: ['Ecommerce', 'Restaurant', 'Real Estate'],
     defaultSize: 'ig-square', build: product, slots: SLOTS.product,
     background: 'clean product photography on a seamless background, product in the upper two thirds',
     // The product must stay visible, so the text never moves off the bottom.
-    layout: layoutOf({ zone: 'bottom', band: 0.46, maxChars: { headline: 48, subtext: 70 } }),
+    // The band grew from 0.46 once the vertical safe margin became real: a
+    // two-line headline plus a subtitle plus a CTA did not fit 46% of the
+    // frame once 7% of it was reserved at the bottom, and the second headline
+    // line landed on the subtitle. Still leaves the upper half to the product.
+    layout: layoutOf({ zone: 'bottom', band: 0.54, maxChars: { headline: 48, subtext: 70 } }),
   },
   {
     id: 'quote', label: 'Quote', category: 'Purpose',
+    purpose: 'Quote', industries: ['Education', 'Healthcare', 'SaaS'],
     defaultSize: 'ig-square', build: centered, slots: SLOTS.quote,
     background: 'simple textured backdrop, minimal detail, nothing competing with centred text',
     options: { quoteMark: true },
@@ -661,18 +863,21 @@ export const CONTENT_TEMPLATES = [
   },
   {
     id: 'event', label: 'Event', category: 'Purpose',
+    purpose: 'Event', industries: ['Education', 'Restaurant', 'Real Estate'],
     defaultSize: 'ig-portrait', build: event, slots: SLOTS.event,
     background: 'atmospheric venue or gathering scene, clear space in the lower half',
     layout: layoutOf({ zone: 'bottom', altZones: ['top'], band: 0.6, maxChars: { headline: 60 } }),
   },
   {
     id: 'hiring', label: 'Hiring', category: 'Purpose',
+    purpose: 'Hiring', industries: ['SaaS', 'Healthcare', 'Education', 'Real Estate'],
     defaultSize: 'ig-square', build: offer, slots: SLOTS.offer,
     background: 'welcoming workplace scene with real people, clear space in the lower half',
     layout: layoutOf({ zone: 'bottom', altZones: ['top'], band: 0.62, maxChars: { headline: 50 } }),
   },
   {
     id: 'announcement', label: 'Announcement', category: 'Purpose',
+    purpose: 'Announcement', industries: ['SaaS', 'Healthcare', 'Education'],
     defaultSize: 'ig-square', build: centered, slots: SLOTS.basic,
     background: 'striking simple backdrop, low detail, nothing competing with centred text',
     layout: CENTERED_LAYOUT,

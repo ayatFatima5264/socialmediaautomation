@@ -3,6 +3,7 @@ import { Link, Navigate, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
 import { useToast } from '../context/ToastContext.jsx'
 import Logo from '../components/Logo.jsx'
+import Seo from '../components/Seo.jsx'
 
 export default function Login() {
   const { user, login } = useAuth()
@@ -100,6 +101,10 @@ export function PasswordField({ value, onChange, placeholder, autoComplete = 'cu
 export function AuthShell({ title, subtitle, children }) {
   return (
     <div className="app-bg grid min-h-screen place-items-center p-4">
+      {/* Titles all four auth routes. They are served the noindex 404 shell
+          like the rest of the private app, so without this the tab reads
+          "Page Not Found" on a working sign-in form. */}
+      <Seo />
       <div className="w-full max-w-md">
         <Link to="/" className="mb-6 flex items-center justify-center gap-2">
           <Logo size={40} />

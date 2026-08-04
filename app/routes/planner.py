@@ -36,6 +36,7 @@ from app.schemas.content_plan import (
     PlanRead,
     PlanSummary,
     RegenerateTopicRequest,
+    ImageDefaultsUpdate,
     TopicsUpdate,
 )
 from app.schemas.post import Platform, PostStatus
@@ -289,6 +290,24 @@ def update_topics(
         }
         for t in data.topics
     ]
+    db.commit()
+    return _plan_read(db, plan)
+
+
+@router.patch("/{plan_id}/image-defaults", response_model=PlanRead)
+def update_image_defaults(
+    plan_id: int,
+    data: ImageDefaultsUpdate,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> PlanRead:
+    """Set the plan's default template / size / image settings.
+
+    Unlike topics this stays editable at every stage: the defaults govern
+    regeneration, which is something users do long after a plan is generated.
+    """
+    plan = _owned_plan(db, plan_id, user)
+    plan.image_defaults = data.image_defaults
     db.commit()
     return _plan_read(db, plan)
 

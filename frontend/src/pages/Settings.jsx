@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
 import { useToast } from '../context/ToastContext.jsx'
+import HelpTip from '../components/HelpTip.jsx'
 import { api } from '../lib/api'
 import { formatDateTime } from '../lib/datetime'
 import { profileCompletion } from '../lib/businessProfile'
@@ -20,10 +21,10 @@ import { profileCompletion } from '../lib/businessProfile'
 
 function SectionHeader({ title, description, action }) {
   return (
-    <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+    <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
       <div>
-        <h2 className="text-base font-bold">{title}</h2>
-        {description && <p className="mt-1 text-sm text-muted">{description}</p>}
+        <h2 className="text-sm font-bold">{title}</h2>
+        {description && <p className="mt-0.5 text-xs text-muted">{description}</p>}
       </div>
       {action}
     </div>
@@ -34,7 +35,7 @@ function SectionHeader({ title, description, action }) {
 // the value matters more than its readability as prose.
 function Row({ label, value, mono }) {
   return (
-    <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 border-b border-line py-3 last:border-0">
+    <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-0.5 border-b border-line py-2 last:border-0">
       <dt className="text-sm text-muted">{label}</dt>
       <dd className={`text-sm font-medium ${mono ? 'font-mono text-[13px]' : ''}`}>{value}</dd>
     </div>
@@ -54,13 +55,15 @@ function ComingSoon() {
 function SecurityRow({ title, description, action, last }) {
   return (
     <div
-      className={`flex flex-wrap items-center justify-between gap-4 py-4 ${
+      className={`flex flex-wrap items-center justify-between gap-3 py-2.5 ${
         last ? '' : 'border-b border-line'
       }`}
     >
-      <div className="min-w-[16rem] flex-1">
+      {/* min-w only from sm up: at 320px a 16rem floor exactly equals the
+          card's content width, which is too tight to survive rounding. */}
+      <div className="min-w-0 flex-1 sm:min-w-[16rem]">
         <div className="text-sm font-semibold">{title}</div>
-        <p className="mt-0.5 text-sm leading-relaxed text-muted">{description}</p>
+        <p className="mt-0.5 text-xs leading-relaxed text-muted">{description}</p>
       </div>
       {action}
     </div>
@@ -107,18 +110,18 @@ function ProfileCard() {
   }
 
   return (
-    <section className="card p-6 md:p-7">
-      <div className="flex flex-col gap-5 sm:flex-row sm:items-center">
+    <section className="card p-4 md:p-5">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
         <div
-          className="grid h-20 w-20 shrink-0 place-items-center rounded-2xl bg-accent text-2xl font-black text-accent-contrast"
+          className="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-accent text-base font-black text-accent-contrast"
           aria-hidden="true"
         >
           {initials}
         </div>
 
         <div className="min-w-0 flex-1">
-          <h2 className="truncate text-xl font-bold">{displayName}</h2>
-          <p className="mt-0.5 truncate text-sm text-muted">{user?.email}</p>
+          <h2 className="truncate text-base font-bold">{displayName}</h2>
+          <p className="truncate text-xs text-muted">{user?.email}</p>
         </div>
 
         {!editing && (
@@ -129,7 +132,7 @@ function ProfileCard() {
       </div>
 
       {editing && (
-        <form onSubmit={save} className="mt-6 border-t border-line pt-6">
+        <form onSubmit={save} className="mt-4 border-t border-line pt-4">
           <label htmlFor="full_name" className="label">
             Display name
           </label>
@@ -142,10 +145,10 @@ function ProfileCard() {
             maxLength={255}
             autoFocus
           />
-          <p className="mt-2 text-xs text-muted">
+          <p className="mt-1.5 text-xs text-muted">
             Your email address cannot be changed here — it identifies your account.
           </p>
-          <div className="mt-4 flex flex-wrap gap-2">
+          <div className="mt-3 flex flex-wrap gap-2">
             <button type="submit" className="btn btn-primary" disabled={saving}>
               {saving ? 'Saving…' : 'Save changes'}
             </button>
@@ -161,7 +164,7 @@ function ProfileCard() {
         </form>
       )}
 
-      <dl className="mt-6 border-t border-line pt-2">
+      <dl className="mt-4 border-t border-line pt-1">
         <Row label="Email" value={user?.email} />
         <Row
           label="Member since"
@@ -205,7 +208,7 @@ function BusinessProfileCard() {
   const { filled, total, complete } = profileCompletion(profile)
 
   return (
-    <section className="card p-6 md:p-7">
+    <section className="card p-4 md:p-5">
       <SectionHeader
         title="Business Profile"
         description="The context AI uses to write in your voice — your industry, audience, tone, and goals."
@@ -227,20 +230,23 @@ function BusinessProfileCard() {
             </span>
           </div>
 
-          <p className="mt-3 text-sm text-muted">
-            {complete
-              ? 'Your profile is complete. Updating it changes how future content is written.'
-              : `Add the remaining ${total - filled} ${
-                  total - filled === 1 ? 'detail' : 'details'
-                } to get noticeably more on-brand results.`}
-          </p>
+          {/* Copy and call to action share a row so the card stays two lines tall. */}
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+            <p className="min-w-0 flex-1 text-xs text-muted sm:min-w-[16rem]">
+              {complete
+                ? 'Your profile is complete. Updating it changes how future content is written.'
+                : `Add the remaining ${total - filled} ${
+                    total - filled === 1 ? 'detail' : 'details'
+                  } to get noticeably more on-brand results.`}
+            </p>
 
-          <Link
-            to="/business-profile"
-            className={`btn mt-5 ${complete ? 'btn-secondary' : 'btn-primary'}`}
-          >
-            {complete ? 'Manage Profile' : 'Complete Profile'}
-          </Link>
+            <Link
+              to="/business-profile"
+              className={`btn shrink-0 ${complete ? 'btn-secondary' : 'btn-primary'}`}
+            >
+              {complete ? 'Manage Profile' : 'Complete Profile'}
+            </Link>
+          </div>
         </>
       )}
     </section>
@@ -273,13 +279,13 @@ function SecurityCard() {
   }
 
   return (
-    <section className="card p-6 md:p-7">
+    <section className="card p-4 md:p-5">
       <SectionHeader
         title="Account & Security"
         description="Control how you sign in and keep your account protected."
       />
 
-      <div className="-mt-1">
+      <div className="-mt-1.5">
         <SecurityRow
           title="Password"
           description={
@@ -329,15 +335,15 @@ function DangerZone() {
   const { logout } = useAuth()
 
   return (
-    <section className="card border-rose-400/40 p-6 md:p-7">
+    <section className="card border-rose-400/40 p-4 md:p-5">
       <SectionHeader
         title="Danger Zone"
         description="Actions here end your current session. Nothing is deleted."
       />
-      <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-line bg-inset p-4">
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line bg-inset px-3 py-2.5">
         <div>
           <div className="text-sm font-semibold">Log out</div>
-          <p className="mt-0.5 text-sm text-muted">
+          <p className="mt-0.5 text-xs text-muted">
             Sign out on this device. Your content and schedule are unaffected.
           </p>
         </div>
@@ -352,18 +358,20 @@ function DangerZone() {
 // ---- Page ------------------------------------------------------------------
 
 export default function Settings() {
+  // The negative top margin trims the shared <main> padding for this page only,
+  // so the heading sits just under the topbar without touching other routes.
   return (
-    <div className="mx-auto max-w-4xl space-y-6 pb-4">
-      <header>
-        <h1 className="text-2xl font-bold md:text-3xl">Settings</h1>
-        <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted">
-          Manage your account details, the business context your AI content is built from, and
-          how you sign in. Posting activity and performance live on your{' '}
+    <div className="-mt-1 mx-auto max-w-4xl space-y-3 pb-4 md:-mt-3">
+      <header className="flex items-center gap-2">
+        <h1 className="text-lg font-bold">Settings</h1>
+        <HelpTip label="About Settings">
+          Your account details, the business context your AI content is built from, and how you
+          sign in. Posting activity and performance live on your{' '}
           <Link to="/dashboard" className="link-accent font-medium">
             Dashboard
           </Link>
           .
-        </p>
+        </HelpTip>
       </header>
 
       <ProfileCard />

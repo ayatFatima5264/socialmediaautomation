@@ -13,6 +13,7 @@ import {
 import { localInputToISO } from '../lib/datetime'
 import PlatformIcon from '../components/PlatformIcon.jsx'
 import { SourceDropdown } from '../components/FormControls.jsx'
+import HelpTip from '../components/HelpTip.jsx'
 
 const EMOJIS = ['😀', '😂', '🙌', '🔥', '✨', '🎉', '❤️', '👍', '🚀', '💡',
   '📈', '🙏', '😎', '🤝', '📢', '🌟', '✅', '💪', '👀', '🎯']
@@ -456,17 +457,17 @@ export default function CreatePost() {
   }
 
   return (
-    <div className="split-shell">
-      <div className="shrink-0">
-        <h1 className="text-2xl font-bold">Create Post</h1>
-        <p className="text-sm text-muted">
+    <div className="split-shell -mt-1 gap-3 md:-mt-3 lg:h-[calc(100%+0.75rem)] lg:gap-4">
+      <h1 className="flex shrink-0 items-center gap-2 text-lg font-bold">
+        Create Post
+        <HelpTip label="About Create Post">
           Write your own content, add media, and publish across platforms.
-        </p>
-      </div>
+        </HelpTip>
+      </h1>
 
-      <div className="split-grid lg:grid-cols-[minmax(0,1fr)_minmax(0,440px)]">
+      <div className="split-grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,440px)]">
         {/* ---- Left: Composer ---- */}
-        <div className="split-pane space-y-5 lg:h-full lg:pr-1">
+        <div className="split-pane space-y-3 lg:h-full lg:pr-1">
           {/* Platforms — icon-only circular toggles */}
           <section className="card p-5">
             <h2 className="mb-3 text-sm font-semibold">Select platforms</h2>
@@ -888,7 +889,7 @@ export default function CreatePost() {
         </div>
 
         {/* ---- Right: Live preview ---- */}
-        <div className="split-pane space-y-4 lg:h-full lg:pr-1">
+        <div className="split-pane space-y-3 lg:h-full lg:pr-1">
           <div className="card p-4">
             <div className="mb-3 flex flex-wrap gap-1">
               {(selected.length ? selected : PLATFORM_KEYS).map((p) => (

@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import { useLocation } from 'react-router-dom'
 import { SITE } from '../config/site'
-import { pageSeo } from '../seo/pages.data.js'
+import { PRIVATE_ROUTES, pageSeo, privatePageTitle } from '../seo/pages.data.js'
 
 // ---------------------------------------------------------------------------
 // Dependency-free SEO head manager for our Vite SPA. Renders no DOM of its own;
@@ -61,8 +61,18 @@ export default function Seo({
   // identical to the ones baked into the static HTML. Explicit props still win,
   // which is how dynamic pages (blog articles) supply their own.
   const registry = pageSeo(pathname)
-  const resolvedTitle = title !== undefined ? title : registry?.title ?? null
+  // Private routes are never prerendered, so the host answers them with the
+  // noindex 404 shell and its "Page Not Found" title. Naming them here is what
+  // stops that title surviving into a page that rendered perfectly well. They
+  // are also forced noindex, matching the robots.txt Disallow they already
+  // carry — a private page should never be indexable by accident.
+  const privateTitle = privatePageTitle(pathname)
+  const isPrivate = PRIVATE_ROUTES.includes(pathname)
+
+  const resolvedTitle =
+    title !== undefined ? title : registry?.title ?? privateTitle ?? null
   const resolvedDescription = description ?? registry?.description ?? SITE.description
+  const resolvedNoindex = noindex || isPrivate
 
   const fullTitle = resolvedTitle
     ? `${resolvedTitle} — ${SITE.name}`
@@ -78,7 +88,7 @@ export default function Seo({
 
     const cleanups = [
       upsertMeta('name', 'description', resolvedDescription),
-      upsertMeta('name', 'robots', noindex ? 'noindex, nofollow' : 'index, follow'),
+      upsertMeta('name', 'robots', resolvedNoindex ? 'noindex, nofollow' : 'index, follow'),
       upsertLink('canonical', canonical),
       // Open Graph
       upsertMeta('property', 'og:type', type),
@@ -110,7 +120,7 @@ export default function Seo({
       cleanups.forEach((fn) => fn())
       if (scriptEl) scriptEl.remove()
     }
-  }, [fullTitle, resolvedDescription, image, type, noindex, canonical, jsonLd])
+  }, [fullTitle, resolvedDescription, image, type, resolvedNoindex, canonical, jsonLd])
 
   return null
 }

@@ -67,6 +67,28 @@ async function tryLoad(url) {
 // Try candidates in order (each through the concurrency gate). Returns the
 // first URL that loads, or null if all fail. The primary AI source gets one
 // retry after a short backoff, since its failures are usually a transient 429.
+/**
+ * Save an image to disk. Fetched as a blob so the browser downloads rather than
+ * navigates; falls back to a new tab when the host forbids cross-origin reads,
+ * which is the best that can be done without proxying the bytes ourselves.
+ */
+export async function downloadImage(url, name) {
+  try {
+    const res = await fetch(url)
+    const blob = await res.blob()
+    const obj = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = obj
+    a.download = name
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    URL.revokeObjectURL(obj)
+  } catch {
+    window.open(url, '_blank', 'noopener') // CORS fallback
+  }
+}
+
 export async function loadFirstAvailable(candidates) {
   for (let i = 0; i < candidates.length; i++) {
     const url = candidates[i]

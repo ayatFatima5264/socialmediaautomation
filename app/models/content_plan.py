@@ -61,6 +61,13 @@ class ContentPlan(Base):
     # generation. The single source of truth for what will be generated.
     topics: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
 
+    # ---- Image defaults ------------------------------------------------------
+    # The plan's default template, size and image settings, applied to every
+    # post that has not overridden them. Stored opaquely: the shape belongs to
+    # the client's image studio, and the server has no reason to know a template
+    # id from an aspect ratio. Null means "the client's own defaults".
+    image_defaults: Mapped[dict | None] = mapped_column(JSON, default=None)
+
     # ---- Lifecycle / progress ------------------------------------------------
     # strategy -> generating -> ready -> scheduled  (or failed)
     status: Mapped[str] = mapped_column(

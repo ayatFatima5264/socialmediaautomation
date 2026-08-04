@@ -18,7 +18,7 @@ import {
 // edited, in roughly half the vertical space.
 // ---------------------------------------------------------------------------
 
-export default function LayerProperties({ layer, onChange, onReplaceImage }) {
+export default function LayerProperties({ layer, onChange, onReplaceImage, onBrowseLibrary }) {
   const fileRef = useRef(null)
   if (!layer) return null
 
@@ -197,6 +197,14 @@ export default function LayerProperties({ layer, onChange, onReplaceImage }) {
             <MiniButton onClick={() => fileRef.current?.click()} title="Replace this image">
               ⇄ Replace
             </MiniButton>
+            {onBrowseLibrary && (
+              <MiniButton
+                onClick={() => onBrowseLibrary(layer.id)}
+                title="Replace from your media library"
+              >
+                🖼 Library
+              </MiniButton>
+            )}
             <input
               ref={fileRef}
               type="file"

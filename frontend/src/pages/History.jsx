@@ -62,9 +62,9 @@ export default function History() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="-mt-1 space-y-3 pb-4 md:-mt-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-2xl font-bold">Post History</h1>
+        <h1 className="text-lg font-bold">Post History</h1>
         <div className="flex flex-wrap gap-1">
           {FILTERS.map((f) => (
             <button

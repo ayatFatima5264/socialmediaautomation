@@ -103,6 +103,8 @@ _ADDED_COLUMNS: dict[str, dict[str, str]] = {
     "content_plans": {
         "theme": "VARCHAR(200)",
         "summary": "TEXT",
+        # Plan-level template / brand / image-style defaults.
+        "image_defaults": "JSON",
     },
     # Brand Kit — branding overlaid on generated images.
     "business_profiles": {

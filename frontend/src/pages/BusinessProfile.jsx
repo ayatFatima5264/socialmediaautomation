@@ -10,6 +10,7 @@ import { useToast } from '../context/ToastContext.jsx'
 import { api, ApiError } from '../lib/api'
 import ChipSelect from '../components/ChipSelect.jsx'
 import BrandKitFields from '../components/brand/BrandKitFields.jsx'
+import HelpTip from '../components/HelpTip.jsx'
 import { profileCompletion } from '../lib/businessProfile'
 import { invalidateBrandKit } from '../hooks/useBrandKit'
 
@@ -74,10 +75,10 @@ function toPayload(form) {
 // A titled group of related fields.
 function Card({ title, description, children }) {
   return (
-    <section className="card p-6">
-      <h2 className="text-base font-bold">{title}</h2>
-      {description && <p className="mt-1 text-sm text-muted">{description}</p>}
-      <div className="mt-5 space-y-5">{children}</div>
+    <section className="card p-4 md:p-5">
+      <h2 className="text-sm font-bold">{title}</h2>
+      {description && <p className="mt-0.5 text-xs text-muted">{description}</p>}
+      <div className="mt-3 space-y-3">{children}</div>
     </section>
   )
 }
@@ -162,10 +163,10 @@ export default function BusinessProfile() {
 
   if (loading) {
     return (
-      <div className="mx-auto max-w-6xl">
-        <div className="skeleton h-9 w-72" />
-        <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
-          <div className="space-y-6">
+      <div className="mx-auto -mt-1 max-w-7xl md:-mt-3">
+        <div className="skeleton h-6 w-72" />
+        <div className="mt-3 grid gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
+          <div className="space-y-3">
             <div className="skeleton h-64 rounded-xl" />
             <div className="skeleton h-48 rounded-xl" />
             <div className="skeleton h-56 rounded-xl" />
@@ -196,23 +197,27 @@ export default function BusinessProfile() {
   )
 
   return (
-    <div className="mx-auto max-w-6xl pb-4">
-      <header>
+    <div className="mx-auto -mt-1 max-w-7xl pb-4 md:-mt-3">
+      {/* Backlink, title and the explanation all on one line — the paragraph
+          version pushed the first field a third of the way down the screen. */}
+      <header className="flex flex-wrap items-center gap-x-3 gap-y-1">
         <Link to="/settings" className="text-sm text-muted transition hover:text-body">
           ← Settings
         </Link>
-        <h1 className="mt-1 text-2xl font-bold md:text-3xl">Business Profile</h1>
-        <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted">
-          Everything here is context the AI writes with. The more specific you are, the less
-          editing you'll do later. Every field is optional.
-        </p>
+        <h1 className="flex items-center gap-2 text-lg font-bold">
+          Business Profile
+          <HelpTip label="About the Business Profile">
+            Everything here is context the AI writes with. The more specific you are, the less
+            editing you'll do later. Every field is optional.
+          </HelpTip>
+        </h1>
       </header>
 
-      <div className="mt-6 grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
+      <div className="mt-3 grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
         {/* ---- Form column -------------------------------------------- */}
-        <div className="min-w-0 space-y-6">
+        <div className="min-w-0 space-y-3">
           <Card title="The basics" description="Who you are and where to find you.">
-            <div className="grid gap-5 sm:grid-cols-2">
+            <div className="grid gap-3 sm:grid-cols-2">
               <Field label="Business Name">
                 <input
                   className="input"
@@ -331,8 +336,8 @@ export default function BusinessProfile() {
 
         {/* ---- Summary rail -------------------------------------------- */}
         <aside className="hidden lg:block">
-          <div className="sticky top-6 space-y-5">
-            <section className="card p-5">
+          <div className="sticky top-0 space-y-3">
+            <section className="card p-4">
               <div className="flex items-baseline justify-between gap-3">
                 <h2 className="text-sm font-bold">Profile strength</h2>
                 <span className="text-xs font-semibold text-muted">
@@ -375,7 +380,7 @@ export default function BusinessProfile() {
               )}
             </section>
 
-            <section className="card p-5">
+            <section className="card p-4">
               <h2 className="text-sm font-bold">How this gets used</h2>
               <dl className="mt-3 space-y-3 text-sm">
                 {[

@@ -5,6 +5,7 @@ import { api, ApiError } from '../lib/api'
 import AccountCard from '../components/AccountCard.jsx'
 import ConnectionSummary from '../components/ConnectionSummary.jsx'
 import AccountSelectModal from '../components/AccountSelectModal.jsx'
+import HelpTip from '../components/HelpTip.jsx'
 
 // Empty per-platform summary used while the first load is in flight, so the
 // summary strip and layout don't jump once data arrives.
@@ -145,13 +146,13 @@ export default function Accounts() {
   const noneConnected = !loading && overview.connected_count === 0
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold">Social Accounts</h1>
-        <p className="text-sm text-muted">
+    <div className="-mt-1 space-y-3 pb-4 md:-mt-3">
+      <h1 className="flex items-center gap-2 text-lg font-bold">
+        Social Accounts
+        <HelpTip label="About Social Accounts">
           Connect one account per platform to publish across all of them from one place.
-        </p>
-      </div>
+        </HelpTip>
+      </h1>
 
       {connectError && (
         <ConnectErrorBanner

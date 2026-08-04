@@ -28,9 +28,21 @@ import { ANCHORS, LAYER_TYPES, resolveLayer, textAlignFor } from './layers.js'
 // "headline" at 60% of its size no longer reads as one.
 const MIN_TYPE_SCALE = 0.68
 
-// Minimum breathing room between two stacked elements, as a fraction of the
-// frame's height.
+// Breathing room between two stacked elements, as a fraction of frame height.
+//
+// Two values, because one cannot serve both jobs. MIN_GAP is the hard floor —
+// the least separation that still reads as two elements rather than one, and
+// the most a tight template (a long headline plus a subtitle plus a CTA in a
+// half-frame band) can afford. PREFERRED_GAP is what the same stack should get
+// when there is room for it: at 1.4% a 78px headline sits 15px off the line
+// below it, which is legible at full size but reads as touching in a feed
+// thumbnail or a card preview.
+//
+// The pipeline tries PREFERRED_GAP and keeps it only if the result still
+// validates, so roomy layouts breathe and cramped ones behave exactly as
+// before.
 const MIN_GAP = 0.014
+const PREFERRED_GAP = 0.032
 
 // Layers that exist to cover the frame. They are meant to touch the edges, so
 // margin and overlap rules do not apply to them.
@@ -244,8 +256,17 @@ function relocateBrandCorner(layers, frame) {
  * the one nearer the frame's edge is moved — pushing the anchored element
  * would drag the whole block off its baseline.
  */
-function spaceStack(layers, frame) {
-  const gap = MIN_GAP * frame.height
+/** Uniformly shrink every text layer, preserving the type hierarchy. */
+function scaleType(layers, factor) {
+  return layers.map((l) =>
+    l.type === LAYER_TYPES.TEXT && l.size?.h
+      ? { ...l, size: { ...l.size, h: l.size.h * factor } }
+      : l,
+  )
+}
+
+function spaceStack(layers, frame, gapFraction = MIN_GAP) {
+  const gap = gapFraction * frame.height
 
   // Text inside a brand bar or badge is spaced by that container, not by this
   // pass — its neighbours are the container's, not the layout's.
@@ -357,12 +378,14 @@ function liftAboveBrandBlock(layers, frame) {
 function clampToSafeArea(layers, frame, margin) {
   const left = frame.width * margin
   const right = frame.width * (1 - margin)
-  // The vertical figure is a floor, not a design margin. Templates already
-  // agree on their own bottom padding — they all derive it from the same
-  // constants — and imposing a second, larger one here would fight them on
-  // landscape frames rather than catch anything. This only catches elements
-  // genuinely escaping the frame.
-  const inset = frame.height * 0.035
+  // The layout's own margin, vertically as well as horizontally.
+  //
+  // This used to be a flat 3.5% floor on the reasoning that templates police
+  // their own bottom padding. They do not: ig-post puts its CTA pill at 95%,
+  // which cleared a 96.5% floor and so was never corrected — the button hung
+  // off the bottom of every square post. A declared margin that only applies
+  // to two of four edges is not a margin.
+  const inset = frame.height * margin
   const top = inset
   const bottom = frame.height - inset
 
@@ -429,13 +452,54 @@ export function validateLayers(layers, { aspect = 1, layout } = {}) {
   const frame = { width: 1000, height: 1000 / (aspect || 1) }
 
   try {
-    let out = fitText(layers, frame, margin)
-    out = liftAboveBrandBlock(out, frame)
-    out = spaceStack(out, frame)
-    out = clampToSafeArea(out, frame, margin)
-    // Last, once the content has settled: picking the logo's corner against
-    // positions that are about to change would just move it into the way.
-    return relocateBrandCorner(out, frame)
+    const base = liftAboveBrandBlock(fitText(layers, frame, margin), frame)
+
+    // Space the stack, then clamp, then place the logo.
+    const settle = (input, gapFraction) => {
+      const spaced = clampToSafeArea(spaceStack(input, frame, gapFraction), frame, margin)
+      // Last, once the content has settled: picking the logo's corner against
+      // positions that are about to change would just move it into the way.
+      return relocateBrandCorner(spaced, frame)
+    }
+    const clean = (out) => !findLayoutIssues(out, { aspect, layout }).length
+
+    // 1. Generous spacing, offered rather than imposed. Pushing elements apart
+    //    moves them upward, which in a tight template drives them into the
+    //    safe-area clamp and back down onto their neighbours — so it is kept
+    //    only when the result validates.
+    const roomy = settle(base, PREFERRED_GAP)
+    if (clean(roomy)) return roomy
+
+    // 2. The minimum, which is what this function did before.
+    let out = settle(base, MIN_GAP)
+    if (clean(out)) return out
+
+    // 3. Still colliding means the stack is taller than the band it has to live
+    //    in — a long headline in a landscape frame, say. Spacing cannot fix
+    //    that, so give up height instead: shrink the type a step at a time and
+    //    stop as soon as it fits.
+    //
+    //    Keep the BEST attempt, not the last one. Shrinking does not always
+    //    converge — on the product layout the price chip pins the headline
+    //    column, so eight rounds of shrinking left illegible 17-unit text that
+    //    still overlapped, and returning that last attempt was worse than
+    //    returning the first. Ties go to the larger type, so a layout that
+    //    cannot be fixed is at least returned readable.
+    const score = (out) => findLayoutIssues(out, { aspect, layout }).length
+    let best = out
+    let bestScore = score(out)
+    let shrunk = base
+    for (let i = 0; i < 6 && bestScore > 0; i++) {
+      shrunk = scaleType(shrunk, 0.88)
+      const attempt = settle(shrunk, MIN_GAP)
+      const s = score(attempt)
+      if (s === 0) return attempt
+      if (s < bestScore) {
+        best = attempt
+        bestScore = s
+      }
+    }
+    return best
   } catch {
     // Validation is a safety net, not a dependency — a failure here must not
     // cost the user their design.
@@ -461,7 +525,17 @@ export function findLayoutIssues(layers, { aspect = 1, layout } = {}) {
       issues.push({ type: 'outside-canvas', id: layer.id })
     } else if (
       box.x < frame.width * margin - 0.5 ||
-      box.x + box.w > frame.width * (1 - margin) + 0.5
+      box.x + box.w > frame.width * (1 - margin) + 0.5 ||
+      // Vertical too — checking only the sides is what let a CTA sit 20 units
+      // below the bottom margin across 1560 "passing" designs.
+      //
+      // Brand layers are exempt: a logo in the corner and a contact strip
+      // along the bottom edge are placed there deliberately by the brand
+      // template, the same reason clampToSafeArea only polices them
+      // horizontally. Content has no such licence.
+      (!isBrandLayer(layer) &&
+        (box.y < frame.height * margin - 0.5 ||
+          box.y + box.h > frame.height * (1 - margin) + 0.5))
     ) {
       issues.push({ type: 'outside-margin', id: layer.id })
     }

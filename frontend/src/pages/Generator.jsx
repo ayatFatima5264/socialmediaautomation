@@ -6,8 +6,6 @@ import {
   PLATFORM_KEYS,
   TONES,
   ASPECT_RATIOS,
-  IMAGE_STYLES,
-  IMAGE_STYLE_GROUPS,
   IMAGE_QUALITIES,
   CAROUSEL_SLIDE_OPTIONS,
   PLATFORM_ASPECT_DEFAULT,
@@ -15,9 +13,10 @@ import {
 } from '../lib/constants'
 import { localInputToISO } from '../lib/datetime'
 import { publishOutcome } from '../lib/publish'
-import { loadFirstAvailable } from '../lib/imageLoader'
-import useBrandKit from '../hooks/useBrandKit'
-import BrandKitControls from '../components/brand/BrandKitControls.jsx'
+import { downloadImage, loadFirstAvailable } from '../lib/imageLoader'
+import { downloadBranded, RasterizeError } from '../lib/brandKit/rasterize'
+import useImageStudio from '../hooks/useImageStudio'
+import ImageStudioControls from '../components/brand/ImageStudioControls.jsx'
 import BrandOverlay from '../components/brand/BrandOverlay.jsx'
 import {
   BrandLayersProvider,
@@ -26,19 +25,15 @@ import {
 } from '../components/brand/BrandLayersContext.jsx'
 import TemplatePicker from '../components/brand/TemplatePicker.jsx'
 import ImageEditor from '../components/editor/ImageEditor.jsx'
+// Layer building, request shaping and layout validation all moved into
+// useImageStudio, which the Content Planner runs too — hence the short list.
 import {
   getContentTemplate,
-  backgroundHintFor,
-  buildContentLayers,
-  getLayout,
   maxCharsFor,
-  safeZoneFor,
   DEFAULT_TEMPLATE_ID,
 } from '../lib/brandKit/contentTemplates'
 import { planPlacement } from '../lib/brandKit/smartLayout'
-import { validateLayers } from '../lib/brandKit/validateLayout'
-import { buildBrandLayers } from '../lib/brandKit/templates'
-import { getSize, DEFAULT_SIZE, aspectOf } from '../lib/brandKit/platformSizes'
+import { getSize, DEFAULT_SIZE } from '../lib/brandKit/platformSizes'
 import {
   CONTENT_TYPES,
   CONTENT_TYPE_ORDER,
@@ -159,19 +154,21 @@ export default function Generator() {
     }
   }
 
-  // Brand Kit: the user's logo/colours/contact plus their overlay preferences.
-  // Layers are composited over the image at render time, so toggling branding
+  // The shared image studio — the same pipeline the Content Planner runs, so a
+  // draft here and a planned post there produce the same picture from the same
+  // settings. Brand layers are composited at render time, so toggling branding
   // never requires regenerating anything.
+  const studio = useImageStudio({ templateId, sizeId, img })
   const {
     brandKit,
-    settings: brandSettings,
-    setSettings: setBrandSettings,
-    available: brandAvailable,
-  } = useBrandKit()
+    brandSettings,
+    setBrandSettings,
+    brandAvailable,
+    brandRequest,
+    templateRequest,
+    composeForEditor,
+  } = studio
 
-  // Extra generation hints sent when branding is on: bias the palette toward
-  // the brand colours, keep the overlay area clean, and suppress the garbled
-  // pseudo-text diffusion models produce (the real text is a vector layer).
   // Resolution order for what the image depicts:
   //   1. the user's explicit Image Prompt, when they typed one
   //   2. the prompt derived from the post content (previous behaviour)
@@ -180,47 +177,14 @@ export default function Generator() {
   // about how the existing flow behaves.
   const imagePromptFor = (card) =>
     img.imagePrompt?.trim() || card?.imagePrompt || topic
-
-  // Same composition the renderer performs, available outside the provider
-  // so the editor can be handed exactly what is on screen — including the
-  // placement chosen for that specific image, or the design would shift the
-  // moment the user opened it.
-  const composeForEditor = (content, slideIndex, placement) => {
-    const aspect = aspectOf(sizeId)
-    const layers = [
-      ...(content
-        ? buildContentLayers(templateId, content, { brandKit, slideIndex, placement, aspect })
-        : []),
-      ...(brandSettings.enabled && brandAvailable ? buildBrandLayers(brandKit, brandSettings) : []),
-    ]
-    return validateLayers(layers, { aspect, layout: getLayout(templateId) })
-  }
-
-  const brandRequest = useMemo(() => {
-    if (!brandSettings.enabled || !brandAvailable) return {}
-    return {
-      branded: true,
-      brand_colors: brandKit?.brand_colors || [],
-      brand_reserve: brandSettings.template === 'corner-logo' ? null : 'bottom',
-    }
-  }, [brandSettings.enabled, brandSettings.template, brandAvailable, brandKit])
-
-  // What the chosen layout needs the artwork to be: the region it will fill
-  // with text, and what kind of graphic it is. Sent with every image request
-  // so the scene is composed around the design instead of fighting it.
-  const templateRequest = useMemo(
-    () => ({
-      background_hint: backgroundHintFor(templateId),
-      safe_zone: safeZoneFor(templateId),
-      template_label: getContentTemplate(templateId).label,
-    }),
-    [templateId],
-  )
   const [overrides, setOverrides] = useState(SAVED?.overrides ?? {})
   const [showAdvanced, setShowAdvanced] = useState(false)
   // Advanced option groups are collapsed by default to keep the form compact.
   const [imgOpen, setImgOpen] = useState(false)
   const [ovOpen, setOvOpen] = useState(false)
+  // Below lg the two panes stack, so the field stack can be folded away to put
+  // the results within reach. Desktop ignores this entirely.
+  const [filtersOpen, setFiltersOpen] = useState(true)
 
   const [loading, setLoading] = useState(false)
   const [drafts, setDrafts] = useState(() =>
@@ -768,20 +732,39 @@ export default function Generator() {
     }
   }
 
-  async function downloadImage(url, name) {
+  // Download what is on screen, not what was generated.
+  //
+  // The design is drawn as a live SVG overlay rather than baked into the
+  // artwork — that is what makes toggling the Brand Kit instant. The cost is
+  // that the raw file has none of it, so downloading the URL directly handed
+  // the user a picture missing the headline and CTA they were looking at.
+  //
+  // An edited image already carries its design, so it is downloaded as-is. If
+  // compositing fails (a cross-origin logo is the usual cause) the plain file
+  // is downloaded instead — a worse file beats no file.
+  async function downloadComposed(c, idx, name) {
+    const im = c.images?.[idx]
+    if (!im?.url) return
+
+    const layers = im.edited
+      ? []
+      : composeForEditor(
+          c.templateContent,
+          c.settings?.carousel ? idx : undefined,
+          im.placement,
+        )
+    if (!layers.length) return downloadImage(im.url, name)
+
     try {
-      const res = await fetch(url)
-      const blob = await res.blob()
-      const obj = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = obj
-      a.download = name
-      document.body.appendChild(a)
-      a.click()
-      a.remove()
-      URL.revokeObjectURL(obj)
-    } catch {
-      window.open(url, '_blank', 'noopener') // CORS fallback
+      const [w, h] = getSize(sizeId).dimensions
+      await downloadBranded(im.url, layers, name, { width: w, height: h })
+    } catch (err) {
+      toast.error(
+        err instanceof RasterizeError
+          ? `${err.message} Downloading the plain image instead.`
+          : 'Could not compose the image — downloading the plain one.',
+      )
+      await downloadImage(im.url, name)
     }
   }
 
@@ -789,7 +772,7 @@ export default function Generator() {
     for (let idx = 0; idx < c.images.length; idx++) {
       // Sequential to avoid the browser blocking a burst of downloads.
       // eslint-disable-next-line no-await-in-loop
-      await downloadImage(c.images[idx].url, `${c.platform}-${idx + 1}.png`)
+      await downloadComposed(c, idx, `${c.platform}-${idx + 1}.png`)
     }
   }
 
@@ -1103,17 +1086,43 @@ export default function Generator() {
 
   return (
     <BrandLayersProvider brandKit={brandKit} settings={brandSettings} templateId={templateId}>
-    <div className="split-shell">
-      <div className="shrink-0">
-        <h1 className="text-2xl font-bold">AI Generator</h1>
-        <p className="text-sm text-muted">
-          Describe an idea — get platform-optimized captions and AI images you control.
-        </p>
-      </div>
+    {/* The negative top margin trims the shared <main> padding for this page;
+        the matching height calc hands those pixels back to the panes so they
+        still end exactly at the bottom of the viewport. */}
+    <div className="split-shell -mt-1 gap-3 md:-mt-3 lg:h-[calc(100%+0.75rem)] lg:gap-4">
+      <h1 className="shrink-0 text-lg font-bold">AI Generator</h1>
 
-      <div className="split-grid lg:grid-cols-[380px_1fr]">
-        {/* ---- Input panel ---- */}
-        <form onSubmit={generate} className="card split-pane space-y-5 p-5 lg:h-full">
+      <div className="split-grid gap-4 lg:grid-cols-[340px_1fr]">
+        {/* ---- Input panel ----
+            A flex column rather than a scroll container: the fields scroll in
+            their own box below, which is what lets Generate stay pinned to the
+            panel's bottom edge however far down the user has scrolled. */}
+        {/* overflow-hidden is scoped to lg: only there does the body scroll and
+            risk grazing the card's rounded corners. Below lg the panel is its
+            natural height, so clipping there could only cut off a dropdown. */}
+        <form
+          onSubmit={generate}
+          className="card flex flex-col lg:h-full lg:min-h-0 lg:overflow-hidden"
+        >
+          {/* Border only while open, otherwise it doubles up against the
+              Generate footer's border and reads as a 2px line. */}
+          <button
+            type="button"
+            onClick={() => setFiltersOpen((v) => !v)}
+            aria-expanded={filtersOpen}
+            className={`flex shrink-0 items-center justify-between px-4 py-2.5 text-sm font-semibold lg:hidden ${
+              filtersOpen ? 'border-b border-line' : ''
+            }`}
+          >
+            Filters &amp; settings
+            <span className="text-muted">{filtersOpen ? '▾' : '▸'}</span>
+          </button>
+
+          <div
+            className={`split-pane min-h-0 flex-1 space-y-3 p-4 ${
+              filtersOpen ? '' : 'hidden'
+            } lg:block`}
+          >
           {/* Step 0 — Create From (single dropdown, was a 10-pill grid) */}
           <div>
             <label className="label">Create from</label>
@@ -1347,6 +1356,19 @@ export default function Generator() {
             )}
           </div>
 
+          {/* Template — a compact summary at top level rather than buried in
+              the Image Settings accordion, since it is the one image decision
+              worth seeing at a glance. The catalogue opens in a modal. */}
+          {contentType !== 'article' && img.aiImage && (
+            <TemplatePicker
+              templateId={templateId}
+              sizeId={sizeId}
+              brandKit={brandKit}
+              brandSettings={brandSettings}
+              onChange={updateTemplate}
+            />
+          )}
+
           {/* Step 3 — Image Settings (collapsible) — hidden in Article mode */}
           {contentType !== 'article' && (
             <Accordion
@@ -1370,63 +1392,22 @@ export default function Generator() {
                     slides={img.slides}
                     onChange={updateImg}
                   />
-                  <div>
-                    <label className="label" htmlFor="style">
-                      Image Style
-                    </label>
-                    <select
-                      id="style"
-                      className="select"
-                      value={img.style}
-                      onChange={(e) => updateImg({ style: e.target.value })}
-                    >
-                      {IMAGE_STYLE_GROUPS.map((group) => (
-                        <optgroup key={group} label={group}>
-                          {IMAGE_STYLES.filter((s) => s.group === group).map((s) => (
-                            <option key={s.value} value={s.value}>
-                              {s.label}
-                            </option>
-                          ))}
-                        </optgroup>
-                      ))}
-                    </select>
-                  </div>
-
-                  {/* Independent image prompt. Left blank, the image is
-                      described from the post content exactly as before. */}
-                  <div>
-                    <label className="label flex items-center justify-between" htmlFor="imagePrompt">
-                      <span>Image Prompt</span>
-                      <span className="text-xs font-normal text-muted">
-                        {img.imagePrompt?.trim() ? 'Custom' : 'Auto from post'}
-                      </span>
-                    </label>
-                    <textarea
-                      id="imagePrompt"
-                      className="input min-h-20 resize-y"
-                      maxLength={480}
-                      placeholder="Describe the image you want. Leave blank to build it from the post."
-                      value={img.imagePrompt || ''}
-                      onChange={(e) => updateImg({ imagePrompt: e.target.value })}
-                    />
-                    <p className="mt-1.5 text-xs text-muted">
-                      Independent of the post text — describe the visual, not the caption.
-                    </p>
-                  </div>
-
-                  <TemplatePicker
-                    templateId={templateId}
-                    sizeId={sizeId}
+                  {/* Style, image prompt and brand kit — the same controls the
+                      Content Planner renders, so the two pages cannot drift.
+                      The template lives at top level on this page, hence
+                      showTemplate={false}. */}
+                  <ImageStudioControls
+                    value={{ templateId, sizeId, img }}
+                    onChange={(patch) => {
+                      if (patch.img) updateImg(patch.img)
+                      if (patch.templateId != null || patch.sizeId != null) updateTemplate(patch)
+                    }}
                     brandKit={brandKit}
                     brandSettings={brandSettings}
-                    onChange={updateTemplate}
-                  />
-
-                  <BrandKitControls
-                    brandKit={brandKit}
-                    settings={brandSettings}
-                    onChange={setBrandSettings}
-                    available={brandAvailable}
+                    onBrandSettingsChange={setBrandSettings}
+                    brandAvailable={brandAvailable}
+                    idPrefix="gen"
+                    showTemplate={false}
                   />
                 </div>
               )}
@@ -1608,18 +1589,23 @@ export default function Generator() {
             )}
           </div>
 
-          {/* Step 5 — Generate */}
-          <button className="btn btn-primary w-full" disabled={loading || articleBusy}>
-            {loading || articleBusy
-              ? 'Generating…'
-              : contentType === 'article'
-                ? '✦ Generate Article'
-                : '✦ Generate'}
-          </button>
+          </div>
+
+          {/* Step 5 — Generate. Lives outside the scrolling body so it stays
+              visible no matter how far the fields above are scrolled. */}
+          <div className="shrink-0 border-t border-line p-3">
+            <button className="btn btn-primary w-full" disabled={loading || articleBusy}>
+              {loading || articleBusy
+                ? 'Generating…'
+                : contentType === 'article'
+                  ? '✦ Generate Article'
+                  : '✦ Generate'}
+            </button>
+          </div>
         </form>
 
         {/* ---- Output panel ---- */}
-        <div className="split-pane space-y-4 lg:h-full lg:pr-1">
+        <div className="split-pane space-y-3 lg:h-full lg:pr-1">
           {/* Article mode renders a dedicated editor */}
           {contentType === 'article' ? (
             articleBusy ? (
@@ -1634,23 +1620,22 @@ export default function Generator() {
                 onClear={requestClearArticle}
               />
             ) : (
-              <div className="card grid place-items-center p-12 text-center text-muted">
-                <div>
-                  <div className="mb-3 text-5xl">📰</div>
-                  <div className="font-medium text-muted">
-                    Describe your idea and let AI write a LinkedIn article.
-                  </div>
-                  <div className="mt-1 text-sm text-muted">
-                    Title, cover, body, tags and SEO keywords — all editable.
-                  </div>
-                </div>
-              </div>
+              <EmptyState
+                icon="📰"
+                title="Describe your idea and let AI write a LinkedIn article."
+                subtitle="Title, cover, body, tags and SEO keywords — all editable."
+              />
             )
           ) : (
           <>
           {/* Global action bar (sticky) */}
           {drafts.length > 0 && (
-            <div className="sticky top-2 z-10 flex flex-wrap items-center gap-2 rounded-xl border border-line bg-surface px-3 py-2 shadow-sm backdrop-blur">
+            /* Pinned flush to the top of the pane, not floating 8px below it:
+               that gap was a strip the cards scrolled through, which read as
+               the heading being sliced in half by the bar. A toolbar with a
+               bottom edge also says "this is chrome" rather than "this is
+               another card". Opaque, and above the cards it covers. */
+            <div className="sticky top-0 z-20 -mx-1 mb-1 flex flex-wrap items-center gap-2 border-b border-line bg-surface px-4 py-2.5 shadow-sm">
               <span className="text-xs text-muted">
                 {drafts.length} platform{drafts.length > 1 ? 's' : ''}
                 {meta && (
@@ -1692,17 +1677,11 @@ export default function Generator() {
           {loading && <CardSkeleton />}
 
           {!loading && drafts.length === 0 && (
-            <div className="card grid place-items-center p-12 text-center text-muted">
-              <div>
-                <div className="mb-3 text-5xl">✦</div>
-                <div className="font-medium text-muted">
-                  Describe your idea and let AI generate platform-ready content.
-                </div>
-                <div className="mt-1 text-sm text-muted">
-                  Your captions and images will appear here.
-                </div>
-              </div>
-            </div>
+            <EmptyState
+              icon="✦"
+              title="Describe your idea and let AI generate platform-ready content."
+              subtitle="Your captions and images will appear here."
+            />
           )}
 
           {drafts.map((c, i) => (
@@ -1726,29 +1705,39 @@ export default function Generator() {
                 }))
               }
               onCopy={() => copyCaption(c)}
-              onDownload={(url, name) => downloadImage(url, name)}
+              onDownload={(idx, name) => downloadComposed(c, idx, name)}
               onDownloadAll={() => downloadAll(c)}
               onDownloadAssets={() => downloadAssets(c)}
               onRegenCaption={() => regenerateCaption(i)}
               onRegenImages={() => generateCardImages(i, c)}
               onRegenSlide={(idx) => regenerateSlide(i, idx)}
-              onEditImage={(idx) => {
+              onEditImage={async (idx) => {
                 const im = c.images?.[idx]
                 if (!im?.url) return
+                // The card shows whichever candidate actually loads, so the
+                // editor must open on that one too. Handing it the primary URL
+                // meant a rate-limited source opened a blank canvas while a
+                // working fallback was on screen behind it.
+                const live = await loadFirstAvailable([im.url, ...(im.fallbacks || [])])
                 const [w, h] = getSize(sizeId).dimensions
                 setEditing({
                   draftIndex: i,
                   imageIndex: idx,
-                  url: im.url,
+                  url: live || im.url,
                   prompt: im.prompt || c.imagePrompt || topic,
                   size: { width: w, height: h },
                   // Hand over the exact layers on screen, so the editor opens
                   // on what the user is looking at rather than a bare image.
-                  layers: composeForEditor(
-                    c.templateContent,
-                    c.settings?.carousel ? idx : undefined,
-                    im.placement,
-                  ),
+                  // Once flattened there are none: the design is in the
+                  // picture, and re-adding it would stack a second copy on
+                  // top of the one the user just saved.
+                  layers: im.edited
+                    ? []
+                    : composeForEditor(
+                        c.templateContent,
+                        c.settings?.carousel ? idx : undefined,
+                        im.placement,
+                      ),
                 })
               }}
               onRegenAll={() => regenerateEntirePost(i)}
@@ -1968,6 +1957,7 @@ function PostCard({
                       onPlacement={(p) => onImagePlacement(idx, p)}
                       content={c.templateContent}
                       slideIndex={isCarousel ? idx : undefined}
+                      baked={!!im.edited}
                     />
                     <button
                       onClick={() => onEditImage(idx)}
@@ -2001,7 +1991,7 @@ function PostCard({
                   </button>
                 ) : (
                   <button
-                    onClick={() => onDownload(c.images[0].url, `${c.platform}.png`)}
+                    onClick={() => onDownload(0, `${c.platform}.png`)}
                     className="btn btn-ghost btn-sm"
                   >
                     ⬇ Download
@@ -2055,6 +2045,11 @@ function SmartImage({
   onPlacement,
   content,
   slideIndex,
+  // True once the editor has flattened the design into the picture. The layers
+  // are then part of the artwork, so drawing them again paints a second copy
+  // over the first — and if the user moved anything, the two land in different
+  // places and the card shows the text twice.
+  baked = false,
 }) {
   const compose = useComposeLayers()
   const layout = useLayout()
@@ -2069,7 +2064,7 @@ function SmartImage({
   const key = candidates.join('|')
   const [rw, rh] = aspectRatio.split(':').map(Number)
   const aspect = rw && rh ? rw / rh : 1
-  const brandLayers = compose(content, slideIndex, placement, aspect)
+  const brandLayers = baked ? [] : compose(content, slideIndex, placement, aspect)
 
   useEffect(() => {
     let cancelled = false
@@ -2084,12 +2079,15 @@ function SmartImage({
         // Read the image and pick the calmest zone for the text. Deliberately
         // not awaited before showing the image: the artwork appears straight
         // away and the layers settle a frame later, rather than the whole card
-        // waiting on an analysis that may not even succeed.
-        planPlacement(url, layout).then((p) => {
-          if (cancelled) return
-          setPlacement(p)
-          onPlacement?.(p)
-        })
+        // waiting on an analysis that may not even succeed. Skipped once the
+        // design is flattened in — there is no text left to place.
+        if (!baked) {
+          planPlacement(url, layout).then((p) => {
+            if (cancelled) return
+            setPlacement(p)
+            onPlacement?.(p)
+          })
+        }
       } else {
         setFailed(true)
       }
@@ -2098,7 +2096,7 @@ function SmartImage({
       cancelled = true
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key, reloadKey])
+  }, [key, reloadKey, baked])
 
   if (failed) {
     return (
@@ -2134,11 +2132,13 @@ function SmartImage({
         crossOrigin="anonymous"
         className="h-full w-full object-cover"
       />
-      <BrandOverlay
-        layers={brandLayers}
-        aspect={aspect}
-        idPrefix={`gen-${String(src).slice(-20).replace(/[^a-z0-9]/gi, '')}`}
-      />
+      {!baked && (
+        <BrandOverlay
+          layers={brandLayers}
+          aspect={aspect}
+          idPrefix={`gen-${String(src).slice(-20).replace(/[^a-z0-9]/gi, '')}`}
+        />
+      )}
     </div>
   )
 }
@@ -2437,6 +2437,22 @@ function Switch({ checked, onChange, label }) {
         }`}
       />
     </button>
+  )
+}
+
+// Placeholder for the results pane. Stretches to the pane's full height so the
+// box lands in the middle of the available space instead of hugging its top.
+function EmptyState({ icon, title, subtitle }) {
+  return (
+    <div className="card grid h-full min-h-[16rem] place-items-center p-6 text-center sm:min-h-[18rem] sm:p-8">
+      <div>
+        <div className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-accent-soft text-xl sm:h-16 sm:w-16 sm:text-2xl">
+          {icon}
+        </div>
+        <div className="mt-4 font-medium text-body">{title}</div>
+        <div className="mt-1 text-sm text-muted">{subtitle}</div>
+      </div>
+    </div>
   )
 }
 

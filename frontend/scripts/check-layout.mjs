@@ -1,9 +1,16 @@
 // ---------------------------------------------------------------------------
 // Layout invariants, checked across every combination the product can produce.
 //
-//   13 content templates x 5 aspect ratios x short/long copy x 4 brand
-//   templates = 520 designs, each asserted to have nothing off the canvas and
-//   nothing overlapping.
+// Two passes, because one set of axes cannot cover both risks:
+//
+//   1. 13 content templates x 5 aspect ratios x short/long copy x 4 brand
+//      templates x 3 placement readings — the branded surface, deep.
+//   2. 13 content templates x every selectable output size x 3 copy lengths,
+//      branded AND unbranded — the surface a user can actually reach from the
+//      template library, including Brand Kit off, which pass 1 never exercises.
+//
+// Each design is asserted to have nothing off the canvas and nothing
+// overlapping.
 //
 // This exists because layout bugs are invisible in code review and obvious to
 // a user: a template's geometry is correct for the copy length and frame shape
@@ -24,6 +31,8 @@ import { buildBrandLayers, TEMPLATES } from '../src/lib/brandKit/templates.js'
 import { findLayoutIssues, validateLayers } from '../src/lib/brandKit/validateLayout.js'
 import { resolveLayer } from '../src/lib/brandKit/layers.js'
 import { applyPlacement, choosePlacement } from '../src/lib/brandKit/smartLayout.js'
+import { composeLayers } from '../src/lib/brandKit/imageRequest.js'
+import { PLATFORM_SIZES, aspectOf } from '../src/lib/brandKit/platformSizes.js'
 
 const ASPECTS = { '1:1': 1, '4:5': 0.8, '9:16': 0.5625, '16:9': 1.7778, '2:3': 0.6667 }
 
@@ -99,6 +108,72 @@ for (const t of CONTENT_TEMPLATES) {
   }
 }
 console.log(failures ? `  ${failures} failure(s) of ${combos}` : `  ok (${combos} designs)`)
+
+// ---------------------------------------------------------------------------
+// The block above always composes WITH branding, against five hand-picked
+// aspect ratios. Both leave a gap a user walks straight into:
+//
+//   • Brand Kit is OFF by default, and an unbranded design is not the branded
+//     one minus a logo — liftAboveBrandBlock reserves room for the footer bar,
+//     so removing branding moves the whole stack. That path was never checked.
+//   • The template library lets any template render at any output size, not
+//     only the ratio it was designed against.
+//
+// This pass walks the real product surface: every template at every selectable
+// size, branded and unbranded, through the same composeLayers the app calls.
+// It found four genuine overlaps the block above could not see.
+// ---------------------------------------------------------------------------
+console.log('== every template at every output size, branded and unbranded ==')
+
+// A third length between the two extremes above, matching what the copy writer
+// is actually asked to produce.
+const REAL_COPY = {
+  headline: 'AI Social Media',
+  subtext: 'Automate your social media management',
+  cta: 'Get Started',
+  badge: 'New',
+  price: '£49',
+}
+
+const MATRIX_BRAND = {
+  enabled: true,
+  template: 'footer-bar',
+  logoPosition: 'bottom-right',
+  includeContact: true,
+}
+
+let matrixCombos = 0
+const matrixBefore = failures
+for (const t of CONTENT_TEMPLATES) {
+  for (const size of PLATFORM_SIZES) {
+    for (const [kind, content] of Object.entries({ ...COPY, real: REAL_COPY })) {
+      for (const branded of [false, true]) {
+        const aspect = aspectOf(size.id)
+        const layers = composeLayers({
+          templateId: t.id,
+          sizeId: size.id,
+          content,
+          brandKit: branded ? BRAND : null,
+          brandSettings: branded ? MATRIX_BRAND : null,
+          brandAvailable: branded,
+        })
+        matrixCombos++
+        const issues = findLayoutIssues(layers, { aspect, layout: getLayout(t.id) })
+        if (issues.length) {
+          fail(
+            `${t.id}/${size.id}/${kind}/${branded ? 'branded' : 'plain'}: ` +
+              JSON.stringify(issues.slice(0, 2)),
+          )
+        }
+      }
+    }
+  }
+}
+console.log(
+  failures > matrixBefore
+    ? `  ${failures - matrixBefore} failure(s) of ${matrixCombos}`
+    : `  ok (${matrixCombos} designs)`,
+)
 
 console.log('== centred headline lines get distinct baselines ==')
 const centred = buildContentLayers('quote', COPY.long, { brandKit: BRAND, aspect: 1 })

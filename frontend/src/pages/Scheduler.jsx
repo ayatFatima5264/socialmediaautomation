@@ -68,13 +68,15 @@ export default function Scheduler() {
     }
   }
 
+  // The negative top margin trims the shared <main> padding; the height calc
+  // hands those pixels back so the panes still end at the bottom of the viewport.
   return (
-    <div className="split-shell">
-      <h1 className="shrink-0 text-2xl font-bold">Scheduler</h1>
+    <div className="split-shell -mt-1 gap-3 md:-mt-3 lg:h-[calc(100%+0.75rem)] lg:gap-4">
+      <h1 className="shrink-0 text-lg font-bold">Scheduler</h1>
 
-      <div className="split-grid lg:grid-cols-[1fr_320px]">
+      <div className="split-grid gap-4 lg:grid-cols-[1fr_320px]">
         {/* Calendar */}
-        <div className="card split-pane p-5 lg:h-full">
+        <div className="card split-pane p-4 lg:h-full">
           <div className="mb-4 flex items-center justify-between">
             <h2 className="text-lg font-semibold">
               {cursor.toLocaleString(undefined, { month: 'long', year: 'numeric' })}
@@ -139,7 +141,7 @@ export default function Scheduler() {
         </div>
 
         {/* Pending list */}
-        <div className="card split-pane p-5 lg:h-full">
+        <div className="card split-pane p-4 lg:h-full">
           <h2 className="mb-4 font-semibold">Pending ({scheduled.length})</h2>
           {scheduled.length === 0 ? (
             <p className="py-6 text-center text-sm text-muted">No scheduled posts.</p>

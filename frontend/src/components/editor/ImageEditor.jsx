@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import EditorCanvas from './EditorCanvas.jsx'
 import LayerProperties from './LayerProperties.jsx'
+import MediaLibraryModal from '../media/MediaLibraryModal.jsx'
 import AiEditPanel from './AiEditPanel.jsx'
 import { MiniButton } from './controls.jsx'
 import useEditor from '../../hooks/useEditor'
@@ -85,6 +86,11 @@ function readFile(file) {
 
 export default function ImageEditor({
   open, imageUrl, size, layers = [], brandKit, style, onSave, onClose, onRegenerate,
+  // Which panel the editor opens on. "AI Edit" is the same editor as "Edit" —
+  // it just starts where the user was heading, rather than making them find it.
+  initialSection = 'text',
+  // Offered only from the empty state, when there is no artwork to edit yet.
+  onGenerate,
 }) {
   const initial = useMemo(
     () => documentFromImage({ imageUrl, size, overlayLayers: layers }),
@@ -96,10 +102,45 @@ export default function ImageEditor({
   const [error, setError] = useState('')
   const [aiBusy, setAiBusy] = useState(false)
   const [aiResult, setAiResult] = useState(null)
-  const [section, setSection] = useState('text')
+  const [section, setSection] = useState(initialSection)
   const [panelOpen, setPanelOpen] = useState(false) // mobile / tablet drawer
   const imageFileRef = useRef(null)
   const logoFileRef = useRef(null)
+  // What the media library is currently being opened for: adding a new image
+  // layer, or replacing the source of an existing one. Null means closed.
+  const [libraryFor, setLibraryFor] = useState(null)
+
+  // Is there anything on the canvas? Judged from the document, not the props,
+  // so an image added by upload after opening empty counts too.
+  const hasArtwork = ed.document.layers.some(
+    (l) => l.type !== LAYER_TYPES.BACKGROUND && (l.type !== LAYER_TYPES.IMAGE || l.src),
+  )
+
+  // Largest box of the document's aspect that fits the available area.
+  const stageRef = useRef(null)
+  const [stage, setStage] = useState({ w: 0, h: 0 })
+  const docW = ed.document.size.width
+  const docH = ed.document.size.height
+
+  useEffect(() => {
+    const el = stageRef.current
+    if (!el) return
+    const fit = () => {
+      const { width, height } = el.getBoundingClientRect()
+      // Padding is on the element, so subtract it to get the usable area.
+      const cs = getComputedStyle(el)
+      const availW = width - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight)
+      const availH = height - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom)
+      const ratio = docW / docH
+      if (!(availW > 0 && availH > 0 && ratio > 0)) return
+      const w = Math.min(availW, availH * ratio)
+      setStage({ w, h: w / ratio })
+    }
+    fit()
+    const ro = new ResizeObserver(fit)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [docW, docH])
 
   const toggleSection = (id) => setSection((s) => (s === id ? null : id))
 
@@ -219,7 +260,12 @@ export default function ImageEditor({
         <div className="mb-1.5 truncate rounded-md bg-inset px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-muted">
           {layerLabel(sel)}
         </div>
-        <LayerProperties layer={sel} onChange={ed.updateLayer} onReplaceImage={replaceImage} />
+        <LayerProperties
+          layer={sel}
+          onChange={ed.updateLayer}
+          onReplaceImage={replaceImage}
+          onBrowseLibrary={(layerId) => setLibraryFor({ mode: 'replace', layerId })}
+        />
         {sel.type !== LAYER_TYPES.BACKGROUND && (
           <div className="mt-2 grid grid-cols-2 gap-1.5 border-t border-line pt-2">
             <MiniButton onClick={() => ed.bringForward(sel.id)} title="Bring forward">↑ Forward</MiniButton>
@@ -245,7 +291,15 @@ export default function ImageEditor({
       </Section>
 
       <Section id="image" title="Image" icon="▣" open={section === 'image'} onToggle={toggleSection}>
-        <MiniButton onClick={() => imageFileRef.current?.click()}>+ Add image</MiniButton>
+        <div className="flex flex-wrap gap-1.5">
+          <MiniButton onClick={() => imageFileRef.current?.click()}>+ Add image</MiniButton>
+          <MiniButton
+            onClick={() => setLibraryFor({ mode: 'add' })}
+            title="Choose from your media library"
+          >
+            🖼 Library
+          </MiniButton>
+        </div>
         <div className="mt-2">{selectedControls(['image'])}</div>
       </Section>
 
@@ -267,7 +321,12 @@ export default function ImageEditor({
 
       <Section id="background" title="Background" icon="▤" open={section === 'background'} onToggle={toggleSection}>
         {background && (
-          <LayerProperties layer={background} onChange={ed.updateLayer} onReplaceImage={replaceImage} />
+          <LayerProperties
+            layer={background}
+            onChange={ed.updateLayer}
+            onReplaceImage={replaceImage}
+            onBrowseLibrary={(layerId) => setLibraryFor({ mode: 'replace', layerId })}
+          />
         )}
       </Section>
 
@@ -358,13 +417,15 @@ export default function ImageEditor({
           {panel}
         </aside>
 
-        {/* Canvas — centred, takes the remaining space, never scrolls. */}
-        <main className="flex min-w-0 flex-1 items-center justify-center overflow-hidden p-4 md:p-6">
-          <div
-            className="max-h-full"
-            style={{ aspectRatio: `${ed.document.size.width} / ${ed.document.size.height}` }}
-          >
-            <div className="h-full max-h-full">
+        {/* Canvas — centred, takes the remaining space, never scrolls.
+            The stage is sized in JS rather than by `aspect-ratio` alone: the
+            canvas SVGs are absolutely positioned at h-full/w-full, so a stage
+            with no definite size collapses to nothing and the whole document
+            renders invisibly. Measuring also keeps the drag maths honest,
+            since pointer positions are read from this box. */}
+        <main ref={stageRef} className="flex min-w-0 flex-1 items-center justify-center overflow-hidden p-4 md:p-6">
+          {hasArtwork ? (
+            <div style={{ width: stage.w || undefined, height: stage.h || undefined }}>
               <EditorCanvas
                 document={ed.document}
                 selectedId={ed.selectedId}
@@ -374,7 +435,44 @@ export default function ImageEditor({
                 onGestureEnd={ed.endGesture}
               />
             </div>
-          </div>
+          ) : (
+            /* Only when there is genuinely nothing to edit. An existing image
+               must never land here — that reads as "your work was lost". */
+            <div className="max-w-sm text-center">
+              <div className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-accent-soft text-xl">
+                ▣
+              </div>
+              <div className="mt-4 font-medium">No image loaded.</div>
+              <p className="mt-1 text-sm text-muted">
+                Generate one from your post, or upload your own to start editing.
+              </p>
+              <div className="mt-4 flex flex-wrap justify-center gap-2">
+                {onGenerate && (
+                  <button
+                    type="button"
+                    onClick={onGenerate}
+                    className="btn btn-primary btn-sm"
+                  >
+                    ✦ Generate Image
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => imageFileRef.current?.click()}
+                  className="btn btn-secondary btn-sm"
+                >
+                  ⬆ Upload Image
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setLibraryFor({ mode: 'add' })}
+                  className="btn btn-secondary btn-sm"
+                >
+                  🖼 Media Library
+                </button>
+              </div>
+            </div>
+          )}
         </main>
       </div>
 
@@ -394,6 +492,20 @@ export default function ImageEditor({
           </div>
         </>
       )}
+
+      {/* A library pick arrives as a File, so it joins the same two paths an
+          upload already takes — add a layer, or re-source an existing one. */}
+      <MediaLibraryModal
+        open={!!libraryFor}
+        onCancel={() => setLibraryFor(null)}
+        onSelect={(file) => {
+          const target = libraryFor
+          setLibraryFor(null)
+          if (target?.mode === 'replace') replaceImage(target.layerId, file)
+          else addFile(file, false)
+        }}
+        confirmLabel={libraryFor?.mode === 'replace' ? 'Replace Image' : 'Add Image'}
+      />
 
       <input
         ref={imageFileRef} type="file" accept="image/*" className="hidden"

@@ -47,12 +47,9 @@ export default function Dashboard() {
     .slice(0, 6)
 
   return (
-    <div className="space-y-6">
+    <div className="-mt-1 space-y-3 pb-4 md:-mt-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold">Dashboard</h1>
-          <p className="text-sm text-muted">Your content at a glance</p>
-        </div>
+        <h1 className="text-lg font-bold">Dashboard</h1>
         <button onClick={() => navigate('/generate')} className="btn btn-primary">
           ✦ Generate Post with AI
         </button>
@@ -61,7 +58,7 @@ export default function Dashboard() {
       {/* Stat cards */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         {STAT_CARDS.map((c) => (
-          <div key={c.key} className="card p-5">
+          <div key={c.key} className="card p-4">
             <div className={`mb-3 h-1.5 w-10 rounded-full ${c.accent}`} />
             <div className="text-3xl font-extrabold">
               {loading ? <span className="skeleton inline-block h-8 w-10" /> : stats[c.key]}
@@ -73,7 +70,7 @@ export default function Dashboard() {
 
       <div className="grid gap-6 lg:grid-cols-2">
         {/* Upcoming */}
-        <div className="card p-5">
+        <div className="card p-4">
           <div className="mb-4 flex items-center justify-between">
             <h2 className="font-semibold">📅 Upcoming Schedule</h2>
             <button onClick={() => navigate('/scheduler')} className="text-sm link-accent">
@@ -100,7 +97,7 @@ export default function Dashboard() {
         </div>
 
         {/* Recent activity */}
-        <div className="card p-5">
+        <div className="card p-4">
           <h2 className="mb-4 font-semibold">📈 Recent Activity</h2>
           {loading ? (
             <SkeletonRows />
