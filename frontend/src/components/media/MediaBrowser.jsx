@@ -53,7 +53,26 @@ function Chip({ active, onClick, children }) {
   )
 }
 
-function AssetTile({ asset, selected, onSelect, onActivate, manage, onFavorite, onDelete, onRename }) {
+/**
+ * What a tile puts on the clipboard when dragged.
+ *
+ * A custom MIME type rather than text/plain: the editor's canvas must be able
+ * to tell an image dragged out of the library from a file dragged in off the
+ * desktop, and handle each differently.
+ */
+export const ASSET_DRAG_TYPE = 'application/x-autosocial-asset'
+
+function AssetTile({
+  asset,
+  selected,
+  onSelect,
+  onActivate,
+  manage,
+  draggable,
+  onFavorite,
+  onDelete,
+  onRename,
+}) {
   const [renaming, setRenaming] = useState(false)
   const [draft, setDraft] = useState(asset.title || '')
   const mine = asset.scope === SCOPE_USER
@@ -70,7 +89,24 @@ function AssetTile({ asset, selected, onSelect, onActivate, manage, onFavorite, 
 
   return (
     <div
+      draggable={draggable || undefined}
+      onDragStart={
+        draggable
+          ? (e) => {
+              // The url travels with the drag, so the drop target can fetch the
+              // bytes without a second lookup — it works the same for a static
+              // stock path and an upload's object URL.
+              e.dataTransfer.setData(
+                ASSET_DRAG_TYPE,
+                JSON.stringify({ id: asset.id, url: asset.url, title: asset.title }),
+              )
+              e.dataTransfer.effectAllowed = 'copy'
+            }
+          : undefined
+      }
       className={`group relative overflow-hidden rounded-xl border-2 transition ${
+        draggable ? 'cursor-grab active:cursor-grabbing' : ''
+      } ${
         selected ? 'border-accent shadow-md' : 'border-line hover:border-accent-line hover:shadow-sm'
       }`}
     >
@@ -184,9 +220,13 @@ export default function MediaBrowser({
   onSelect,
   onActivate,
   manage = false,
-  // Who owns the scrolling. The modal gives this a fixed height and wants the
-  // grid to scroll inside it; the page sits in <main>, which already scrolls —
-  // nesting a second scroller there strands the controls above a short box.
+  // Tiles become drag sources. Only the editor turns this on, because it is
+  // the only surface with somewhere to drop them.
+  draggableTiles = false,
+  // Who owns the scrolling. The modal and drawer give this a fixed height and
+  // want the grid to scroll inside it; a surface that sits in a page which
+  // already scrolls passes false, since nesting a second scroller there
+  // strands the controls above a short box.
   fill = true,
   className = '',
 }) {
@@ -424,16 +464,22 @@ export default function MediaBrowser({
 
       {/* ---- Grid ----
           Dropping anywhere over the results uploads, which is where a user
-          aims when they drag a photo in. */}
+          aims when they drag a photo in.
+
+          Only files count. Tiles are themselves draggable in the editor, and a
+          drag that starts and ends inside the grid carries no files — treating
+          that as an upload reported "those files are not images". */}
       <div
         onDragOver={(e) => {
+          if (!e.dataTransfer.types?.includes('Files')) return
           e.preventDefault()
           setDragging(true)
         }}
         onDragLeave={() => setDragging(false)}
         onDrop={(e) => {
-          e.preventDefault()
           setDragging(false)
+          if (!e.dataTransfer.files?.length) return
+          e.preventDefault()
           upload(e.dataTransfer.files)
         }}
         className={`mt-3 rounded-xl transition ${
@@ -485,6 +531,7 @@ export default function MediaBrowser({
                 onSelect={onSelect}
                 onActivate={onActivate}
                 manage={manage}
+                draggable={draggableTiles}
                 onFavorite={favorite}
                 onRename={rename}
                 onDelete={remove}

@@ -8,7 +8,6 @@ import ResetPassword from './pages/ResetPassword.jsx'
 import Dashboard from './pages/Dashboard.jsx'
 import Generator from './pages/Generator.jsx'
 import CreatePost from './pages/CreatePost.jsx'
-import MediaLibrary from './pages/MediaLibrary.jsx'
 import Scheduler from './pages/Scheduler.jsx'
 import History from './pages/History.jsx'
 import Accounts from './pages/Accounts.jsx'
@@ -99,7 +98,6 @@ export default function App() {
         <Route path="/planner" element={<ContentPlanner />} />
         <Route path="/generate" element={<Generator />} />
         <Route path="/create" element={<CreatePost />} />
-        <Route path="/media" element={<MediaLibrary />} />
         <Route path="/scheduler" element={<Scheduler />} />
         <Route path="/history" element={<History />} />
         <Route path="/accounts" element={<Accounts />} />

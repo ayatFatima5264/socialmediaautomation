@@ -75,12 +75,21 @@ export default function EditorCanvas({
     if (mode === 'resize') {
       const min = 0.02
       const w = Math.max(min, (start.size?.w ?? 0.2) + dx)
-      // Text uses size.h as its font size, so resizing it should change the
-      // type size rather than stretch a box that has no visual extent.
-      const h =
-        layer.type === LAYER_TYPES.TEXT
-          ? Math.max(0.012, (start.size?.h ?? 0.05) + dy * 0.5)
-          : Math.max(min, (start.size?.h ?? 0.2) + dy)
+      let h
+      if (layer.type === LAYER_TYPES.TEXT) {
+        // Text uses size.h as its font size, so resizing it should change the
+        // type size rather than stretch a box that has no visual extent.
+        h = Math.max(0.012, (start.size?.h ?? 0.05) + dy * 0.5)
+      } else if (layer.type === LAYER_TYPES.IMAGE && layer.keepAspect !== false && !layer.square) {
+        // A picture is letterboxed inside its box, so moving width and height
+        // independently reintroduces the empty bands the box was sized to
+        // avoid — dragging a corner to fill the frame only widened the gap.
+        // Holding the box's ratio keeps the image filling it at every size.
+        const ratio = (start.size?.h ?? 0.2) / (start.size?.w ?? 0.2)
+        h = Math.max(min, w * ratio)
+      } else {
+        h = Math.max(min, (start.size?.h ?? 0.2) + dy)
+      }
       onDrag(layer.id, { size: { w, h } })
     }
   }

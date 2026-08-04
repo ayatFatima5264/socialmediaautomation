@@ -9,7 +9,6 @@ const NAV = [
   { to: '/planner', label: 'Content Planner', icon: '🗓️' },
   { to: '/generate', label: 'AI Generator', icon: '✦' },
   { to: '/create', label: 'Create Post', icon: '✍' },
-  { to: '/media', label: 'Media Library', icon: '🖼️' },
   { to: '/scheduler', label: 'Scheduler', icon: '◷' },
   { to: '/history', label: 'Post History', icon: '≡' },
   { to: '/accounts', label: 'Social Accounts', icon: '⬡' },

@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import EditorCanvas from './EditorCanvas.jsx'
 import LayerProperties from './LayerProperties.jsx'
-import MediaLibraryModal from '../media/MediaLibraryModal.jsx'
+import MediaLibraryDrawer from '../media/MediaLibraryDrawer.jsx'
+import { ASSET_DRAG_TYPE } from '../media/MediaBrowser.jsx'
 import AiEditPanel from './AiEditPanel.jsx'
 import { MiniButton } from './controls.jsx'
 import useEditor from '../../hooks/useEditor'
@@ -17,6 +18,7 @@ import { LAYER_TYPES, sortLayers } from '../../lib/brandKit/layers'
 import { rasterizeBranded, RasterizeError } from '../../lib/brandKit/rasterize'
 import { applyOperations, summarizeLayers } from '../../lib/brandKit/editor/aiOps'
 import { api } from '../../lib/api'
+import mediaStore, { assetToFile } from '../../lib/media/store'
 
 // ---------------------------------------------------------------------------
 // The editor shell: toolbar on top, tool panel on the LEFT, canvas centred.
@@ -84,6 +86,50 @@ function readFile(file) {
   })
 }
 
+/** The picture's own pixel dimensions, read from the decoded source. */
+function measureImage(src) {
+  return new Promise((resolve, reject) => {
+    const img = new Image()
+    img.onload = () => resolve({ w: img.naturalWidth, h: img.naturalHeight })
+    img.onerror = () => reject(new Error('Could not read that image.'))
+    img.src = src
+  })
+}
+
+// ---------------------------------------------------------------------------
+// Sizing an image layer
+//
+// Layer geometry is per-axis fractions: size.w is a share of the frame's WIDTH
+// and size.h a share of its HEIGHT. So equal fractions are only a square on a
+// square frame, and a box's on-screen ratio is (w / h) * (frameW / frameH).
+// Both helpers below solve that equation for the shape the picture actually
+// is, which is what stops an image letterboxing inside its own holder.
+// ---------------------------------------------------------------------------
+
+const boxRatio = (natural, frame) => {
+  const frameAspect = frame.width / frame.height
+  const imgAspect = natural.w / natural.h
+  return frameAspect > 0 && imgAspect > 0 ? frameAspect / imgAspect : 1
+}
+
+/** A fresh box with the picture's proportions, bounded so it lands visible. */
+function boxForImage(natural, frame, max = 0.6) {
+  const ratio = boxRatio(natural, frame)
+  let w = max
+  let h = w * ratio
+  if (h > max) {
+    h = max
+    w = h / ratio
+  }
+  return { w, h }
+}
+
+/** The same shape, keeping the box's existing width so it stays anchored. */
+function refitBox(size, natural, frame) {
+  const w = size?.w ?? 0.4
+  return { w, h: w * boxRatio(natural, frame) }
+}
+
 export default function ImageEditor({
   open, imageUrl, size, layers = [], brandKit, style, onSave, onClose, onRegenerate,
   // Which panel the editor opens on. "AI Edit" is the same editor as "Edit" —
@@ -142,6 +188,59 @@ export default function ImageEditor({
     return () => ro.disconnect()
   }, [docW, docH])
 
+  // ---- Dropping onto the canvas ------------------------------------------
+  //
+  // Two kinds of drag land here: a tile dragged out of the library drawer, and
+  // an image file dragged in from the desktop. Both end as a new layer at the
+  // point of the drop.
+
+  const artRef = useRef(null)
+  const [dropping, setDropping] = useState(false)
+
+  /** Where a drop landed, as the centre-relative fraction a layer's offset wants. */
+  function offsetFromDrop(e) {
+    const el = artRef.current
+    if (!el) return undefined
+    const r = el.getBoundingClientRect()
+    if (!r.width || !r.height) return undefined
+    // Clamped so an image dropped at the very edge still has most of itself on
+    // the canvas rather than mostly outside it.
+    const clamp = (v) => Math.max(-0.45, Math.min(0.45, v))
+    return {
+      x: clamp((e.clientX - r.left) / r.width - 0.5),
+      y: clamp((e.clientY - r.top) / r.height - 0.5),
+    }
+  }
+
+  const dragCarriesImage = (e) =>
+    e.dataTransfer.types?.includes(ASSET_DRAG_TYPE) || e.dataTransfer.types?.includes('Files')
+
+  function onStageDragOver(e) {
+    if (!dragCarriesImage(e)) return
+    e.preventDefault() // without this the browser refuses the drop
+    e.dataTransfer.dropEffect = 'copy'
+    setDropping(true)
+  }
+
+  function onStageDrop(e) {
+    if (!dragCarriesImage(e)) return
+    e.preventDefault()
+    setDropping(false)
+    const at = offsetFromDrop(e)
+
+    const raw = e.dataTransfer.getData(ASSET_DRAG_TYPE)
+    if (raw) {
+      try {
+        placeAsset(JSON.parse(raw), { at })
+      } catch {
+        setError('Could not read that image')
+      }
+      return
+    }
+    const file = [...(e.dataTransfer.files || [])].find((f) => f.type?.startsWith('image/'))
+    if (file) addFile(file, false, at)
+  }
+
   const toggleSection = (id) => setSection((s) => (s === id ? null : id))
 
   // Selecting on the canvas opens the owning section, so the controls for what
@@ -169,24 +268,91 @@ export default function ImageEditor({
     return () => window.removeEventListener('keydown', onKey)
   }, [open, ed, onClose])
 
+  /**
+   * Add an image layer sized to the picture's own proportions.
+   *
+   * The factory hands back a square box, and an image layer letterboxes inside
+   * its box — so a 3:2 photo in a square box showed empty bands above and
+   * below, and enlarging it only made them bigger. Deriving the box from the
+   * image means it fills the box exactly: no bands, and no stretching either.
+   */
+  const addImageSrc = useCallback(
+    async (src, at) => {
+      const layer = newImageLayer(src)
+      const size = boxForImage(await measureImage(src), ed.document.size)
+      ed.addLayer({ ...layer, size, ...(at ? { offset: at } : null) })
+    },
+    [ed],
+  )
+
+  /**
+   * Point an existing layer at new bytes.
+   *
+   * Layers that letterbox get their box re-proportioned to the incoming
+   * picture, so replacing a portrait shot with a landscape one does not leave
+   * the holder half empty. Layers that fill their box by stretching — the
+   * background — and square-locked ones like a logo keep their geometry,
+   * because theirs is the point rather than an accident.
+   */
+  const applySource = useCallback(
+    async (layerId, src) => {
+      const target = ed.document.layers.find((l) => l.id === layerId)
+      const patch = { src }
+      if (target && target.keepAspect !== false && !target.square) {
+        patch.size = refitBox(target.size, await measureImage(src), ed.document.size)
+      }
+      ed.updateLayer(layerId, patch)
+    },
+    [ed],
+  )
+
   const addFile = useCallback(
-    async (file, asLogo) => {
+    async (file, asLogo, at) => {
       setError('')
       try {
         const src = await readFile(file)
-        ed.addLayer(asLogo ? newLogoLayer(src) : newImageLayer(src))
+        // `at` is where a drop landed, as a centre-relative fraction of the
+        // frame. Without one the layer takes its factory position — centred —
+        // which is what every button-driven add wants.
+        if (asLogo) ed.addLayer(newLogoLayer(src))
+        else await addImageSrc(src, at)
       } catch (err) {
         setError(err.message)
       }
     },
-    [ed],
+    [ed, addImageSrc],
+  )
+
+  /**
+   * Put a library image on the canvas.
+   *
+   * Adding never disturbs what is already there: the artwork the post was
+   * generated with is the background layer, and this lands above it as a new
+   * layer that can be moved, undone or deleted. Only an explicit replace —
+   * the Replace panel, or opening the drawer against a chosen layer — swaps
+   * a layer's source.
+   */
+  const placeAsset = useCallback(
+    async (asset, { at, layerId } = {}) => {
+      setError('')
+      try {
+        const src = await readFile(await assetToFile(asset))
+        if (layerId) await applySource(layerId, src)
+        else await addImageSrc(src, at)
+        // Usage tracking is a nicety; never let it fail the placement.
+        mediaStore.markUsed(asset.id).catch(() => {})
+      } catch (err) {
+        setError(err.message || 'Could not load that image')
+      }
+    },
+    [addImageSrc, applySource],
   )
 
   const replaceImage = useCallback(
     async (layerId, file) => {
       setError('')
       try {
-        ed.updateLayer(layerId, { src: await readFile(file) })
+        await applySource(layerId, await readFile(file))
       } catch (err) {
         setError(err.message)
       }
@@ -295,9 +461,9 @@ export default function ImageEditor({
           <MiniButton onClick={() => imageFileRef.current?.click()}>+ Add image</MiniButton>
           <MiniButton
             onClick={() => setLibraryFor({ mode: 'add' })}
-            title="Choose from your media library"
+            title="Choose from your media library, or drag one onto the canvas"
           >
-            🖼 Library
+            🖼 Choose from Library
           </MiniButton>
         </div>
         <div className="mt-2">{selectedControls(['image'])}</div>
@@ -410,12 +576,30 @@ export default function ImageEditor({
         </div>
       )}
 
-      {/* ---- Workspace: panel | canvas | (empty) ------------------------ */}
-      <div className="flex min-h-0 flex-1">
+      {/* ---- Workspace: panel | library | canvas ------------------------ */}
+      {/* `relative` so the library drawer can cover this row on narrow
+          screens, where there is no room to sit beside the canvas. */}
+      <div className="relative flex min-h-0 flex-1">
         {/* Left panel — the only scrollable region on the page. */}
         <aside className="hidden w-72 shrink-0 overflow-y-auto border-r border-line bg-surface lg:block">
           {panel}
         </aside>
+
+        {/* Opening this shrinks the canvas rather than hiding it: the stage
+            measures itself with a ResizeObserver, so the artwork reflows and
+            stays a drop target. */}
+        <MediaLibraryDrawer
+          open={!!libraryFor}
+          mode={libraryFor?.mode}
+          onClose={() => setLibraryFor(null)}
+          onPick={(asset) => {
+            const target = libraryFor
+            setLibraryFor(null)
+            placeAsset(asset, {
+              layerId: target?.mode === 'replace' ? target.layerId : undefined,
+            })
+          }}
+        />
 
         {/* Canvas — centred, takes the remaining space, never scrolls.
             The stage is sized in JS rather than by `aspect-ratio` alone: the
@@ -423,9 +607,26 @@ export default function ImageEditor({
             with no definite size collapses to nothing and the whole document
             renders invisibly. Measuring also keeps the drag maths honest,
             since pointer positions are read from this box. */}
-        <main ref={stageRef} className="flex min-w-0 flex-1 items-center justify-center overflow-hidden p-4 md:p-6">
+        <main
+          ref={stageRef}
+          onDragOver={onStageDragOver}
+          // dragleave also fires when the pointer crosses onto a child, so the
+          // highlight would strobe as the cursor moves over the artwork.
+          // Ignoring moves that stay inside keeps it steady.
+          onDragLeave={(e) => {
+            if (!e.currentTarget.contains(e.relatedTarget)) setDropping(false)
+          }}
+          onDrop={onStageDrop}
+          className={`flex min-w-0 flex-1 items-center justify-center overflow-hidden p-4 transition md:p-6 ${
+            dropping ? 'bg-accent-soft' : ''
+          }`}
+        >
           {hasArtwork ? (
-            <div style={{ width: stage.w || undefined, height: stage.h || undefined }}>
+            <div
+              ref={artRef}
+              className={dropping ? 'rounded ring-2 ring-accent' : ''}
+              style={{ width: stage.w || undefined, height: stage.h || undefined }}
+            >
               <EditorCanvas
                 document={ed.document}
                 selectedId={ed.selectedId}
@@ -468,7 +669,7 @@ export default function ImageEditor({
                   onClick={() => setLibraryFor({ mode: 'add' })}
                   className="btn btn-secondary btn-sm"
                 >
-                  🖼 Media Library
+                  🖼 Choose from Library
                 </button>
               </div>
             </div>
@@ -492,20 +693,6 @@ export default function ImageEditor({
           </div>
         </>
       )}
-
-      {/* A library pick arrives as a File, so it joins the same two paths an
-          upload already takes — add a layer, or re-source an existing one. */}
-      <MediaLibraryModal
-        open={!!libraryFor}
-        onCancel={() => setLibraryFor(null)}
-        onSelect={(file) => {
-          const target = libraryFor
-          setLibraryFor(null)
-          if (target?.mode === 'replace') replaceImage(target.layerId, file)
-          else addFile(file, false)
-        }}
-        confirmLabel={libraryFor?.mode === 'replace' ? 'Replace Image' : 'Add Image'}
-      />
 
       <input
         ref={imageFileRef} type="file" accept="image/*" className="hidden"
