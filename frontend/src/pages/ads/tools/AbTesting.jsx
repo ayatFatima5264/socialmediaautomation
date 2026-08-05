@@ -3,6 +3,7 @@ import AdsWorkspace, { Field, RailSection } from '../../../components/ads/worksp
 import AdCreativeArt from '../../../components/ads/AdCreativeArt.jsx'
 import GenerateButton from '../../../components/ads/workspace/GenerateButton.jsx'
 import ChipSelect from '../../../components/ChipSelect.jsx'
+import { useToast } from '../../../context/ToastContext.jsx'
 
 // ---------------------------------------------------------------------------
 // A/B Testing — the workspace.
@@ -25,6 +26,7 @@ const DURATIONS = ['3 days', '7 days', '14 days', 'Until significant']
 const SPLITS = ['50 / 50', '70 / 30', '80 / 20']
 
 export default function AbTesting() {
+  const toast = useToast()
   const [metric, setMetric] = useState('Click-through rate')
   const [duration, setDuration] = useState('7 days')
   const [split, setSplit] = useState('50 / 50')
@@ -66,7 +68,18 @@ export default function AbTesting() {
           </Field>
         </>
       }
-      action={<GenerateButton label="Start Test" toolName={TOOL} phase={PHASE} />}
+      action={
+        <GenerateButton
+          label="Start Test"
+          toolName={TOOL}
+          phase={PHASE}
+          onClick={() =>
+            toast.info(
+              'A/B testing needs live delivery numbers from a connected ad account. Connect one in Social Accounts first.',
+            )
+          }
+        />
+      }
       stage={
         <div className="card flex min-h-[320px] flex-col p-4 lg:min-h-full">
           <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">

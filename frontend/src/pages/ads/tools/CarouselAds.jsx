@@ -118,10 +118,10 @@ export default function CarouselAds() {
           </div>
         ) : (
           <PreviewStage
+            hint={'An example carousel slide. Describe the story on the left and press Generate to make one image per slide.'}
             art="carouselAd"
             ratio="portrait"
             toolName={TOOL}
-            phase={PHASE}
             caption={`Slide ${active + 1} of ${slides}`}
           >
             <div className="mt-3 flex gap-2 overflow-x-auto pb-1">

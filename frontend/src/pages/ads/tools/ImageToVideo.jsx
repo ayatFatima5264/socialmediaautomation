@@ -159,10 +159,10 @@ export default function ImageToVideo() {
           </div>
         ) : (
           <PreviewStage
+            hint={'An example of the result. Upload a still, choose a camera move, and press Render — your browser makes the video.'}
             art="imageVideo"
             ratio={ratio === '9:16' ? 'story' : ratio === '16:9' ? 'landscape' : 'square'}
             toolName={TOOL}
-            phase={PHASE}
             caption={`${duration}s · ${motion}`}
           />
         )

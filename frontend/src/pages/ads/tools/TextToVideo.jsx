@@ -159,10 +159,10 @@ export default function TextToVideo() {
           </div>
         ) : (
           <PreviewStage
+            hint={'An example of the kind of ad this plans. Describe your idea on the left and press Generate for a shot-by-shot plan.'}
             art="textVideo"
             ratio="story"
             toolName={TOOL}
-            phase={PHASE}
             caption={`${duration}s · ${style}`}
           />
         )

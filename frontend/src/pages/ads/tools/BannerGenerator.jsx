@@ -172,10 +172,10 @@ export default function BannerGenerator() {
           </div>
         ) : (
           <PreviewStage
+            hint={'An example banner. Describe what yours should show, pick a size, and press Generate.'}
             art="bannerAd"
             ratio="wide"
             toolName={TOOL}
-            phase={PHASE}
             caption={`${size.label} · ${size.hint}`}
           />
         )

@@ -169,10 +169,10 @@ export default function ProductShowcaseVideo() {
           </div>
         ) : (
           <PreviewStage
+            hint={'An example of the kind of film this plans. Set the camera and lighting, then press Generate for a shot-by-shot plan.'}
             art="showcase"
             ratio="square"
             toolName={TOOL}
-            phase={PHASE}
             caption={`${duration}s · ${move}`}
           />
         )

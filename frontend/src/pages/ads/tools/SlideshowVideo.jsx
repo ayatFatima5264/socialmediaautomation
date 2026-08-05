@@ -163,10 +163,10 @@ export default function SlideshowVideo() {
           </div>
         ) : (
           <PreviewStage
+            hint={'An example of the result. Add your images, set the pace, and press Render — your browser makes the video.'}
             art="imageVideo"
             ratio={ratio === '9:16' ? 'story' : ratio === '16:9' ? 'landscape' : 'square'}
             toolName={TOOL}
-            phase={PHASE}
             caption={total ? `${slideCount} slides · ${total}s` : 'Add images to begin'}
           />
         )

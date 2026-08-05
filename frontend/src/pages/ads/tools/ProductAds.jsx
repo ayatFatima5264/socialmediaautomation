@@ -132,10 +132,10 @@ export default function ProductAds() {
           </div>
         ) : (
           <PreviewStage
+            hint={'An example of the kind of ad this produces. Describe your product on the left and press Generate for three of your own.'}
             art="productAd"
             ratio="square"
             toolName={TOOL}
-            phase={PHASE}
             caption={ratio}
           />
         )
