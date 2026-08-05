@@ -13,30 +13,6 @@
 
 export const DRAFT_POSTS = [
   {
-    slug: 'best-ai-tools-for-social-media-managers',
-    title: 'Best AI Tools for Social Media Managers in 2026',
-    metaTitle: 'Best AI Tools for Social Media Managers in 2026',
-    description:
-      'An honest category-by-category look at the AI tools social media managers actually use in 2026, what each one is good at, and how to avoid a bloated stack.',
-    keyword: 'AI tools for social media managers',
-    category: 'AI & Automation',
-    date: '2026-07-07',
-    readMinutes: 12,
-    cover: { palette: 3, pattern: 3, icon: '◈' },
-  },
-  {
-    slug: 'how-small-businesses-grow-faster-with-ai',
-    title: 'How Small Businesses Can Grow Faster Using AI',
-    metaTitle: 'How Small Businesses Can Grow Faster Using AI',
-    description:
-      'Practical ways small businesses use AI to compete with bigger marketing teams — where it genuinely moves the needle, and where it quietly wastes your money.',
-    keyword: 'AI for small business marketing',
-    category: 'Strategy',
-    date: '2026-06-30',
-    readMinutes: 11,
-    cover: { palette: 4, pattern: 4, icon: '▲' },
-  },
-  {
     slug: 'ai-vs-manual-social-media-management',
     title: 'AI vs Manual Social Media Management: Which Is Better?',
     metaTitle: 'AI vs Manual Social Media Management: Which Wins?',
