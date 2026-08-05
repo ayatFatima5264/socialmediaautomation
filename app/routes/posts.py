@@ -82,8 +82,17 @@ class GenerateImageRequest(BaseModel):
 
 class GenerateImageResponse(BaseModel):
     image_url: str
-    # Which provider produced the image (e.g. "pollinations-flux"). Also logged.
-    provider: str = "pollinations-flux"
+    # Which provider `image_url` POINTS AT — not necessarily the one that ends
+    # up rendering. Read it together with `verified`.
+    provider: str = "pollinations-sana"
+    # Was `image_url` actually fetched and confirmed to be an image?
+    #
+    # False means nobody checked. That distinction matters: the client-side
+    # loader silently falls back across `fallbacks` when the primary fails, so
+    # an unverified "pollinations-…" here can end up as a LoremFlickr stock
+    # photo on screen. Reporting an unchecked provider as fact is how a user
+    # comes to believe AI generation is working when it is not.
+    verified: bool = False
     # Ordered alternate sources the client can fall back to if `image_url` fails.
     fallbacks: list[str] = []
 
@@ -95,6 +104,9 @@ async def generate_image_endpoint(req: GenerateImageRequest) -> GenerateImageRes
     Uses the provider fallback chain: if the primary provider errors, times
     out, is rate-limited or returns a non-image, the next provider is tried
     automatically (verify=True), and the provider that succeeded is reported.
+
+    With verify=False the primary is returned unchecked and `verified` is
+    False — the caller is being handed a guess, not a confirmed source.
     """
     try:
         url, provider = await generate_with_fallback(
@@ -108,7 +120,13 @@ async def generate_image_endpoint(req: GenerateImageRequest) -> GenerateImageRes
         for c in build_image_candidates(req.prompt, width=req.width, height=req.height)
         if c != url
     ]
-    return GenerateImageResponse(image_url=url, provider=provider, fallbacks=fallbacks)
+    return GenerateImageResponse(
+        image_url=url,
+        provider=provider,
+        # Only a verified run actually proved this provider produced the image.
+        verified=req.verify,
+        fallbacks=fallbacks,
+    )
 
 
 # ---------------------------------------------------------------------------

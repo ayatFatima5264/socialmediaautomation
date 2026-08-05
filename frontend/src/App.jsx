@@ -15,6 +15,11 @@ import Settings from './pages/Settings.jsx'
 import Onboarding from './pages/Onboarding.jsx'
 import BusinessProfile from './pages/BusinessProfile.jsx'
 import ContentPlanner from './pages/ContentPlanner.jsx'
+// AI Ads Studio — a self-contained module for advertising campaigns. Separate
+// from the AI Generator (organic posts) in pages, components, state and routes.
+import AdsStudio from './pages/ads/AdsStudio.jsx'
+import AdToolRoute from './pages/ads/AdToolRoute.jsx'
+import CampaignPlaceholder from './pages/ads/CampaignPlaceholder.jsx'
 // Public marketing website — accessible without authentication.
 import PublicLayout from './components/marketing/PublicLayout.jsx'
 import Home from './pages/marketing/Home.jsx'
@@ -100,6 +105,17 @@ export default function App() {
         <Route path="/create" element={<CreatePost />} />
         <Route path="/scheduler" element={<Scheduler />} />
         <Route path="/history" element={<History />} />
+
+        {/* ---- AI Ads Studio ------------------------------------------
+            Static segments outrank the dynamic one in React Router's route
+            ranking, so /ads/campaigns/new resolves to the campaign page and
+            never to the tool placeholder. Tool slugs come from the registry
+            in lib/ads/tools.js — one entry there is a routed page here. */}
+        <Route path="/ads" element={<AdsStudio />} />
+        <Route path="/ads/campaigns/new" element={<CampaignPlaceholder />} />
+        <Route path="/ads/campaigns/:id" element={<CampaignPlaceholder />} />
+        <Route path="/ads/:slug" element={<AdToolRoute />} />
+
         <Route path="/accounts" element={<Accounts />} />
         <Route path="/settings" element={<Settings />} />
         <Route path="/business-profile" element={<BusinessProfile />} />

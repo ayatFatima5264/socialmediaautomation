@@ -7,7 +7,12 @@
 // and by the Node-side build plugin that generates sitemap.xml and prerenders
 // static meta tags. That is what guarantees the HTML a non-JavaScript crawler
 // sees is identical to what the app renders at runtime.
+//
+// The one import below holds to the same rule: lib/ads/tools.js is plain data
+// and plain functions, with no Vite syntax, so Node can load this module.
 // ---------------------------------------------------------------------------
+
+import { ADS_BASE_PATH, adsRouteTitle, isAdsPath } from '../lib/ads/tools.js'
 
 // Brand facts needed at build time. Kept here (rather than in config/site.js)
 // because that module reads import.meta.env and cannot be loaded by Node.
@@ -142,11 +147,18 @@ export const PRIVATE_PAGE_TITLES = {
   '/register': 'Create Account',
   '/forgot-password': 'Reset Your Password',
   '/reset-password': 'Choose a New Password',
+  // AI Ads Studio's own pages are titled by adsRouteTitle() below, since its
+  // tool routes are generated from a registry and its campaign routes carry ids.
 }
 
-/** Tab title for a private route, or null if the path is not one. */
+/**
+ * Tab title for a private route, or null if the path is not one.
+ *
+ * Modules with dynamic paths answer for themselves — an id-bearing route like
+ * /ads/campaigns/42 can never appear in a fixed map.
+ */
 export function privatePageTitle(path) {
-  return PRIVATE_PAGE_TITLES[path] ?? null
+  return PRIVATE_PAGE_TITLES[path] ?? adsRouteTitle(path) ?? null
 }
 
 // Routes behind authentication — excluded from the sitemap and disallowed in
@@ -155,6 +167,9 @@ export const PRIVATE_ROUTES = [
   '/dashboard',
   '/planner',
   '/generate',
+  // One entry covers the whole AI Ads Studio subtree: a robots.txt Disallow is
+  // a prefix rule, so "/ads" also disallows /ads/product-ads and every campaign.
+  ADS_BASE_PATH,
   '/create',
   '/scheduler',
   '/history',
@@ -167,3 +182,15 @@ export const PRIVATE_ROUTES = [
   '/forgot-password',
   '/reset-password',
 ]
+
+/**
+ * Is this path behind authentication?
+ *
+ * PRIVATE_ROUTES is an exact list, which is all robots.txt needs — but <Seo>
+ * also asks per rendered path, and a module with nested routes has more paths
+ * than the list can name. Sections answer for their whole subtree so a page
+ * like /ads/carousel-ads is still forced noindex.
+ */
+export function isPrivatePath(path) {
+  return PRIVATE_ROUTES.includes(path) || isAdsPath(path)
+}

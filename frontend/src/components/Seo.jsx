@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import { useLocation } from 'react-router-dom'
 import { SITE } from '../config/site'
-import { PRIVATE_ROUTES, pageSeo, privatePageTitle } from '../seo/pages.data.js'
+import { isPrivatePath, pageSeo, privatePageTitle } from '../seo/pages.data.js'
 
 // ---------------------------------------------------------------------------
 // Dependency-free SEO head manager for our Vite SPA. Renders no DOM of its own;
@@ -66,8 +66,10 @@ export default function Seo({
   // stops that title surviving into a page that rendered perfectly well. They
   // are also forced noindex, matching the robots.txt Disallow they already
   // carry — a private page should never be indexable by accident.
+  // Asked per rendered path rather than matched against a flat list, so nested
+  // module routes (/ads/carousel-ads, /ads/campaigns/42) are covered too.
   const privateTitle = privatePageTitle(pathname)
-  const isPrivate = PRIVATE_ROUTES.includes(pathname)
+  const isPrivate = isPrivatePath(pathname)
 
   const resolvedTitle =
     title !== undefined ? title : registry?.title ?? privateTitle ?? null

@@ -21,7 +21,7 @@ separation is the contract for all future work.
                          ┌─────────────────────────────┐
    Authenticated user ─▶ │  AUTHENTICATED APPLICATION  │
                          │  /dashboard /generate       │
-                         │  /create /scheduler         │
+                         │  /create /scheduler /ads    │
                          │  /history /accounts         │
                          │  /settings /business-profile│
                          └─────────────────────────────┘
@@ -77,6 +77,59 @@ Both are declared in `App.jsx`. The marketing routes live under a
 > Rule of thumb: **application features never touch the marketing website, and
 > marketing changes never touch the application.** Anything shared belongs in a
 > context, `config/`, `lib/`, or a reusable component.
+
+## Modules
+
+A feature large enough to own several routes is a **module**: its own folder in
+each of `pages/`, `components/`, and `lib/`, rather than more files in the
+shared ones. **AI Ads Studio** (`/ads`) is the reference example.
+
+```
+pages/ads/            AdsStudio · AdToolRoute · AdToolPlaceholder
+                      CampaignPlaceholder
+pages/ads/tools/      one page per tool + index.js (slug → component)
+components/ads/       AdsHero · AdToolCard · AdToolSection · AdCreativeArt
+                      CampaignTable · CampaignStatTile · CampaignStatusBadge
+                      AdsPageHeader · AdsEmptyState
+components/ads/workspace/
+                      AdsWorkspace · PreviewStage · UploadField · GenerateButton
+lib/ads/              tools.js (registry) · constants.js · store.js
+hooks/                useCampaigns.js
+```
+
+Four rules make a module extendable without edits rippling outward:
+
+1. **One registry drives the module.** `lib/ads/tools.js` lists every feature,
+   built or planned. The Quick Action cards, the routes in `App.jsx`, each
+   placeholder page's copy, and the tab titles all read from it — so shipping a
+   feature is an entry there plus a page, never a hunt for hardcoded strings.
+   Keep it free of Vite syntax: `seo/pages.data.js` imports it, and that module
+   is loaded by the Node-side build plugin.
+2. **Storage sits behind a provider.** `lib/ads/store.js` exposes an async
+   `list/get/create/update/remove` and is backed by localStorage today.
+   `setCampaignProvider()` swaps in a `lib/api.js`-backed implementation with no
+   component changes — the same seam `setMediaProvider` gives the Media Library.
+3. **The module answers SEO questions about its own paths.** Nested and
+   id-bearing routes cannot live in a flat list, so `tools.js` exports
+   `isAdsPath()` and `adsRouteTitle()`, which `seo/pages.data.js` composes into
+   `isPrivatePath()` and `privatePageTitle()`. One `Disallow: /ads` in
+   robots.txt covers the whole subtree.
+4. **One dynamic route, not one per feature.** `App.jsx` has a single
+   `/ads/:slug` pointing at `AdToolRoute`, which looks the slug up in
+   `pages/ads/tools/index.js`. A tool with a page renders it; one without falls
+   through to `AdToolPlaceholder`, generated from the same registry entry. So
+   shipping a workspace is one line in that map — `App.jsx` never grows, and
+   routing cannot disagree with what exists.
+
+Working pages use the `.split-shell` / `.split-grid` / `.split-pane` classes so
+their columns scroll independently (`AdsWorkspace` wraps this). **Single-column
+pages must not** — the app shell's `<main>` already scrolls, so a `.split-pane`
+there nests a second scroll area and produces two scrollbars.
+
+AI Ads Studio is a **separate workflow from the AI Generator**, not an extension
+of it: the Generator produces one organic post, the Studio manages advertising
+campaigns made of many creatives across several platforms. They share the design
+system and contexts, and nothing else.
 
 ## Assets & SEO files
 

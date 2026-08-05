@@ -16,6 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.database import init_db
 from app.routes import (
+    ads,
     auth,
     business_profile,
     instagram,
@@ -70,6 +71,7 @@ app.include_router(oauth.router)
 app.include_router(instagram.router)
 app.include_router(business_profile.router)
 app.include_router(planner.router)
+app.include_router(ads.router)
 
 
 @app.get("/")

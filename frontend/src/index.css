@@ -75,6 +75,30 @@ body {
   overflow-x: hidden;
 }
 
+/* ------------------------------------------------------------------ *
+ * The authenticated app owns the viewport.
+ *
+ * Inside the app shell, exactly one thing scrolls: <main>. The document
+ * itself must not, or the user gets a SECOND scrollbar beside it — and
+ * scrolling that one drags the whole shell upward, taking the topbar and
+ * the first sidebar items off screen.
+ *
+ * That can happen whenever the shell ends up even slightly taller than
+ * the document's viewport, which `100vh` is free to do (browser UI, zoom,
+ * a window resized after load). Rather than depend on the shell's height
+ * measuring exactly right, this removes the document scrollbar outright.
+ *
+ * Scoped to a class that components/Layout.jsx adds on mount and removes
+ * on unmount — the marketing website and the blog are long pages that
+ * MUST scroll the document, and they never mount that shell.
+ * ------------------------------------------------------------------ */
+html.app-viewport-locked,
+html.app-viewport-locked body {
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
 /* Flat, clean page background (no gradients, per the design brief). */
 .app-bg {
   background-color: var(--page);

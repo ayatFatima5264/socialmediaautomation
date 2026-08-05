@@ -189,6 +189,16 @@ export const api = {
     request(`/api/planner/${id}/approve`, { method: 'POST', body }),
   deletePlan: (id) => request(`/api/planner/${id}`, { method: 'DELETE' }),
 
+  // ---- AI Ads Studio ------------------------------------------------------
+  // Text generation runs on the configured AI provider (groq). `adVideoPlan`
+  // returns a shot plan, NOT a rendered video — its `renderable` flag is false
+  // until a video provider exists, and callers must respect that.
+  adCopy: (body) => request('/api/ads/copy', { method: 'POST', body }),
+  adHeadlines: (body) => request('/api/ads/headlines', { method: 'POST', body }),
+  adCtas: (body) => request('/api/ads/ctas', { method: 'POST', body }),
+  adCreative: (body) => request('/api/ads/creative', { method: 'POST', body }),
+  adVideoPlan: (body) => request('/api/ads/video-plan', { method: 'POST', body }),
+
   // business profile + onboarding
   getBusinessProfile: () => request('/api/business-profile'),
   updateBusinessProfile: (body) =>

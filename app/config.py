@@ -49,18 +49,31 @@ class Settings(BaseSettings):
     ai_max_tokens: int = 1024
     ai_temperature: float = 0.8
 
-    # ---- AI image generation (Pollinations: free, no key) ----------------
+    # ---- AI image generation (Pollinations) -------------------------------
     # Returns a real image at a public URL — perfect for Instagram, which
     # fetches the image server-side. Default 1080x1080 (IG square).
+    #
+    # NOTE ON MODELS AND COST (verified against the live API):
+    #   GET https://image.pollinations.ai/models  ->  ["sana"]
+    # `flux` and `turbo` are no longer served. Requesting them does not error
+    # cleanly — the request is routed to `sana` anyway, which is a PAID model,
+    # and anonymous calls come back as HTTP 500 wrapping an upstream
+    # "402 Insufficient balance ... available balance is 0.0000".
+    #
+    # So the model list below names what the API actually offers. It does not
+    # make generation work: `sana` needs Pollen, and this app sends no API key
+    # (there is no key setting — calls are anonymous). Until a key with a
+    # balance or grant is configured, every AI attempt fails and the chain
+    # falls through to the photo hosts. See the fallback note in image_service.
     pollinations_base: str = "https://image.pollinations.ai"
-    image_model: str = "flux"
+    image_model: str = "sana"
     image_width: int = 1080
     image_height: int = 1080
     # Ordered AI image models tried by the fallback chain: if the primary
-    # (flux) errors/times-out/rate-limits, the next is attempted automatically.
+    # errors/times-out/rate-limits, the next is attempted automatically.
     # After these, non-AI photo hosts (LoremFlickr, Picsum) act as a final
     # guaranteed fallback so the user always gets a visual.
-    image_fallback_models: list[str] = ["flux", "turbo"]
+    image_fallback_models: list[str] = ["sana"]
 
     # ---- Free stock image search -----------------------------------------
     # A free alternative to AI generation: search & pick a real stock photo.

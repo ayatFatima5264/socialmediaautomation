@@ -1,0 +1,146 @@
+import { useState } from 'react'
+import AdsWorkspace, { Field, RailSection } from '../../../components/ads/workspace/AdsWorkspace.jsx'
+import AdCreativeArt from '../../../components/ads/AdCreativeArt.jsx'
+import GenerateButton from '../../../components/ads/workspace/GenerateButton.jsx'
+import ChipSelect from '../../../components/ChipSelect.jsx'
+
+// ---------------------------------------------------------------------------
+// A/B Testing — the workspace.
+//
+// The hard part of a creative test is not running it, it is knowing when to
+// believe it. So the readout leads with whether the gap is significant yet, and
+// the raw numbers sit under that — the opposite of a dashboard that shows two
+// percentages side by side and lets the bigger one win.
+//
+// This tool depends on live delivery data, which arrives with the platform
+// connections in phase 4 — the latest of the six, and the reason it says so
+// plainly rather than showing a result.
+// ---------------------------------------------------------------------------
+
+const TOOL = 'A/B Testing'
+const PHASE = 4
+
+const METRICS = ['Click-through rate', 'Conversions', 'Cost per result', 'Reach']
+const DURATIONS = ['3 days', '7 days', '14 days', 'Until significant']
+const SPLITS = ['50 / 50', '70 / 30', '80 / 20']
+
+export default function AbTesting() {
+  const [metric, setMetric] = useState('Click-through rate')
+  const [duration, setDuration] = useState('7 days')
+  const [split, setSplit] = useState('50 / 50')
+
+  return (
+    <AdsWorkspace
+      title={TOOL}
+      description="Run creatives against each other with a split that holds, and get a readout that says whether the gap is real yet."
+      controls={
+        <>
+          <Field label="Variant A">
+            <div className="panel grid place-items-center px-3 py-5 text-center">
+              <span className="text-xs text-muted">Pick a creative from your library</span>
+              <button type="button" disabled className="btn btn-secondary btn-sm mt-2">
+                Choose creative
+              </button>
+            </div>
+          </Field>
+
+          <Field label="Variant B">
+            <div className="panel grid place-items-center px-3 py-5 text-center">
+              <span className="text-xs text-muted">Pick a creative from your library</span>
+              <button type="button" disabled className="btn btn-secondary btn-sm mt-2">
+                Choose creative
+              </button>
+            </div>
+          </Field>
+
+          <Field label="Split">
+            <ChipSelect options={SPLITS} value={split} onChange={setSplit} />
+          </Field>
+
+          <Field label="Decide on">
+            <ChipSelect options={METRICS} value={metric} onChange={setMetric} />
+          </Field>
+
+          <Field label="Run for">
+            <ChipSelect options={DURATIONS} value={duration} onChange={setDuration} />
+          </Field>
+        </>
+      }
+      action={<GenerateButton label="Start Test" toolName={TOOL} phase={PHASE} />}
+      stage={
+        <div className="card flex min-h-[320px] flex-col p-4 lg:min-h-full">
+          <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+            <h2 className="text-sm font-semibold text-body">Comparison</h2>
+            <span className="badge badge-accent">Example output</span>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            {['A', 'B'].map((v, i) => (
+              <div key={v} className="overflow-hidden rounded-xl border border-line">
+                <AdCreativeArt
+                  name={i === 0 ? 'productAd' : 'bannerAd'}
+                  className="aspect-[4/3] w-full opacity-45"
+                />
+                <div className="border-t border-line p-3">
+                  <div className="text-xs font-bold text-body">Variant {v}</div>
+                  <div className="mt-1 text-xs text-muted">
+                    {metric} — awaiting delivery data
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="panel mt-4 p-3.5">
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-muted">
+              Readout
+            </h3>
+            <p className="mt-2 text-sm leading-relaxed text-body">
+              A finished test reports the winner, the size of the gap, and whether the
+              result is significant yet — so a 0.2pt lead on 300 impressions is not
+              mistaken for an answer.
+            </p>
+            <p className="mt-2 text-xs leading-relaxed text-muted">
+              This tool needs live delivery numbers from the ad platforms, which arrive with
+              account connections in phase {PHASE}.
+            </p>
+          </div>
+        </div>
+      }
+      output={
+        <>
+          <RailSection title="Test settings">
+            <dl className="space-y-2 text-xs">
+              {[
+                ['Split', split],
+                ['Metric', metric],
+                ['Duration', duration],
+              ].map(([k, v]) => (
+                <div key={k} className="flex items-baseline justify-between gap-2">
+                  <dt className="text-muted">{k}</dt>
+                  <dd className="font-semibold text-body">{v}</dd>
+                </div>
+              ))}
+            </dl>
+          </RailSection>
+
+          <RailSection title="Actions">
+            <div className="space-y-2">
+              {['Promote winner', 'Export report'].map((action) => (
+                <button
+                  key={action}
+                  type="button"
+                  disabled
+                  className="btn btn-secondary btn-sm w-full"
+                  title="Available once a test has finished"
+                >
+                  {action}
+                </button>
+              ))}
+            </div>
+          </RailSection>
+        </>
+      }
+    />
+  )
+}

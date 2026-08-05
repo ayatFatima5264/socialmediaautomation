@@ -8,6 +8,9 @@ const NAV = [
   { to: '/dashboard', label: 'Dashboard', icon: '◧', end: true },
   { to: '/planner', label: 'Content Planner', icon: '🗓️' },
   { to: '/generate', label: 'AI Generator', icon: '✦' },
+  // No `end`: the item stays active on /ads/product-ads and every other page
+  // inside the module, which is what makes it read as a section.
+  { to: '/ads', label: 'AI Ads Studio', icon: '◈' },
   { to: '/create', label: 'Create Post', icon: '✍' },
   { to: '/scheduler', label: 'Scheduler', icon: '◷' },
   { to: '/history', label: 'Post History', icon: '≡' },
@@ -58,17 +61,35 @@ export default function Layout() {
     setDrawerOpen(false)
   }, [location.pathname])
 
+  // The app shell owns the viewport: <main> is the only scroll area, and the
+  // document must not scroll behind it (see .app-viewport-locked in index.css).
+  // Applied here rather than in the stylesheet because it has to end when the
+  // user leaves the app for the marketing site, which is a long scrolling page.
+  useEffect(() => {
+    const root = document.documentElement
+    root.classList.add('app-viewport-locked')
+    return () => root.classList.remove('app-viewport-locked')
+  }, [])
+
   const initials = (user?.full_name || user?.email || '?').slice(0, 1).toUpperCase()
 
   return (
-    <div className="app-bg flex h-screen overflow-hidden">
+    // h-full, not h-screen. `100vh` can resolve taller than the real viewport
+    // (browser UI, zoom, a window resized after load), and when it does the
+    // shell overflows <body> — the document grows a SECOND scrollbar beside
+    // <main>'s, and scrolling it drags the whole shell up so the topbar and the
+    // first nav items disappear. index.css already gives html, body and #root
+    // height:100%, so 100% here is the actual viewport and cannot drift from it.
+    <div className="app-bg flex h-full overflow-hidden">
       {/* Titles every route rendered inside this shell. Without it the app
           inherits the prerendered 404 shell's "Page Not Found" title, because
           private routes are served that shell by design. */}
       <Seo />
 
       {/* ---- Desktop sidebar ---------------------------------------- */}
-      <aside className="sticky top-0 hidden h-screen w-64 shrink-0 flex-col border-r border-line bg-sidebar p-4 md:flex">
+      {/* h-full for the same reason as the shell above — a 100vh sidebar inside
+          a shorter shell is what pushed the nav out of view. */}
+      <aside className="sticky top-0 hidden h-full w-64 shrink-0 flex-col overflow-y-auto border-r border-line bg-sidebar p-4 md:flex">
         <div className="mb-8">
           <Brand />
         </div>
