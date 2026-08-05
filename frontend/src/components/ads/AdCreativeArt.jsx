@@ -18,6 +18,12 @@
 
 const SURFACE = 'var(--surface)'
 
+// The scenes' own backdrop tone. Applied to the box behind a `meet` render so
+// the bands letterboxing leaves read as part of the picture rather than as a
+// gap — which is what lets a caller use `meet` in a square or portrait tile
+// without it looking broken.
+export const ART_BACKDROP = '#F3EDE3'
+
 // One shared ground so every scene sits in the same room.
 function Backdrop({ id, from = '#F3EDE3', to = '#E4E9DF' }) {
   return (
@@ -297,7 +303,13 @@ export default function AdCreativeArt({ name, className = '', fit = 'slice' }) {
   const scene = SCENES[name]
 
   return (
-    <div className={`overflow-hidden ${className}`} aria-hidden="true">
+    <div
+      className={`overflow-hidden ${className}`}
+      // Only under `meet`: `slice` fills the box, so a background would never
+      // be seen and setting one would just override the caller's.
+      style={fit === 'meet' ? { background: ART_BACKDROP } : undefined}
+      aria-hidden="true"
+    >
       <svg
         viewBox="0 0 200 120"
         // `slice` fills the box and crops, which is right for the wide card

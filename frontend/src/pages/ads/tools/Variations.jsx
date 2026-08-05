@@ -156,7 +156,9 @@ export default function Variations() {
               <div className="grid grid-cols-2 gap-3 xl:grid-cols-3">
                 {used.map((label, i) => (
                   <div key={i} className="overflow-hidden rounded-xl border border-line">
-                    <AdCreativeArt name="productAd" className="aspect-square w-full opacity-45" />
+                    {/* Square against a 5:3 scene is the worst case for
+                        `slice` — it would crop a third of the width away. */}
+                    <AdCreativeArt name="productAd" fit="meet" className="aspect-square w-full" />
                     <div className="border-t border-line px-2.5 py-2">
                       <div className="text-[11px] font-semibold text-body">
                         Variant {String.fromCharCode(65 + i)}

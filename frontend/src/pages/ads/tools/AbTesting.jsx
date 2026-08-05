@@ -95,9 +95,13 @@ export default function AbTesting() {
           <div className="grid gap-3 sm:grid-cols-2">
             {['A', 'B'].map((v, i) => (
               <div key={v} className="overflow-hidden rounded-xl border border-line">
+                {/* `meet`, not `slice`: these tiles are 4:3 and the scenes are
+                    5:3, so filling the box would crop the sides — exactly where
+                    the headline and the CTA sit. */}
                 <AdCreativeArt
                   name={i === 0 ? 'productAd' : 'bannerAd'}
-                  className="aspect-[4/3] w-full opacity-45"
+                  fit="meet"
+                  className="aspect-[4/3] w-full"
                 />
                 <div className="border-t border-line p-3">
                   <div className="text-xs font-bold text-body">Variant {v}</div>
