@@ -11,7 +11,6 @@ import ProductShowcaseVideo from './ProductShowcaseVideo.jsx'
 import SlideshowVideo from './SlideshowVideo.jsx'
 import TemplatesPage from './TemplatesPage.jsx'
 import TextToVideo from './TextToVideo.jsx'
-import Variations from './Variations.jsx'
 
 // ---------------------------------------------------------------------------
 // Which tools have a page of their own.
@@ -41,7 +40,6 @@ export const TOOL_PAGES = {
   'ad-copy': AdCopy,
   'headline-generator': HeadlineGenerator,
   'cta-generator': CtaGenerator,
-  variations: Variations,
   'ab-testing': AbTesting,
 
   // Assets

@@ -231,22 +231,6 @@ export const AD_TOOLS = [
     ],
   },
   {
-    slug: 'variations',
-    name: 'Multiple Variations',
-    description: 'Spin one winning creative into a testable set.',
-    category: 'tools',
-    tint: 'fuchsia',
-    phase: 3,
-    preview: { before: 'ad', after: 'variants' },
-    longDescription:
-      'Take a creative that works and generate a set around it — changing one variable at a time so the results are readable rather than a pile of unrelated ads.',
-    capabilities: [
-      'One variable changed per variant',
-      'Copy, colour, layout and imagery axes',
-      'Batch export to every placement',
-    ],
-  },
-  {
     slug: 'ab-testing',
     name: 'A/B Testing',
     description: 'Run creatives against each other and read the result.',
@@ -375,7 +359,6 @@ const TOOL_ART = {
   'ad-copy': 'adCopy',
   'headline-generator': 'adCopy',
   'cta-generator': 'adCopy',
-  variations: 'productAd',
   'ab-testing': 'bannerAd',
   'brand-kit': 'productAd',
   'media-library': 'carouselAd',
