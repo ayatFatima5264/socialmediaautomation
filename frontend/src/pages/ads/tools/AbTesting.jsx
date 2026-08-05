@@ -4,6 +4,7 @@ import AdCreativeArt from '../../../components/ads/AdCreativeArt.jsx'
 import GenerateButton from '../../../components/ads/workspace/GenerateButton.jsx'
 import ChipSelect from '../../../components/ChipSelect.jsx'
 import { useToast } from '../../../context/ToastContext.jsx'
+import { getAdTool } from '../../../lib/ads/tools'
 
 // ---------------------------------------------------------------------------
 // A/B Testing — the workspace.
@@ -27,6 +28,7 @@ const SPLITS = ['50 / 50', '70 / 30', '80 / 20']
 
 export default function AbTesting() {
   const toast = useToast()
+  const blocked = getAdTool('ab-testing')?.blocked
   const [metric, setMetric] = useState('Click-through rate')
   const [duration, setDuration] = useState('7 days')
   const [split, setSplit] = useState('50 / 50')
@@ -73,18 +75,21 @@ export default function AbTesting() {
           label="Start Test"
           toolName={TOOL}
           phase={PHASE}
-          onClick={() =>
-            toast.info(
-              'A/B testing needs live delivery numbers from a connected ad account. Connect one in Social Accounts first.',
-            )
-          }
+          onClick={() => toast.info(`${blocked.needs} is required. ${blocked.why}`)}
         />
       }
       stage={
         <div className="card flex min-h-[320px] flex-col p-4 lg:min-h-full">
           <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
             <h2 className="text-sm font-semibold text-body">Comparison</h2>
-            <span className="badge badge-accent">Example output</span>
+            <span className="badge badge-accent">Example</span>
+          </div>
+
+          {/* Stated before the controls are touched. Everything below is a
+              worked example; nothing here can run until an ad account exists. */}
+          <div className="mb-4 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3.5">
+            <p className="text-xs font-bold text-amber-700">{blocked.needs} required</p>
+            <p className="mt-1 text-xs leading-relaxed text-amber-700">{blocked.why}</p>
           </div>
 
           <div className="grid gap-3 sm:grid-cols-2">
@@ -113,10 +118,7 @@ export default function AbTesting() {
               result is significant yet — so a 0.2pt lead on 300 impressions is not
               mistaken for an answer.
             </p>
-            <p className="mt-2 text-xs leading-relaxed text-muted">
-              This tool needs live delivery numbers from the ad platforms, which arrive with
-              account connections in phase {PHASE}.
-            </p>
+
           </div>
         </div>
       }

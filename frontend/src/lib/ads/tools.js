@@ -253,6 +253,20 @@ export const AD_TOOLS = [
     category: 'tools',
     tint: 'slate',
     phase: 4,
+    // Blocked on a dependency the app does not have, not on a phase.
+    //
+    // A/B testing reads delivery numbers from the ad platform. The Social
+    // Accounts connection cannot supply them: its scopes are organic-publishing
+    // scopes (pages_manage_posts, instagram_content_publish, w_member_social,
+    // pins:write, tweet.write) and none of them grant ads access. That needs a
+    // separate integration — Meta Marketing API with ads_read plus an ad
+    // account id, Google Ads with its own OAuth and developer token — each
+    // behind its own platform review. Telling a user to "connect a social
+    // account" would send them somewhere that cannot help.
+    blocked: {
+      needs: 'A connected ad account',
+      why: 'Results come from the ad platform’s delivery data. Connecting a social account for posting does not grant access to it — that is a separate Meta / Google Ads integration.',
+    },
     preview: { before: 'variants', after: 'abtest' },
     longDescription:
       'Set two or more creatives against each other with a split that holds, and get a readout that says which won and whether the gap is real yet.',

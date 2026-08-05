@@ -32,6 +32,15 @@ export default function AdToolCard({ tool }) {
         {tool.available && (
           <span className="badge badge-accent absolute right-2 top-2 bg-surface">Ready</span>
         )}
+
+        {/* A tool blocked on something the user must obtain says so HERE,
+            where they choose it — not after they have filled in a form and
+            pressed the button. */}
+        {tool.blocked && (
+          <span className="badge absolute right-2 top-2 bg-surface text-amber-600 shadow-sm">
+            Needs setup
+          </span>
+        )}
       </div>
 
       <div className="flex flex-1 flex-col p-4">
