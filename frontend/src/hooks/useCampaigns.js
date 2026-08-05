@@ -44,11 +44,6 @@ export default function useCampaigns() {
     }
   }, [])
 
-  const clearSamples = useCallback(async () => {
-    await campaignStore.clearSamples()
-    await refresh()
-  }, [refresh])
-
   const rows = campaigns || []
 
   return {
@@ -57,9 +52,5 @@ export default function useCampaigns() {
     loading: campaigns === null,
     error,
     refresh,
-    clearSamples,
-    // Drives the "Clear sample data" affordance: offering it once the user has
-    // real campaigns of their own would risk reading as "delete everything".
-    hasOnlySamples: rows.length > 0 && rows.every((c) => c.isSample),
   }
 }

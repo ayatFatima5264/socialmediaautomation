@@ -13,11 +13,15 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app.core.deps import get_current_user_optional
+from app.core.deps import get_current_user, get_current_user_optional
 from app.database import get_db
+from app.models.ad_campaign import AdCampaign
 from app.models.user import User
 from app.schemas.ads import (
     AdCopyRequest,
+    Campaign,
+    CampaignCreate,
+    CampaignUpdate,
     AdCopyResponse,
     CreativeRequest,
     CreativeResponse,
@@ -178,3 +182,86 @@ async def video_plan(
     if not plan.get("scenes"):
         raise HTTPException(status_code=502, detail="The model returned no scenes.")
     return VideoPlanResponse(**plan)
+
+
+# ---------------------------------------------------------------------------
+# Campaigns
+# ---------------------------------------------------------------------------
+# Unlike the generation endpoints above, these REQUIRE a signed-in user: a
+# campaign is that user's data and every query is scoped to their id. Anything
+# else would let one account read another's campaigns by guessing an integer.
+
+
+def _owned(db: Session, user: User, campaign_id: int) -> AdCampaign:
+    row = (
+        db.query(AdCampaign)
+        .filter(AdCampaign.id == campaign_id, AdCampaign.user_id == user.id)
+        .first()
+    )
+    if row is None:
+        # 404 rather than 403 for a campaign owned by someone else: telling a
+        # stranger that an id exists is itself a leak.
+        raise HTTPException(status_code=404, detail="Campaign not found.")
+    return row
+
+
+@router.get("/campaigns", response_model=list[Campaign])
+def list_campaigns(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> list[AdCampaign]:
+    """The user's campaigns, most recently touched first."""
+    return (
+        db.query(AdCampaign)
+        .filter(AdCampaign.user_id == user.id)
+        .order_by(AdCampaign.updated_at.desc())
+        .all()
+    )
+
+
+@router.post("/campaigns", response_model=Campaign, status_code=201)
+def create_campaign(
+    body: CampaignCreate,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> AdCampaign:
+    row = AdCampaign(user_id=user.id, **body.model_dump())
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+@router.get("/campaigns/{campaign_id}", response_model=Campaign)
+def get_campaign(
+    campaign_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> AdCampaign:
+    return _owned(db, user, campaign_id)
+
+
+@router.patch("/campaigns/{campaign_id}", response_model=Campaign)
+def update_campaign(
+    campaign_id: int,
+    body: CampaignUpdate,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> AdCampaign:
+    row = _owned(db, user, campaign_id)
+    # exclude_unset so a PATCH that names only `status` cannot blank the brief.
+    for field, value in body.model_dump(exclude_unset=True).items():
+        setattr(row, field, value)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+@router.delete("/campaigns/{campaign_id}", status_code=204)
+def delete_campaign(
+    campaign_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> None:
+    db.delete(_owned(db, user, campaign_id))
+    db.commit()

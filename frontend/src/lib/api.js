@@ -199,6 +199,15 @@ export const api = {
   adCreative: (body) => request('/api/ads/creative', { method: 'POST', body }),
   adVideoPlan: (body) => request('/api/ads/video-plan', { method: 'POST', body }),
 
+  // Campaigns are the user's own data — these require a token, unlike the
+  // generation endpoints above, which treat the user as optional.
+  listCampaigns: () => request('/api/ads/campaigns'),
+  getCampaign: (id) => request(`/api/ads/campaigns/${id}`),
+  createCampaign: (body) => request('/api/ads/campaigns', { method: 'POST', body }),
+  updateCampaign: (id, body) =>
+    request(`/api/ads/campaigns/${id}`, { method: 'PATCH', body }),
+  deleteCampaign: (id) => request(`/api/ads/campaigns/${id}`, { method: 'DELETE' }),
+
   // business profile + onboarding
   getBusinessProfile: () => request('/api/business-profile'),
   updateBusinessProfile: (body) =>

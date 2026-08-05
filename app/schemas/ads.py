@@ -1,6 +1,8 @@
 """AI Ads Studio request/response schemas."""
 from __future__ import annotations
 
+from datetime import datetime
+
 from pydantic import BaseModel, Field
 
 
@@ -126,3 +128,45 @@ class VideoPlanResponse(BaseModel):
     # plan as a rendered video.
     renderable: bool
     note: str
+
+
+# ---- Campaigns ------------------------------------------------------------
+# Field names are snake_case on the wire, matching the rest of the API. The
+# client maps them once in lib/ads/store.js rather than every component
+# knowing both spellings.
+
+
+class CampaignBase(BaseModel):
+    name: str = Field(..., min_length=1, max_length=200)
+    objective: str = Field("Brand Awareness", max_length=60)
+    platforms: list[str] = Field(default_factory=list)
+    status: str = Field("draft", max_length=20)
+    brief: str | None = None
+
+
+class CampaignCreate(CampaignBase):
+    pass
+
+
+class CampaignUpdate(BaseModel):
+    """Every field optional — a PATCH sets only what it names."""
+
+    name: str | None = Field(None, min_length=1, max_length=200)
+    objective: str | None = Field(None, max_length=60)
+    platforms: list[str] | None = None
+    status: str | None = Field(None, max_length=20)
+    brief: str | None = None
+    creatives: int | None = Field(None, ge=0)
+
+
+class Campaign(CampaignBase):
+    id: int
+    creatives: int = 0
+    # None until the campaign has actually run — see the model's note on why
+    # this is not 0.0.
+    ctr: float | None = None
+    impressions: int = 0
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}

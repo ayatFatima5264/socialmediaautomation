@@ -1,208 +1,94 @@
+import { api } from '../api'
+
 // ---------------------------------------------------------------------------
 // AI Ads Studio — the campaign storage layer.
 //
-// Phase 1 ships the Studio's foundation, and campaigns have no backend table
-// yet. Rather than scatter mock arrays through the UI, everything goes through
-// one async, promise-based interface shaped exactly like a REST client:
+// Campaigns are the user's data, so they live in the database behind
+// /api/ads/campaigns, scoped to the signed-in account. This module is the one
+// place that knows that: every screen awaits `campaignStore` and none of them
+// builds a URL or knows a field is spelled differently on the wire.
 //
-//   list() · get(id) · create(patch) · update(id, patch) · remove(id)
+// The provider seam (`setCampaignProvider`) is kept. It was what let the UI be
+// built against localStorage before the table existed, and it is what would let
+// a future offline mode or a test double slot in without touching a component.
 //
-// The UI awaits those calls and renders loading / empty / error states around
-// them. When the backend lands, `setCampaignProvider()` swaps this local
-// implementation for one that talks to `lib/api.js` and not a single component
-// changes — the same seam `setMediaProvider` gives the Media Library, and for
-// the same reason: the storage decision should not be baked into the views.
-//
-// Until then records live in localStorage, so a campaign a user starts survives
-// a refresh instead of vanishing mid-phase.
-//
-// ---- Sample data ----------------------------------------------------------
-// The store seeds a few example campaigns on first use so the dashboard has
-// something real to lay out. They are marked `isSample: true`, seeded exactly
-// once (deleting them is remembered), and `clearSamples()` removes them — which
-// is what makes the empty state a state the user can actually reach rather than
-// dead code nobody ever sees.
+// ---- Field naming ---------------------------------------------------------
+// The API speaks snake_case like the rest of the app; the UI reads camelCase.
+// The mapping happens HERE, once, in `fromApi`/`toApi` — not in each component,
+// which is how half a codebase ends up checking both spellings.
 // ---------------------------------------------------------------------------
 
-const STORAGE_KEY = 'as_ads_campaigns'
-const SEEDED_KEY = 'as_ads_campaigns_seeded'
-
-// ---------------------------------------------------------------------------
-// Sample campaigns
-// ---------------------------------------------------------------------------
-
-// Timestamps are built relative to first run, so "Last updated" reads as
-// "2 days ago" whenever the user first opens the Studio — not as a fixed date
-// that drifts further into the past the longer the feature ships.
-const daysAgo = (n) => new Date(Date.now() - n * 86_400_000).toISOString()
-
-function sampleCampaigns() {
-  return [
-    {
-      id: 'sample-spring-launch',
-      name: 'Spring Product Launch',
-      objective: 'Sales',
-      platforms: ['instagram', 'facebook'],
-      status: 'active',
-      creatives: 12,
-      updatedAt: daysAgo(1),
-      createdAt: daysAgo(14),
-      isSample: true,
-    },
-    {
-      id: 'sample-b2b-demo',
-      name: 'B2B Demo Requests — Q3',
-      objective: 'Lead Generation',
-      platforms: ['linkedin'],
-      status: 'scheduled',
-      creatives: 6,
-      updatedAt: daysAgo(2),
-      createdAt: daysAgo(9),
-      isSample: true,
-    },
-    {
-      id: 'sample-retargeting',
-      name: 'Website Retargeting',
-      objective: 'Traffic',
-      platforms: ['facebook', 'instagram', 'twitter'],
-      status: 'active',
-      creatives: 9,
-      updatedAt: daysAgo(3),
-      createdAt: daysAgo(21),
-      isSample: true,
-    },
-    {
-      id: 'sample-holiday-teaser',
-      name: 'Holiday Teaser Concepts',
-      objective: 'Brand Awareness',
-      platforms: ['instagram', 'pinterest'],
-      status: 'draft',
-      creatives: 4,
-      updatedAt: daysAgo(5),
-      createdAt: daysAgo(5),
-      isSample: true,
-    },
-    {
-      id: 'sample-webinar',
-      name: 'Webinar Signups',
-      objective: 'Lead Generation',
-      platforms: ['linkedin', 'twitter'],
-      status: 'completed',
-      creatives: 8,
-      updatedAt: daysAgo(12),
-      createdAt: daysAgo(40),
-      isSample: true,
-    },
-  ]
-}
-
-// ---------------------------------------------------------------------------
-// Local provider — localStorage
-// ---------------------------------------------------------------------------
-
-function read() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    const rows = raw ? JSON.parse(raw) : null
-    return Array.isArray(rows) ? rows : null
-  } catch {
-    // Corrupt or unavailable storage behaves like an empty library rather than
-    // taking the page down with it.
-    return null
+/** API row → the shape the UI reads. */
+function fromApi(row) {
+  if (!row) return null
+  return {
+    id: row.id,
+    name: row.name,
+    objective: row.objective,
+    platforms: row.platforms || [],
+    status: row.status,
+    brief: row.brief || '',
+    creatives: row.creatives ?? 0,
+    // Deliberately preserved as null rather than coerced to 0 — a campaign
+    // that has not run has no CTR, and "0%" would claim it ran and failed.
+    ctr: row.ctr ?? null,
+    impressions: row.impressions ?? 0,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
   }
 }
 
-function write(rows) {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(rows))
-  } catch {
-    /* storage unavailable — campaigns just won't persist this session */
-  }
+/** UI patch → the API's field names. Undefined keys are dropped, so a PATCH */
+/*  only ever sends what the caller actually changed. */
+function toApi(patch = {}) {
+  const out = {}
+  if (patch.name !== undefined) out.name = patch.name
+  if (patch.objective !== undefined) out.objective = patch.objective
+  if (patch.platforms !== undefined) out.platforms = patch.platforms
+  if (patch.status !== undefined) out.status = patch.status
+  if (patch.brief !== undefined) out.brief = patch.brief
+  if (patch.creatives !== undefined) out.creatives = patch.creatives
+  return out
 }
 
-/** Seeds the samples once. A user who deletes them does not get them back. */
-function load() {
-  const rows = read()
-  if (rows) return rows
-
-  let seeded = false
-  try {
-    seeded = localStorage.getItem(SEEDED_KEY) === '1'
-  } catch {
-    /* treat unreadable storage as "not yet seeded" */
-  }
-  if (seeded) return []
-
-  const samples = sampleCampaigns()
-  write(samples)
-  try {
-    localStorage.setItem(SEEDED_KEY, '1')
-  } catch {
-    /* without the flag the samples reappear after a wipe — harmless */
-  }
-  return samples
-}
-
-const uid = () =>
-  `cmp_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`
-
-class LocalCampaignProvider {
+class ApiCampaignProvider {
   async list() {
-    // Newest activity first — the same ordering the real endpoint should use,
-    // so swapping providers does not reshuffle the table.
-    return load()
-      .slice()
-      .sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')))
+    const rows = await api.listCampaigns()
+    return (rows || []).map(fromApi)
   }
 
   async get(id) {
-    return load().find((c) => c.id === id) || null
+    return fromApi(await api.getCampaign(id))
   }
 
   async create(patch = {}) {
-    const now = new Date().toISOString()
-    const campaign = {
-      id: uid(),
-      name: 'Untitled campaign',
-      objective: 'Brand Awareness',
-      platforms: [],
-      status: 'draft',
-      creatives: 0,
-      ...patch,
-      createdAt: now,
-      updatedAt: now,
-      isSample: false,
-    }
-    write([campaign, ...load()])
-    return campaign
+    return fromApi(
+      await api.createCampaign({
+        name: 'Untitled campaign',
+        objective: 'Brand Awareness',
+        platforms: [],
+        status: 'draft',
+        ...toApi(patch),
+      }),
+    )
   }
 
   async update(id, patch = {}) {
-    const rows = load()
-    const i = rows.findIndex((c) => c.id === id)
-    if (i === -1) return null
-    // `id` and `createdAt` are identity — an edit must not be able to rewrite
-    // which record it is or when it started.
-    const { id: _id, createdAt: _createdAt, ...safe } = patch
-    const next = { ...rows[i], ...safe, updatedAt: new Date().toISOString() }
-    rows[i] = next
-    write(rows)
-    return next
+    return fromApi(await api.updateCampaign(id, toApi(patch)))
   }
 
   async remove(id) {
-    write(load().filter((c) => c.id !== id))
+    await api.deleteCampaign(id)
   }
 }
 
-let provider = new LocalCampaignProvider()
+let provider = new ApiCampaignProvider()
 
 /**
  * Replace the implementation backing campaigns.
  *
- * The migration path to the backend: write a provider whose five methods call
- * `api.*`, register it at startup, and every screen keeps working — they only
- * ever awaited `campaignStore`.
+ * Every screen only ever awaited `campaignStore`, so a different provider —
+ * an offline cache, a test double — needs no change above this file.
  */
 export function setCampaignProvider(next) {
   if (!next || typeof next.list !== 'function') {
@@ -211,29 +97,19 @@ export function setCampaignProvider(next) {
   provider = next
 }
 
-// ---------------------------------------------------------------------------
-// The facade every consumer uses
-// ---------------------------------------------------------------------------
-
 export const campaignStore = {
   list: (...args) => provider.list(...args),
   get: (...args) => provider.get(...args),
   create: (...args) => provider.create(...args),
   update: (...args) => provider.update(...args),
   remove: (...args) => provider.remove(...args),
-
-  /** Drop the seeded examples, leaving anything the user made. */
-  async clearSamples() {
-    const rows = await provider.list()
-    await Promise.all(rows.filter((c) => c.isSample).map((c) => provider.remove(c.id)))
-  },
 }
 
 /**
  * The overview counts, derived from a campaign list.
  *
- * A pure function of rows the caller already holds, rather than a second trip
- * to storage: the widgets and the table must never disagree about how many
+ * A pure function of rows the caller already holds, rather than a second
+ * request: the widgets and the table must never disagree about how many
  * campaigns are active, and they cannot if both read the same array.
  */
 export function campaignStats(campaigns = []) {

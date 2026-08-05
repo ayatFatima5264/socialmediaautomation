@@ -25,10 +25,9 @@ import { AD_CATEGORIES, CAMPAIGN_NEW_PATH, toolsInCategory } from '../../lib/ads
 // listed flat: fifteen equal cards is a wall, four short sections is a choice.
 //
 // ---- What is real today ---------------------------------------------------
-// Brand Kit links to the business profile, which ships. Every other card routes
-// to its placeholder, and campaign data comes from a local store behind the
-// same async interface the backend will implement (lib/ads/store.js) — so the
-// layout, loading, empty and populated states are all genuine.
+// Thirteen of the fourteen tools do real work. Campaigns are real rows from
+// /api/ads/campaigns, scoped to the signed-in user, so an empty table here
+// means the account genuinely has no campaigns rather than a seed not running.
 //
 // ---- Scrolling ------------------------------------------------------------
 // This page does NOT create a scroll container of its own. The app shell's
@@ -45,7 +44,7 @@ import { AD_CATEGORIES, CAMPAIGN_NEW_PATH, toolsInCategory } from '../../lib/ads
 const RECENT_LIMIT = 5
 
 export default function AdsStudio() {
-  const { campaigns, stats, loading, error, clearSamples, hasOnlySamples } = useCampaigns()
+  const { campaigns, stats, loading, error } = useCampaigns()
 
   const recent = campaigns.slice(0, RECENT_LIMIT)
   const hasCampaigns = campaigns.length > 0
@@ -73,13 +72,6 @@ export default function AdsStudio() {
             Your Campaigns
           </h2>
 
-          {/* Offered only while every campaign is a seeded example, so it can
-              never read as "delete my real work". */}
-          {hasOnlySamples && (
-            <button onClick={clearSamples} className="text-xs text-muted hover:text-accent">
-              Clear sample data
-            </button>
-          )}
         </div>
 
         <div className="card p-3">

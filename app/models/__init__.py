@@ -1,4 +1,5 @@
 """Import all models so they register on Base.metadata."""
+from app.models.ad_campaign import AdCampaign
 from app.models.business_profile import BusinessProfile
 from app.models.content_plan import ContentPlan, PlannerSettings
 from app.models.pending_connection import PendingConnection
@@ -8,6 +9,7 @@ from app.models.user import User
 
 __all__ = [
     "User",
+    "AdCampaign",
     "Post",
     "SocialAccount",
     "PendingConnection",
