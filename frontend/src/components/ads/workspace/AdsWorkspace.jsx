@@ -1,4 +1,6 @@
 import AdsPageHeader from '../AdsPageHeader.jsx'
+import CampaignContextBar from '../CampaignContextBar.jsx'
+import { campaignPath } from '../../../lib/ads/tools'
 
 // ---------------------------------------------------------------------------
 // The three-panel shell every ad tool works in.
@@ -19,12 +21,33 @@ import AdsPageHeader from '../AdsPageHeader.jsx'
 // Below `lg` the three panels stack and the page scrolls once, which is what
 // the pattern does everywhere else in the app — two nested scroll areas on a
 // phone are worse than one page scroll.
+//
+// ---- The campaign ---------------------------------------------------------
+// A tool opened from a campaign shows that campaign above the three panels and
+// sends Back to it rather than to the Studio home. Both come from the one
+// `campaign` prop, so a workspace cannot end up displaying a campaign it is not
+// actually returning the user to.
 // ---------------------------------------------------------------------------
 
-export default function AdsWorkspace({ title, description, controls, action, stage, output }) {
+export default function AdsWorkspace({
+  title,
+  description,
+  campaign,
+  controls,
+  action,
+  stage,
+  output,
+}) {
   return (
     <div className="split-shell -mt-1 gap-3 md:-mt-3 lg:h-[calc(100%+0.75rem)] lg:gap-4">
-      <AdsPageHeader title={title} description={description} backLabel="AI Ads Studio" />
+      <AdsPageHeader
+        title={title}
+        description={description}
+        backLabel={campaign ? campaign.name : 'AI Ads Studio'}
+        backTo={campaign ? campaignPath(campaign.id) : undefined}
+      />
+
+      {campaign && <CampaignContextBar campaign={campaign} />}
 
       <div className="split-grid gap-4 lg:grid-cols-[320px_minmax(0,1fr)_290px]">
         {/* ---- Controls ------------------------------------------------ *

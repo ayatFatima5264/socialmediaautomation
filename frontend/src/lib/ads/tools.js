@@ -83,6 +83,22 @@ export const AD_TOOLS = [
     ],
   },
   {
+    slug: 'website-promotion',
+    name: 'Website Promotion',
+    description: 'Hero banners, blog covers and link previews for a site or article.',
+    category: 'create',
+    tint: 'sky',
+    phase: 2,
+    preview: { before: 'blank', after: 'banners' },
+    longDescription:
+      'The creative a website campaign actually needs: a hero banner for the page, a cover for the article, the Open Graph image that decides whether a shared link gets clicked. Nothing here asks you for a product, because a website campaign does not have one.',
+    capabilities: [
+      'Hero, blog cover, feature graphic and social preview from one brief',
+      'Open Graph and link-preview sizes generated with the set',
+      'Screenshot, browser, laptop and illustration treatments',
+    ],
+  },
+  {
     slug: 'banner-generator',
     name: 'Banner Generator',
     description: 'One layout, re-flowed into every standard display size.',
@@ -316,14 +332,31 @@ export function adToolPath(slug) {
 }
 
 /**
+ * A tool opened INSIDE a campaign.
+ *
+ * The campaign id rides in the query string rather than the path, so a tool has
+ * exactly one route whether or not it was opened from a campaign — and so the
+ * link survives a refresh or a paste into a colleague's browser, which a
+ * React-level context would not. `useCampaignContext` reads it back.
+ */
+export function campaignToolPath(slug, campaignId) {
+  const base = adToolPath(slug)
+  return campaignId == null ? base : `${base}?campaign=${campaignId}`
+}
+
+/**
  * Where a card links.
  *
  * A tool that already exists elsewhere in the app points at the real page; a
  * tool the Studio owns points at its own route. Cards never build this string
  * themselves, so moving a feature is one edit in the registry.
+ *
+ * Passing a campaign id carries the campaign with the link, which is how a tool
+ * opened from a campaign already knows everything about it.
  */
-export function toolHref(tool) {
-  return tool.to || adToolPath(tool.slug)
+export function toolHref(tool, campaignId) {
+  if (tool.to) return tool.to
+  return campaignToolPath(tool.slug, campaignId)
 }
 
 /** A tool by slug, or null — an unknown slug must render a not-found, not crash. */
@@ -331,16 +364,51 @@ export function getAdTool(slug) {
   return AD_TOOLS.find((t) => t.slug === slug) || null
 }
 
+// ---------------------------------------------------------------------------
+// Which tools can re-open one of their own assets
+// ---------------------------------------------------------------------------
+// An asset records the tool that made it by NAME ("Banner Generator"), because
+// that is what a user reads on the card. Editing needs the slug to build a
+// route, and needs to know the workspace actually supports edit mode — a tool
+// that cannot prefill itself from an asset would open blank and then overwrite
+// the asset with something unrelated.
+//
+// Listed by name rather than derived from the registry so adding a workspace
+// does not silently make its old assets editable before it can handle it.
+const EDITABLE_BY_TOOL_NAME = {
+  'Banner Generator': 'banner-generator',
+  'Website Promotion': 'website-promotion',
+  'Product Ads': 'product-ads',
+  'Carousel Ads': 'carousel-ads',
+  'Text to Video': 'text-to-video',
+  'Image to Video': 'image-to-video',
+  'Slideshow Video': 'slideshow-video',
+}
+
+/** The tool that can re-open this asset, or null if none can. */
+export function editorForAsset(asset) {
+  return EDITABLE_BY_TOOL_NAME[asset?.tool] || null
+}
+
+/** Route that opens a tool to edit one existing asset. */
+export function assetEditPath(slug, campaignId, assetId) {
+  return `${adToolPath(slug)}?campaign=${campaignId}&asset=${assetId}`
+}
+
 // ---- Hero quick actions ---------------------------------------------------
-// The shortcuts under the hero's primary buttons. Each is a real starting point
-// that lands inside a tool, so the hero offers a way in rather than one button
-// and a wall of cards.
+// Four ways to START, and every one of them starts a campaign.
+//
+// These used to link straight into a generator. That is the shortcut that broke
+// the model: a banner made outside a campaign had no brand, no brief and
+// nowhere to be saved, so the user typed the same six answers into the next
+// tool as well. The campaign is now the entry point, and the type is chosen
+// here so the new-campaign form opens already knowing what it is for.
 
 export const HERO_QUICK_ACTIONS = [
-  { label: 'Upload Product', hint: 'Add your product image', slug: 'product-ads', icon: '⬆', tint: 'emerald' },
-  { label: 'Generate Copy', hint: 'AI headlines & text', slug: 'ad-copy', icon: '✍', tint: 'amber' },
-  { label: 'Generate Banner', hint: 'Multiple sizes', slug: 'banner-generator', icon: '▭', tint: 'rose' },
-  { label: 'Make a Video', hint: 'From image or text', slug: 'image-to-video', icon: '▶', tint: 'violet' },
+  { label: 'Promote a Product', hint: 'Product photos & offers', type: 'Product Promotion', icon: '◲', tint: 'emerald' },
+  { label: 'Promote a Website', hint: 'Blog, article or landing page', type: 'Website / Blog Promotion', icon: '▤', tint: 'amber' },
+  { label: 'Promote a Service', hint: 'What you do, not what you ship', type: 'Service Promotion', icon: '✦', tint: 'rose' },
+  { label: 'Build Awareness', hint: 'Brand-led, not offer-led', type: 'Brand Awareness', icon: '◎', tint: 'violet' },
 ]
 
 // ---- Card artwork ---------------------------------------------------------
@@ -350,6 +418,7 @@ export const HERO_QUICK_ACTIONS = [
 // one scene without that looking like a copy-paste mistake.
 const TOOL_ART = {
   'product-ads': 'productAd',
+  'website-promotion': 'bannerAd',
   'banner-generator': 'bannerAd',
   'carousel-ads': 'carouselAd',
   'image-to-video': 'imageVideo',
@@ -384,6 +453,7 @@ export const HERO_CAPABILITIES = [
 // somewhere for "New campaign" and each row's Edit button to go. Naming the
 // paths here means the placeholder now and the real editor later share one
 // definition instead of hardcoded strings scattered through the UI.
+export const CAMPAIGN_LIST_PATH = `${ADS_BASE_PATH}/campaigns`
 export const CAMPAIGN_NEW_PATH = `${ADS_BASE_PATH}/campaigns/new`
 
 export function campaignPath(id) {
@@ -412,6 +482,7 @@ export function adsRouteTitle(path) {
   if (!isAdsPath(path)) return null
   if (path === ADS_BASE_PATH) return 'AI Ads Studio'
   if (path === CAMPAIGN_NEW_PATH) return 'New Campaign'
+  if (path === CAMPAIGN_LIST_PATH) return 'Campaigns'
   if (path.startsWith(`${ADS_BASE_PATH}/campaigns/`)) return 'Campaign'
 
   const tool = getAdTool(path.slice(ADS_BASE_PATH.length + 1))

@@ -11,6 +11,7 @@ import ProductShowcaseVideo from './ProductShowcaseVideo.jsx'
 import SlideshowVideo from './SlideshowVideo.jsx'
 import TemplatesPage from './TemplatesPage.jsx'
 import TextToVideo from './TextToVideo.jsx'
+import WebsitePromotion from './WebsitePromotion.jsx'
 
 // ---------------------------------------------------------------------------
 // Which tools have a page of their own.
@@ -27,6 +28,7 @@ import TextToVideo from './TextToVideo.jsx'
 export const TOOL_PAGES = {
   // Create Ads
   'product-ads': ProductAds,
+  'website-promotion': WebsitePromotion,
   'banner-generator': BannerGenerator,
   'carousel-ads': CarouselAds,
 

@@ -5,9 +5,12 @@ import PreviewStage from '../../../components/ads/workspace/PreviewStage.jsx'
 import UploadField from '../../../components/ads/workspace/UploadField.jsx'
 import ChipSelect from '../../../components/ChipSelect.jsx'
 import useAdGeneration from '../../../hooks/useAdGeneration'
+import useCampaignContext from '../../../hooks/useCampaignContext'
 import { useToast } from '../../../context/ToastContext.jsx'
 import { api } from '../../../lib/api'
 import { VIDEO_DURATIONS } from '../../../lib/ads/constants'
+import { campaignSubject } from '../../../lib/ads/campaignTypes'
+import { planToText } from '../../../lib/ads/videoPlan'
 
 // ---------------------------------------------------------------------------
 // Product Showcase Video — the workspace.
@@ -25,6 +28,8 @@ const CAMERA_MOVES = ['Turntable', 'Slow dolly in', 'Orbit', 'Rise', 'Push and h
 const LIGHTING = ['Soft studio', 'Hard key', 'Natural window', 'Dark luxury', 'Backlit glow']
 
 export default function ProductShowcaseVideo() {
+  const { campaign, saveAssets } = useCampaignContext()
+
   const [duration, setDuration] = useState(15)
   const [move, setMove] = useState('Turntable')
   const [lighting, setLighting] = useState('Soft studio')
@@ -36,8 +41,12 @@ export default function ProductShowcaseVideo() {
   // so that is what this generates — and it says so rather than implying a file.
   const { data: plan, loading, run } = useAdGeneration(api.adVideoPlan)
 
-  function generatePlan() {
+  async function generatePlan() {
     const concept = [
+      // The campaign's brief says WHAT is being filmed; without one the plan
+      // has only the camera direction to work from, which is still a plan but a
+      // generic one.
+      campaign ? campaignSubject(campaign) : '',
       'Product showcase film.',
       `Camera: ${move}. Lighting: ${lighting}.`,
       callouts.filter(Boolean).length
@@ -46,7 +55,26 @@ export default function ProductShowcaseVideo() {
     ]
       .filter(Boolean)
       .join(' ')
-    run({ concept, duration, platform: 'instagram', style: lighting, motion: move })
+
+    const result = await run({
+      concept,
+      duration,
+      platform: campaign?.platforms?.[0] || 'instagram',
+      style: lighting,
+      motion: move,
+    })
+
+    // A plan, not a file — saved with no url, which is what it is. See the
+    // note in TextToVideo on why a placeholder link would be worse.
+    if (result?.scenes?.length) {
+      await saveAssets({
+        kind: 'video',
+        title: `${move} showcase — ${duration}s shot plan`,
+        body: planToText(result),
+        tool: TOOL,
+        meta: { move, lighting, duration, callouts: callouts.filter(Boolean), renderable: false },
+      })
+    }
   }
 
   function updateCallout(i, value) {
@@ -56,6 +84,7 @@ export default function ProductShowcaseVideo() {
   return (
     <AdsWorkspace
       title={TOOL}
+      campaign={campaign}
       description="Turn product photos into a showcase film — camera moves, studio lighting and feature callouts timed to the reveal."
       controls={
         <>

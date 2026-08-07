@@ -1,9 +1,11 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import AdsWorkspace, { Field, RailSection } from '../../../components/ads/workspace/AdsWorkspace.jsx'
+import AssetEditBar from '../../../components/ads/AssetEditBar.jsx'
 import GenerateButton from '../../../components/ads/workspace/GenerateButton.jsx'
 import PreviewStage from '../../../components/ads/workspace/PreviewStage.jsx'
 import UploadField from '../../../components/ads/workspace/UploadField.jsx'
 import ChipSelect from '../../../components/ChipSelect.jsx'
+import useCampaignContext from '../../../hooks/useCampaignContext'
 import useVideoRender from '../../../hooks/useVideoRender'
 import { useToast } from '../../../context/ToastContext.jsx'
 import { ASPECT_RATIOS } from '../../../lib/constants'
@@ -26,42 +28,128 @@ const TRANSITIONS = ['Cut', 'Crossfade']
 const PER_SLIDE = [1.5, 2, 2.5, 3, 4]
 
 export default function SlideshowVideo() {
+  const { campaign, editingAsset, saveAssets } = useCampaignContext()
+
   const [files, setFiles] = useState([])
   const [perSlide, setPerSlide] = useState(2.5)
   const [transition, setTransition] = useState('Crossfade')
   const [captions, setCaptions] = useState({})
   const [ratio, setRatio] = useState('9:16')
+  const [saveAsNew, setSaveAsNew] = useState(false)
+  // Source URLs a restored recipe came with — see the long note in
+  // ImageToVideo on when a browser render can be reproduced and when it cannot.
+  const [replaySources, setReplaySources] = useState([])
+
+  const prefilled = useRef(false)
+  useEffect(() => {
+    if (!editingAsset || prefilled.current) return
+    prefilled.current = true
+    const m = editingAsset.meta || {}
+    if (m.perSlide) setPerSlide(m.perSlide)
+    if (m.transition) setTransition(m.transition)
+    if (m.ratio) setRatio(m.ratio)
+    if (m.captions) setCaptions(m.captions)
+    if (m.sourceUrls?.length) setReplaySources(m.sourceUrls)
+  }, [editingAsset])
 
   const toast = useToast()
   const { render, save, rendering, progress, result, supported } = useVideoRender()
 
-  const slideCount = files.length
+  // A picked file's durable URL when it has one, the file itself otherwise —
+  // renderVideo takes either. With nothing picked, a restored recipe's URLs
+  // stand in, which is what makes re-rendering possible at all.
+  const sources = files.length
+    ? files.map((f) => f.sourceUrl || f)
+    : replaySources
+
+  // Only URLs can be written back into the recipe. A set that is partly
+  // uploads is not reproducible, so none of it is claimed to be.
+  const durableUrls = files.length
+    ? files.every((f) => f.sourceUrl)
+      ? files.map((f) => f.sourceUrl)
+      : null
+    : replaySources.length
+      ? replaySources
+      : null
+
+  const slideCount = sources.length
   const total = slideCount ? (slideCount * perSlide).toFixed(1) : null
 
-  function generate() {
+  async function generate() {
     if (!slideCount) {
       toast.error('Add at least one image first.')
       return
     }
-    render({
-      slides: files.map((f, i) => ({
-        source: f,
+    const rendered = await render({
+      slides: sources.map((source, i) => ({
+        source,
         seconds: perSlide,
         caption: (captions[i] || '').trim(),
       })),
       aspect: ratio,
       transition,
     })
+
+    // MediaRecorder's blob URL dies with this page and the app has no file
+    // store, so the campaign keeps the recipe and says so — see the note in
+    // ImageToVideo.
+    if (rendered) {
+      await saveAssets(
+        {
+          kind: 'video',
+          title: editingAsset && !saveAsNew
+            ? editingAsset.title
+            : `Slideshow — ${slideCount} images, ${total}s`,
+          body: `${total}s ${ratio} slideshow · ${slideCount} images · ${perSlide}s each · ${transition}. ${
+            durableUrls
+              ? 'Rendered in the browser — reopen this asset to render it again.'
+              : 'Rendered in the browser from uploaded files — download it here to keep it.'
+          }`,
+          tool: TOOL,
+          meta: {
+            slides: slideCount,
+            perSlide,
+            transition,
+            ratio,
+            captions,
+            seconds: Number(total),
+            local: true,
+            ...(durableUrls ? { sourceUrls: durableUrls } : {}),
+          },
+        },
+        { saveAsNew },
+      )
+    }
   }
 
   return (
     <AdsWorkspace
       title={TOOL}
+      campaign={campaign}
       description="Turn several images into one paced, captioned video — ordering, transitions and timing handled for you."
       controls={
         <>
+          <AssetEditBar
+            asset={editingAsset}
+            campaign={campaign}
+            saveAsNew={saveAsNew}
+            onSaveAsNewChange={setSaveAsNew}
+          />
+
           <Field label="Images" hint={slideCount ? `${slideCount} selected` : 'None yet'}>
             <UploadField multiple hint="Add the shots in any order" onChange={setFiles} />
+            {replaySources.length > 0 && !files.length && (
+              <p className="mt-1.5 rounded-lg border border-accent-line bg-accent-soft p-2 text-[11px] leading-relaxed text-muted">
+                This recipe kept its {replaySources.length} source images, so it can be
+                rendered again as it is. Adding images here replaces the set.
+              </p>
+            )}
+            {editingAsset && !replaySources.length && !files.length && (
+              <p className="mt-1.5 rounded-lg border border-amber-500/40 bg-amber-500/10 p-2 text-[11px] leading-relaxed text-amber-700">
+                The settings came back, but this render used uploaded files — those bytes
+                only existed in the page that made it. Add the images again to re-render.
+              </p>
+            )}
           </Field>
 
           <Field label="Seconds per image" hint={total ? `${total}s total` : `${perSlide}s`}>
@@ -100,8 +188,11 @@ export default function SlideshowVideo() {
 
           {slideCount > 0 && (
             <Field label="Captions" hint="Optional, per slide">
+              {/* Driven by `sources`, not `files` — a restored recipe has
+                  slides but no File objects, and captioning has to work for it
+                  too. */}
               <div className="space-y-2">
-                {files.map((f, i) => (
+                {sources.map((_, i) => (
                   <input
                     key={i}
                     className="input"
@@ -176,9 +267,13 @@ export default function SlideshowVideo() {
           <RailSection title="Timeline">
             {slideCount ? (
               <div className="space-y-1.5 text-xs">
-                {files.map((file, i) => (
+                {sources.map((source, i) => (
                   <div key={i} className="flex items-baseline justify-between gap-2">
-                    <span className="min-w-0 truncate text-muted">{file.name}</span>
+                    {/* A File knows its name; a restored recipe is a bare URL,
+                        so the slide number is the only honest label. */}
+                    <span className="min-w-0 truncate text-muted">
+                      {source?.name || `Slide ${i + 1}`}
+                    </span>
                     <span className="shrink-0 font-semibold text-body">
                       {(i * perSlide).toFixed(1)}s
                     </span>

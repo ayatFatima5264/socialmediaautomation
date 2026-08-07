@@ -39,9 +39,41 @@ export const CAMPAIGN_STATUS = {
     badge: 'bg-violet-500/15 text-violet-600',
     dot: 'bg-violet-400',
   },
+  // Put away rather than deleted. An archived campaign keeps every asset it
+  // made and can be restored, but it is excluded from the default list and from
+  // the Studio's counts — otherwise archiving would be a label that changes
+  // nothing and last year's work would sit at the top of the page forever.
+  archived: {
+    label: 'Archived',
+    badge: 'bg-zinc-500/15 text-zinc-500',
+    dot: 'bg-zinc-400',
+  },
 }
 
 export const CAMPAIGN_STATUS_KEYS = Object.keys(CAMPAIGN_STATUS)
+
+// ---------------------------------------------------------------------------
+// Campaign list controls
+// ---------------------------------------------------------------------------
+// What the list page can filter and sort by. `status: null` means "no filter",
+// which the API reads as "everything except archived" — see list_campaigns in
+// app/routes/ads.py for why that is the default rather than a special case.
+
+export const CAMPAIGN_FILTERS = [
+  { key: 'all', label: 'All', status: null },
+  { key: 'draft', label: 'Draft', status: 'draft' },
+  { key: 'active', label: 'Active', status: 'active' },
+  { key: 'scheduled', label: 'Scheduled', status: 'scheduled' },
+  { key: 'completed', label: 'Completed', status: 'completed' },
+  { key: 'archived', label: 'Archived', status: 'archived' },
+]
+
+// Values must match _CAMPAIGN_SORTS in app/routes/ads.py, which whitelists them.
+export const CAMPAIGN_SORTS = [
+  { value: 'updated', label: 'Last edited' },
+  { value: 'created', label: 'Created date' },
+  { value: 'name', label: 'Name (A–Z)' },
+]
 
 /**
  * The three counts the overview widgets track, plus the creative total.

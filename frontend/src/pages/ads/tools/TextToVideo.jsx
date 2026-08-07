@@ -1,20 +1,43 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import AdsWorkspace, { Field, RailSection } from '../../../components/ads/workspace/AdsWorkspace.jsx'
+import AssetEditBar from '../../../components/ads/AssetEditBar.jsx'
 import GenerateButton from '../../../components/ads/workspace/GenerateButton.jsx'
 import PreviewStage from '../../../components/ads/workspace/PreviewStage.jsx'
 import ChipSelect from '../../../components/ChipSelect.jsx'
 import useAdGeneration from '../../../hooks/useAdGeneration'
+import useCampaignContext from '../../../hooks/useCampaignContext'
 import { useToast } from '../../../context/ToastContext.jsx'
 import { api } from '../../../lib/api'
 import { VIDEO_DURATIONS, VIDEO_STYLES } from '../../../lib/ads/constants'
-import { AD_PLATFORM_KEYS } from '../../../lib/ads/constants'
+import {
+  campaignSubject,
+  campaignType,
+  videoConceptPrompt,
+  videoConcepts,
+} from '../../../lib/ads/campaignTypes'
+import { planToText } from '../../../lib/ads/videoPlan'
 import { PLATFORMS } from '../../../lib/constants'
 
 // ---------------------------------------------------------------------------
 // Text to Video — the workspace.
 //
-// The prompt is the whole input here, so it gets the room: a large field with a
-// character count, and the shot decisions underneath it rather than above.
+// ---- Concepts instead of a blank prompt ----------------------------------
+// The prompt used to be an empty box, which is the hardest possible starting
+// point and the reason most people write one flat sentence and get a flat
+// script back. It is now a list of concepts drawn from the campaign type: a
+// Website campaign is offered Website Promo, Animated Browser, Scrolling
+// Website, Feature Highlight, Typing Animation, Blog Intro; a Product campaign
+// is offered Product Rotation, Lifestyle Ad, Unboxing Style and the rest.
+//
+// Picking one is a complete brief, because the campaign supplies the subject
+// and the concept supplies the treatment. The prompt box is still there,
+// prefilled and editable — the concept is a starting point, not a cage.
+//
+// ---- What is real ---------------------------------------------------------
+// No video model is configured, so this returns a SHOT PLAN: scenes, timings,
+// on-screen copy, voiceover. The endpoint's `renderable` flag says so and the
+// rail repeats it. The plan is saved to the campaign as a video record with no
+// file attached, which is exactly what it is.
 // ---------------------------------------------------------------------------
 
 const TOOL = 'Text to Video'
@@ -22,43 +45,136 @@ const PHASE = 3
 const PROMPT_LIMIT = 900
 
 export default function TextToVideo() {
+  const { campaign, editingAsset, saveAssets } = useCampaignContext()
+
+  const type = campaignType(campaign?.campaignType)
+  const concepts = videoConcepts(campaign?.campaignType)
+
+  const [concept, setConcept] = useState(concepts[0].label)
   const [prompt, setPrompt] = useState('')
   const [duration, setDuration] = useState(15)
   const [style, setStyle] = useState('Modern & Clean')
-  const [platform, setPlatform] = useState('instagram')
+  const [saveAsNew, setSaveAsNew] = useState(false)
+
+  // Re-opening a saved plan brings back the concept, length and style it was
+  // written with, so "make that again but 30 seconds" is one control away.
+  const prefilled = useRef(false)
+  useEffect(() => {
+    if (!editingAsset || prefilled.current) return
+    prefilled.current = true
+    const m = editingAsset.meta || {}
+    if (m.concept) setConcept(m.concept)
+    if (m.duration) setDuration(m.duration)
+    if (m.style) setStyle(m.style)
+  }, [editingAsset])
+
+  const activeConcept = concepts.some((c) => c.label === concept)
+    ? concept
+    : concepts[0].label
+
+  // The campaign decides the platform. With several, the first is the one the
+  // plan is paced for — the others differ in length, not in story.
+  const platform = campaign?.platforms?.[0] || 'instagram'
 
   const toast = useToast()
-  // What CAN be generated today: the shot plan. No video model is configured,
-  // so the endpoint returns scenes, timings and copy — never a file. Its
-  // `renderable` flag is false, and the rail says so rather than offering a
-  // download that cannot exist.
   const { data: plan, loading, run } = useAdGeneration(api.adVideoPlan)
 
-  function generatePlan() {
-    if (prompt.trim().length < 4) {
+  async function generatePlan() {
+    // Concept + campaign is a complete brief on its own; the prompt box only
+    // adds to it. Outside a campaign the box is the whole brief, so it matters.
+    const written = prompt.trim()
+    const base = campaign ? campaignSubject(campaign) : written
+
+    if (!campaign && written.length < 4) {
       toast.error('Describe the ad you want first.')
       return
     }
-    run({ concept: prompt.trim(), duration, platform, style })
+
+    const result = await run({
+      concept: [
+        base,
+        videoConceptPrompt(campaign?.campaignType, activeConcept),
+        campaign ? written : '',
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .slice(0, PROMPT_LIMIT),
+      duration,
+      platform,
+      style,
+    })
+
+    if (result?.scenes?.length) {
+      await saveAssets({
+        kind: 'video',
+        title: editingAsset && !saveAsNew
+          ? editingAsset.title
+          : `${activeConcept} — ${duration}s shot plan`,
+        // No url: this is a plan, not a file. Saving a placeholder link would
+        // put a card in the library that plays nothing.
+        body: planToText(result),
+        tool: TOOL,
+        meta: {
+          concept: activeConcept,
+          duration,
+          platform,
+          style,
+          renderable: false,
+          scenes: result.scenes.length,
+        },
+      }, { saveAsNew })
+    }
   }
 
   return (
     <AdsWorkspace
       title={TOOL}
-      description="Describe the ad you want and get a scripted, storyboarded video concept back."
+      campaign={campaign}
+      description="Pick a concept and get a scripted, storyboarded video back — scene by scene, with timings and on-screen copy."
       controls={
         <>
+          <AssetEditBar
+            asset={editingAsset}
+            campaign={campaign}
+            saveAsNew={saveAsNew}
+            onSaveAsNewChange={setSaveAsNew}
+          />
+
+          <Field label="Concept" hint={type.label}>
+            <div className="space-y-1.5">
+              {concepts.map((c) => (
+                <button
+                  key={c.label}
+                  type="button"
+                  onClick={() => setConcept(c.label)}
+                  aria-pressed={activeConcept === c.label}
+                  className={`block w-full rounded-lg border px-2.5 py-2 text-left text-xs font-medium transition ${
+                    activeConcept === c.label
+                      ? 'border-accent bg-accent-soft text-accent'
+                      : 'border-line text-muted hover:border-accent'
+                  }`}
+                >
+                  {c.label}
+                </button>
+              ))}
+            </div>
+          </Field>
+
           <Field
-            label="Describe your idea"
+            label={campaign ? 'Anything to add' : 'Describe your idea'}
             hint={`${prompt.length} / ${PROMPT_LIMIT}`}
           >
             <textarea
-              rows={7}
+              rows={campaign ? 4 : 7}
               className="input resize-none"
               maxLength={PROMPT_LIMIT}
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
-              placeholder="A skincare serum on a marble surface, soft natural light, slow camera push in, calm music."
+              placeholder={
+                campaign
+                  ? 'Optional. The campaign brief and the concept above are already being used.'
+                  : 'A skincare serum on a marble surface, soft natural light, slow camera push in.'
+              }
             />
           </Field>
 
@@ -77,29 +193,18 @@ export default function TextToVideo() {
             </select>
           </Field>
 
-          <Field label="Platform">
-            <select
-              className="select"
-              value={platform}
-              onChange={(e) => setPlatform(e.target.value)}
-              aria-label="Platform"
-            >
-              {AD_PLATFORM_KEYS.map((key) => (
-                <option key={key} value={key}>
-                  {PLATFORMS[key]?.label || key}
-                </option>
-              ))}
-            </select>
-          </Field>
-
           <Field label="Video style">
             <ChipSelect options={VIDEO_STYLES} value={style} onChange={setStyle} />
+          </Field>
+
+          <Field label="Paced for" hint={campaign ? 'From the campaign' : 'Default'}>
+            <p className="text-xs text-body">{PLATFORMS[platform]?.label || platform}</p>
           </Field>
         </>
       }
       action={
         <GenerateButton
-          label="Generate Shot Plan"
+          label={editingAsset && !saveAsNew ? 'Replace This Shot Plan' : 'Generate Shot Plan'}
           toolName={TOOL}
           phase={PHASE}
           onClick={generatePlan}
@@ -107,27 +212,21 @@ export default function TextToVideo() {
         />
       }
       stage={
-        // Before a plan exists the panel shows what a finished video looks
-        // like; once one exists, the plan replaces it. The plan is the real
-        // output — showing sample artwork beside it would only muddle which
-        // of the two came from the user's brief.
         plan ? (
           <div className="card flex min-h-[320px] flex-col p-4 lg:min-h-full">
             <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
-              <h2 className="text-sm font-semibold text-body">Shot plan</h2>
-              <span className="badge badge-accent">{plan.total_seconds}s · {plan.scenes.length} scenes</span>
+              <h2 className="text-sm font-semibold text-body">{activeConcept} — shot plan</h2>
+              <span className="badge badge-accent">
+                {plan.total_seconds}s · {plan.scenes.length} scenes
+              </span>
             </div>
 
-            {plan.hook && (
-              <p className="mb-3 text-sm font-semibold text-body">“{plan.hook}”</p>
-            )}
+            {plan.hook && <p className="mb-3 text-sm font-semibold text-body">“{plan.hook}”</p>}
 
             <ol className="space-y-2">
               {plan.scenes.map((s, i) => (
                 <li key={i} className="panel flex gap-3 p-3">
-                  <span className="shrink-0 text-xs font-bold text-accent">
-                    {s.start}s
-                  </span>
+                  <span className="shrink-0 text-xs font-bold text-accent">{s.start}s</span>
                   <div className="min-w-0 flex-1">
                     <p className="text-sm text-body">{s.shot}</p>
                     {s.on_screen && (
@@ -135,9 +234,7 @@ export default function TextToVideo() {
                         On screen: {s.on_screen}
                       </p>
                     )}
-                    {s.voiceover && (
-                      <p className="mt-0.5 text-xs italic text-muted">{s.voiceover}</p>
-                    )}
+                    {s.voiceover && <p className="mt-0.5 text-xs italic text-muted">{s.voiceover}</p>}
                   </div>
                   <span className="shrink-0 text-[11px] text-muted">{s.seconds}s</span>
                 </li>
@@ -159,11 +256,15 @@ export default function TextToVideo() {
           </div>
         ) : (
           <PreviewStage
-            hint={'An example of the kind of ad this plans. Describe your idea on the left and press Generate for a shot-by-shot plan.'}
+            hint={
+              campaign
+                ? `An example of the kind of ad this plans. ${campaign.name}'s brief is loaded — pick a concept and press Generate.`
+                : 'An example of the kind of ad this plans. Describe your idea on the left and press Generate for a shot-by-shot plan.'
+            }
             art="textVideo"
             ratio="story"
             toolName={TOOL}
-            caption={`${duration}s · ${style}`}
+            caption={`${duration}s · ${activeConcept}`}
           />
         )
       }
@@ -174,6 +275,7 @@ export default function TextToVideo() {
               The shot plan — scenes, timings, on-screen copy and voiceover — is generated
               for real. Rendering the file needs a video provider, which is not configured,
               so there is no download to offer yet.
+              {campaign && ' The plan is saved to the campaign as a video record with no file attached.'}
             </p>
           </RailSection>
 
@@ -182,20 +284,8 @@ export default function TextToVideo() {
               type="button"
               disabled={!plan}
               onClick={() => {
-                const text = [
-                  plan.hook && `HOOK: ${plan.hook}`,
-                  ...plan.scenes.map(
-                    (s) =>
-                      `${s.start}s (${s.seconds}s) — ${s.shot}` +
-                      (s.on_screen ? `\n  On screen: ${s.on_screen}` : '') +
-                      (s.voiceover ? `\n  VO: ${s.voiceover}` : ''),
-                  ),
-                  plan.cta && `CTA: ${plan.cta}`,
-                ]
-                  .filter(Boolean)
-                  .join('\n')
                 navigator.clipboard
-                  ?.writeText(text)
+                  ?.writeText(planToText(plan))
                   .then(() => toast.success('Shot plan copied.'))
                   .catch(() => toast.error('Could not copy.'))
               }}

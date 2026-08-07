@@ -201,12 +201,39 @@ export const api = {
 
   // Campaigns are the user's own data — these require a token, unlike the
   // generation endpoints above, which treat the user as optional.
-  listCampaigns: () => request('/api/ads/campaigns'),
+  // Search, filter and sort happen in SQL — the query string carries them
+  // rather than the client filtering a full download it would outgrow.
+  listCampaigns: (params = {}) => {
+    const qs = new URLSearchParams()
+    if (params.status) qs.set('status', params.status)
+    if (params.q) qs.set('q', params.q)
+    if (params.sort) qs.set('sort', params.sort)
+    const suffix = qs.toString()
+    return request(`/api/ads/campaigns${suffix ? `?${suffix}` : ''}`)
+  },
   getCampaign: (id) => request(`/api/ads/campaigns/${id}`),
   createCampaign: (body) => request('/api/ads/campaigns', { method: 'POST', body }),
   updateCampaign: (id, body) =>
     request(`/api/ads/campaigns/${id}`, { method: 'PATCH', body }),
+  duplicateCampaign: (id, withAssets = true) =>
+    request(`/api/ads/campaigns/${id}/duplicate?with_assets=${withAssets}`, {
+      method: 'POST',
+    }),
   deleteCampaign: (id) => request(`/api/ads/campaigns/${id}`, { method: 'DELETE' }),
+
+  // The creative library. Every generator saves what it produced against the
+  // campaign it was opened from, so `createCampaignAssets` takes a whole set in
+  // one request rather than one call per image.
+  listCampaignAssets: (id) => request(`/api/ads/campaigns/${id}/assets`),
+  createCampaignAssets: (id, body) =>
+    request(`/api/ads/campaigns/${id}/assets`, { method: 'POST', body }),
+  updateCampaignAsset: (id, assetId, body) =>
+    request(`/api/ads/campaigns/${id}/assets/${assetId}`, { method: 'PATCH', body }),
+  duplicateCampaignAsset: (id, assetId) =>
+    request(`/api/ads/campaigns/${id}/assets/${assetId}/duplicate`, { method: 'POST' }),
+  deleteCampaignAsset: (id, assetId) =>
+    request(`/api/ads/campaigns/${id}/assets/${assetId}`, { method: 'DELETE' }),
+  listRecentAssets: (limit = 12) => request(`/api/ads/assets?limit=${limit}`),
 
   // business profile + onboarding
   getBusinessProfile: () => request('/api/business-profile'),

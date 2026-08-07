@@ -1,8 +1,11 @@
 import { Link } from 'react-router-dom'
 import AdsPageHeader from '../../../components/ads/AdsPageHeader.jsx'
+import CampaignContextBar from '../../../components/ads/CampaignContextBar.jsx'
+import useCampaignContext from '../../../hooks/useCampaignContext'
 import AdCreativeArt from '../../../components/ads/AdCreativeArt.jsx'
 import { TEMPLATES } from '../../../lib/brandKit/templates'
 import { AD_CATEGORIES, toolHref, toolsInCategory } from '../../../lib/ads/tools'
+import { toolAppliesTo } from '../../../lib/ads/campaignTypes'
 
 // ---------------------------------------------------------------------------
 // Templates.
@@ -25,6 +28,10 @@ import { AD_CATEGORIES, toolHref, toolsInCategory } from '../../../lib/ads/tools
 const ART_FOR_CATEGORY = { create: 'productAd', video: 'imageVideo' }
 
 export default function TemplatesPage() {
+  // A campaign here does two things: sends Back to it, and — through
+  // `toolAppliesTo` below — hides the tools that campaign type has no use for.
+  const { campaign, backTo, backLabel } = useCampaignContext()
+
   const startHere = AD_CATEGORIES.filter((c) => c.key === 'create' || c.key === 'video')
 
   return (
@@ -32,8 +39,11 @@ export default function TemplatesPage() {
       <AdsPageHeader
         title="Templates"
         description="Starting points rather than a blank artboard — the brand overlays you have now, and the ad layouts arriving next."
-        backLabel="AI Ads Studio"
+        backLabel={backLabel}
+        backTo={backTo}
       />
+
+      {campaign && <CampaignContextBar campaign={campaign} />}
 
       {/* ---- Real: brand overlay templates ----------------------------- */}
       <section aria-labelledby="tpl-brand">
@@ -95,15 +105,17 @@ export default function TemplatesPage() {
                 <div className="p-3">
                   <div className="text-sm font-semibold text-body">{category.label}</div>
                   <div className="mt-2 flex flex-wrap gap-1.5">
-                    {toolsInCategory(category.key).map((tool) => (
-                      <Link
-                        key={tool.slug}
-                        to={toolHref(tool)}
-                        className="btn btn-secondary btn-sm"
-                      >
-                        {tool.name}
-                      </Link>
-                    ))}
+                    {toolsInCategory(category.key)
+                      .filter((tool) => toolAppliesTo(tool.slug, campaign?.campaignType))
+                      .map((tool) => (
+                        <Link
+                          key={tool.slug}
+                          to={toolHref(tool, campaign?.id)}
+                          className="btn btn-secondary btn-sm"
+                        >
+                          {tool.name}
+                        </Link>
+                      ))}
                   </div>
                 </div>
               </div>

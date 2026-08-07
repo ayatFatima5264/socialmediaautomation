@@ -4,7 +4,6 @@ import {
   CAMPAIGN_NEW_PATH,
   HERO_CAPABILITIES,
   HERO_QUICK_ACTIONS,
-  adToolPath,
 } from '../../lib/ads/tools'
 
 // ---------------------------------------------------------------------------
@@ -38,8 +37,8 @@ export default function AdsHero() {
           </h1>
 
           <p className="mt-2 max-w-xl text-sm leading-relaxed text-muted">
-            Create high-converting ads with AI in minutes. Generate product creatives, banners,
-            videos, carousel ads and ad copy from one place.
+            Start a campaign, brief it once, and every tool — creatives, banners, videos,
+            carousels and copy — works from it. Nothing asks you the same question twice.
           </p>
 
           <ul className="mt-4 flex flex-wrap gap-x-4 gap-y-2">
@@ -55,10 +54,7 @@ export default function AdsHero() {
 
           <div className="mt-6 flex flex-wrap items-center gap-2.5">
             <Link to={CAMPAIGN_NEW_PATH} className="btn btn-primary">
-              ✦ New Campaign
-            </Link>
-            <Link to={adToolPath('product-ads')} className="btn btn-secondary">
-              ⬆ Import Product
+              ✦ Create New Campaign
             </Link>
           </div>
         </div>
@@ -70,18 +66,21 @@ export default function AdsHero() {
       </div>
 
       {/* ---- Quick start -------------------------------------------------
-          Four ways in that skip the campaign brief. Someone who just wants a
-          banner should not have to open a campaign to get one. */}
+          Four ways in, all of them campaigns. These used to jump straight into
+          a generator, which is what made the same six questions get asked in
+          every tool — a creative made outside a campaign has no brief, no brand
+          and nowhere to be saved. Picking the type here means the new-campaign
+          form opens already knowing what the campaign is for. */}
       <div className="border-t border-line p-3 md:p-4">
         <h2 className="mb-2.5 px-1 text-xs font-semibold uppercase tracking-wide text-muted">
-          Quick Start
+          Start a Campaign
         </h2>
 
         <div className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-4">
           {HERO_QUICK_ACTIONS.map((action) => (
             <Link
-              key={action.slug}
-              to={adToolPath(action.slug)}
+              key={action.type}
+              to={`${CAMPAIGN_NEW_PATH}?type=${encodeURIComponent(action.type)}`}
               className="panel flex items-center gap-3 p-3 transition-colors hover:border-accent-line hover:bg-surface focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-page"
             >
               <span

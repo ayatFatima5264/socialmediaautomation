@@ -4,9 +4,11 @@ import GenerateButton from '../../../components/ads/workspace/GenerateButton.jsx
 import ChipSelect from '../../../components/ChipSelect.jsx'
 import PlatformIcon from '../../../components/PlatformIcon.jsx'
 import useAdGeneration from '../../../hooks/useAdGeneration'
+import useCampaignContext from '../../../hooks/useCampaignContext'
 import { useToast } from '../../../context/ToastContext.jsx'
 import { api } from '../../../lib/api'
 import { AD_PLATFORM_KEYS, COPY_TONES } from '../../../lib/ads/constants'
+import { campaignSubject } from '../../../lib/ads/campaignTypes'
 import { PLATFORMS } from '../../../lib/constants'
 
 // ---------------------------------------------------------------------------
@@ -38,10 +40,17 @@ const EXAMPLE = [
 ]
 
 export default function CtaGenerator() {
+  const { campaign, saveAssets } = useCampaignContext()
+
   const [offer, setOffer] = useState('')
   const [stage, setStage] = useState('Warm - considering')
   const [platform, setPlatform] = useState('facebook')
   const [tone, setTone] = useState('Friendly')
+
+  // Platform and tone belong to the campaign when there is one. Both change
+  // what comes back, and both were already answered when it was briefed.
+  const activePlatform = campaign?.platforms?.[0] || platform
+  const activeTone = campaign?.tone || tone
 
   const toast = useToast()
   const { data, loading, run } = useAdGeneration(api.adCtas)
@@ -50,21 +59,44 @@ export default function CtaGenerator() {
   const buttons = data?.buttons || null
   const shown = ctas || EXAMPLE
 
-  function generate() {
-    if (offer.trim().length < 2) {
+  async function generate() {
+    // A CTA needs the specific offer; the campaign brief is the fallback when
+    // no separate offer has been typed.
+    const base = offer.trim() || (campaign ? campaignSubject(campaign) : '')
+    if (base.length < 2) {
       toast.error('Describe the offer first.')
       return
     }
-    run({ offer: offer.trim(), stage, platform, tone, count: 5 })
+
+    const result = await run({
+      offer: base,
+      stage,
+      platform: activePlatform,
+      tone: activeTone,
+      count: 5,
+    })
+
+    if (result?.ctas?.length) {
+      await saveAssets(
+        result.ctas.map((c) => ({
+          kind: 'cta',
+          title: `${c.button} — ${stage}`,
+          body: c.line,
+          tool: TOOL,
+          meta: { button: c.button, stage, platform: activePlatform, tone: activeTone },
+        })),
+      )
+    }
   }
 
   return (
     <AdsWorkspace
       title={TOOL}
+      campaign={campaign}
       description="Calls to action matched to the offer, the funnel stage, and the button set the platform actually gives you."
       controls={
         <>
-          <Field label="Offer">
+          <Field label="Offer" hint={campaign ? 'Optional — the brief is used otherwise' : undefined}>
             <input
               className="input"
               value={offer}
@@ -77,24 +109,32 @@ export default function CtaGenerator() {
             <ChipSelect options={FUNNEL_STAGES} value={stage} onChange={setStage} />
           </Field>
 
-          <Field label="Platform">
-            <select
-              className="select"
-              value={platform}
-              onChange={(e) => setPlatform(e.target.value)}
-              aria-label="Platform"
-            >
-              {AD_PLATFORM_KEYS.map((key) => (
-                <option key={key} value={key}>
-                  {PLATFORMS[key]?.label || key}
-                </option>
-              ))}
-            </select>
+          <Field label="Platform" hint={campaign ? 'From the campaign' : undefined}>
+            {campaign ? (
+              <p className="text-xs text-body">
+                {PLATFORMS[activePlatform]?.label || activePlatform}
+              </p>
+            ) : (
+              <select
+                className="select"
+                value={platform}
+                onChange={(e) => setPlatform(e.target.value)}
+                aria-label="Platform"
+              >
+                {AD_PLATFORM_KEYS.map((key) => (
+                  <option key={key} value={key}>
+                    {PLATFORMS[key]?.label || key}
+                  </option>
+                ))}
+              </select>
+            )}
           </Field>
 
-          <Field label="Tone">
-            <ChipSelect options={COPY_TONES} value={tone} onChange={setTone} />
-          </Field>
+          {!campaign?.tone && (
+            <Field label="Tone">
+              <ChipSelect options={COPY_TONES} value={tone} onChange={setTone} />
+            </Field>
+          )}
         </>
       }
       action={
@@ -119,14 +159,14 @@ export default function CtaGenerator() {
 
           <p className="mb-4 text-xs leading-relaxed text-muted">
             The supporting line is generated; the button comes from{' '}
-            {PLATFORMS[platform]?.label || platform}&apos;s own set, so it is always one the
+            {PLATFORMS[activePlatform]?.label || activePlatform}&apos;s own set, so it is always one the
             platform will accept.
           </p>
 
           <div className="space-y-2.5">
             {shown.map((c, i) => (
               <div key={`${c.line}-${i}`} className="panel flex flex-wrap items-center gap-3 p-3.5">
-                <PlatformIcon platform={platform} size={26} />
+                <PlatformIcon platform={activePlatform} size={26} />
                 <p className="min-w-0 flex-1 text-sm text-body">{c.line}</p>
                 <span className="btn btn-primary btn-sm pointer-events-none">{c.button}</span>
               </div>
@@ -136,7 +176,7 @@ export default function CtaGenerator() {
           {buttons && (
             <div className="mt-5">
               <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">
-                Buttons {PLATFORMS[platform]?.label || platform} supports
+                Buttons {PLATFORMS[activePlatform]?.label || activePlatform} supports
               </h3>
               <div className="flex flex-wrap gap-1.5">
                 {buttons.map((b) => (

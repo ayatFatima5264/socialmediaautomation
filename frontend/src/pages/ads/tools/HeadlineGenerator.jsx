@@ -3,9 +3,11 @@ import AdsWorkspace, { Field, RailSection } from '../../../components/ads/worksp
 import GenerateButton from '../../../components/ads/workspace/GenerateButton.jsx'
 import ChipSelect from '../../../components/ChipSelect.jsx'
 import useAdGeneration from '../../../hooks/useAdGeneration'
+import useCampaignContext from '../../../hooks/useCampaignContext'
 import { useToast } from '../../../context/ToastContext.jsx'
 import { api } from '../../../lib/api'
 import { AD_PLATFORM_KEYS } from '../../../lib/ads/constants'
+import { campaignSubject } from '../../../lib/ads/campaignTypes'
 import { PLATFORMS } from '../../../lib/constants'
 
 // ---------------------------------------------------------------------------
@@ -29,10 +31,17 @@ const EXAMPLE = [
 ]
 
 export default function HeadlineGenerator() {
+  const { campaign, saveAssets } = useCampaignContext()
+
   const [product, setProduct] = useState('')
   const [offer, setOffer] = useState('')
   const [platform, setPlatform] = useState('facebook')
   const [angles, setAngles] = useState(['Benefit', 'Curiosity', 'Proof'])
+
+  // Inside a campaign the platform is the campaign's, not a fifth thing to
+  // choose — a headline written to LinkedIn's conventions for a campaign that
+  // does not run on LinkedIn is a wasted generation.
+  const activePlatform = campaign?.platforms?.[0] || platform
 
   const toast = useToast()
   const { data, loading, run } = useAdGeneration(api.adHeadlines)
@@ -41,34 +50,55 @@ export default function HeadlineGenerator() {
   const limit = data?.limit ?? 40
   const shown = headlines || EXAMPLE
 
-  function generate() {
-    if (product.trim().length < 2) {
+  async function generate() {
+    const base = campaign ? campaignSubject(campaign) : product.trim()
+    if (base.length < 2) {
       toast.error('Tell the model what you are advertising first.')
       return
     }
-    run({
-      product: product.trim(),
+
+    const result = await run({
+      product: base,
       offer: offer.trim() || null,
       angles,
-      platform,
+      platform: activePlatform,
       count: 6,
     })
+
+    // Saved as they arrive — a ranked list you have to re-generate because you
+    // navigated away is not a library.
+    if (result?.headlines?.length) {
+      await saveAssets(
+        result.headlines.map((h) => ({
+          kind: 'headline',
+          title: `${h.angle} — ${PLATFORMS[activePlatform]?.label || activePlatform}`,
+          body: h.text,
+          tool: TOOL,
+          meta: { angle: h.angle, why: h.why, platform: activePlatform },
+        })),
+      )
+    }
   }
 
   return (
     <AdsWorkspace
       title={TOOL}
+      campaign={campaign}
       description="Produce a spread of headlines for one offer — different angles and lengths, ranked so you know what to test first."
       controls={
         <>
-          <Field label="Product or service">
-            <input
-              className="input"
-              value={product}
-              onChange={(e) => setProduct(e.target.value)}
-              placeholder="Organic skincare serum"
-            />
-          </Field>
+          {/* Inside a campaign the brief is the subject, already written and
+              shown above. Outside one it has to be asked for. */}
+          {!campaign && (
+            <Field label="Product or service">
+              <input
+                className="input"
+                value={product}
+                onChange={(e) => setProduct(e.target.value)}
+                placeholder="Organic skincare serum"
+              />
+            </Field>
+          )}
 
           <Field label="Offer" hint="Optional">
             <input
@@ -83,19 +113,25 @@ export default function HeadlineGenerator() {
             <ChipSelect options={ANGLES} value={angles} onChange={setAngles} multi />
           </Field>
 
-          <Field label="Platform">
-            <select
-              className="select"
-              value={platform}
-              onChange={(e) => setPlatform(e.target.value)}
-              aria-label="Platform"
-            >
-              {AD_PLATFORM_KEYS.map((key) => (
-                <option key={key} value={key}>
-                  {PLATFORMS[key]?.label || key}
-                </option>
-              ))}
-            </select>
+          <Field label="Platform" hint={campaign ? 'From the campaign' : undefined}>
+            {campaign ? (
+              <p className="text-xs text-body">
+                {PLATFORMS[activePlatform]?.label || activePlatform}
+              </p>
+            ) : (
+              <select
+                className="select"
+                value={platform}
+                onChange={(e) => setPlatform(e.target.value)}
+                aria-label="Platform"
+              >
+                {AD_PLATFORM_KEYS.map((key) => (
+                  <option key={key} value={key}>
+                    {PLATFORMS[key]?.label || key}
+                  </option>
+                ))}
+              </select>
+            )}
           </Field>
         </>
       }

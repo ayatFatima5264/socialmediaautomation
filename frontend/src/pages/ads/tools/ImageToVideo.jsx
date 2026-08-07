@@ -1,9 +1,11 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import AdsWorkspace, { Field, RailSection } from '../../../components/ads/workspace/AdsWorkspace.jsx'
+import AssetEditBar from '../../../components/ads/AssetEditBar.jsx'
 import GenerateButton from '../../../components/ads/workspace/GenerateButton.jsx'
 import PreviewStage from '../../../components/ads/workspace/PreviewStage.jsx'
 import UploadField from '../../../components/ads/workspace/UploadField.jsx'
 import ChipSelect from '../../../components/ChipSelect.jsx'
+import useCampaignContext from '../../../hooks/useCampaignContext'
 import useVideoRender from '../../../hooks/useVideoRender'
 import { useToast } from '../../../context/ToastContext.jsx'
 import {
@@ -11,6 +13,7 @@ import {
   CAMERA_MOTIONS,
   VIDEO_DURATIONS,
 } from '../../../lib/ads/constants'
+import { campaignType, videoConcepts } from '../../../lib/ads/campaignTypes'
 import { ASPECT_RATIOS } from '../../../lib/constants'
 
 // ---------------------------------------------------------------------------
@@ -23,44 +26,172 @@ import { ASPECT_RATIOS } from '../../../lib/constants'
 //
 // The trade is stated in the rail rather than hidden: the render is real time
 // and silent. Both are consequences of doing this honestly in the browser.
+//
+// ---- Why the campaign keeps a recipe, not the file -----------------------
+// MediaRecorder hands back a blob whose URL lives only in this page, and the
+// app has no file store to put it in. So a render is saved to the campaign as
+// a video record carrying its SETTINGS — source, motion, duration, caption —
+// and no url.
+//
+// ---- Re-rendering that recipe --------------------------------------------
+// The recipe is reproducible when, and only when, its source image still
+// exists at a URL: `loadImage` in lib/ads/videoRender.js takes a Blob or a URL
+// string, so a Media Library pick can be re-rendered days later while a file
+// dragged off the desktop cannot — those bytes were never ours to keep.
+//
+// So `sourceUrls` goes into the recipe when the source came from the library,
+// and the campaign card offers "Re-render" for exactly those. It is a BUTTON,
+// not something that happens on load: recording runs in real time, so a
+// campaign holding four fifteen-second videos would spend a minute of pegged
+// canvas work every time it opened — and browsers throttle background tabs, so
+// half of it would stall or come out broken. On demand is the only version of
+// this that works.
 // ---------------------------------------------------------------------------
 
 const TOOL = 'Image to Video'
 const PHASE = 2
 
 export default function ImageToVideo() {
+  const { campaign, editingAsset, saveAssets } = useCampaignContext()
+
+  const type = campaignType(campaign?.campaignType)
+  const concepts = videoConcepts(campaign?.campaignType)
+
   const [files, setFiles] = useState([])
+  const [concept, setConcept] = useState(concepts[0].label)
   const [duration, setDuration] = useState(10)
   const [motion, setMotion] = useState('Slow zoom in')
   const [style, setStyle] = useState('Smooth')
   const [ratio, setRatio] = useState('9:16')
   const [caption, setCaption] = useState('')
+  const [saveAsNew, setSaveAsNew] = useState(false)
+  // The source URL a re-opened recipe carries, when it has one. Held apart from
+  // `files` because there is no File here — just an address the renderer can
+  // load from directly.
+  const [replaySource, setReplaySource] = useState(null)
+
+  const activeConcept = concepts.some((c) => c.label === concept)
+    ? concept
+    : concepts[0].label
 
   const toast = useToast()
   const { render, save, rendering, progress, result, supported } = useVideoRender()
 
-  const image = files[0] || null
+  // Restore a saved recipe. If it kept a source URL the render can run again
+  // with no upload; if it did not, the settings come back but the image has to
+  // be chosen again — those bytes only ever existed in the page that made it.
+  const prefilled = useRef(false)
+  useEffect(() => {
+    if (!editingAsset || prefilled.current) return
+    prefilled.current = true
+    const m = editingAsset.meta || {}
+    if (m.concept) setConcept(m.concept)
+    if (m.duration) setDuration(m.duration)
+    if (m.motion) setMotion(m.motion)
+    if (m.style) setStyle(m.style)
+    if (m.ratio) setRatio(m.ratio)
+    if (m.caption) setCaption(m.caption)
+    if (m.sourceUrls?.[0]) setReplaySource(m.sourceUrls[0])
+  }, [editingAsset])
 
-  function generate() {
-    if (!image) {
+  // Either the file just picked, or the URL a restored recipe came with.
+  // `renderVideo` accepts both, so the two paths converge here.
+  const source = files[0]?.sourceUrl || files[0] || replaySource
+  const sourceUrl = files[0]?.sourceUrl || (files.length ? null : replaySource)
+
+  async function generate() {
+    if (!source) {
       toast.error('Upload an image, or pick one from the Media Library.')
       return
     }
-    render({
-      slides: [{ source: image, seconds: duration, caption: caption.trim() }],
+    const rendered = await render({
+      slides: [{ source, seconds: duration, caption: caption.trim() }],
       aspect: ratio,
       motion,
     })
+
+    if (rendered) {
+      await saveAssets(
+        {
+          kind: 'video',
+          title: editingAsset && !saveAsNew
+            ? editingAsset.title
+            : `${activeConcept} — ${duration}s`,
+          body: `${duration}s ${ratio} video · ${motion} · ${style}${
+            caption.trim() ? ` · caption: “${caption.trim()}”` : ''
+          }. ${
+            sourceUrl
+              ? 'Rendered in the browser — reopen this asset to render it again.'
+              : 'Rendered in the browser from an uploaded file — download it here to keep it.'
+          }`,
+          tool: TOOL,
+          meta: {
+            concept: activeConcept,
+            duration,
+            motion,
+            style,
+            ratio,
+            caption: caption.trim(),
+            local: true,
+            // Only a durable address goes in. A blob: URL would look like a
+            // recipe that can be replayed and fail the moment it was tried.
+            ...(sourceUrl ? { sourceUrls: [sourceUrl] } : {}),
+          },
+        },
+        { saveAsNew },
+      )
+    }
   }
 
   return (
     <AdsWorkspace
       title={TOOL}
+      campaign={campaign}
       description="Animate a still creative into a short video ad — camera movement, a caption, and a real file you can upload."
       controls={
         <>
+          <AssetEditBar
+            asset={editingAsset}
+            campaign={campaign}
+            saveAsNew={saveAsNew}
+            onSaveAsNewChange={setSaveAsNew}
+          />
+
           <Field label="Source image">
             <UploadField hint="The still you want to animate" onChange={setFiles} />
+            {replaySource && !files.length && (
+              <p className="mt-1.5 rounded-lg border border-accent-line bg-accent-soft p-2 text-[11px] leading-relaxed text-muted">
+                This recipe kept its source image, so it can be rendered again as it
+                is — press Render below. Pick a different image only if you want to
+                change it.
+              </p>
+            )}
+            {editingAsset && !replaySource && !files.length && (
+              <p className="mt-1.5 rounded-lg border border-amber-500/40 bg-amber-500/10 p-2 text-[11px] leading-relaxed text-amber-700">
+                The settings came back, but this render used an uploaded file — those
+                bytes only existed in the page that made it. Choose the image again to
+                re-render. Picking from the Media Library keeps it reproducible next time.
+              </p>
+            )}
+          </Field>
+
+          <Field label="Concept" hint={type.label}>
+            <select
+              className="select"
+              value={activeConcept}
+              onChange={(e) => setConcept(e.target.value)}
+              aria-label="Concept"
+            >
+              {concepts.map((c) => (
+                <option key={c.label} value={c.label}>
+                  {c.label}
+                </option>
+              ))}
+            </select>
+            <p className="mt-1.5 text-[11px] leading-relaxed text-muted">
+              Names what this clip is for. It labels the render in the campaign library —
+              the camera work below is what actually shapes it.
+            </p>
           </Field>
 
           <Field label="Duration" hint={`${duration}s`}>
@@ -114,7 +245,11 @@ export default function ImageToVideo() {
       action={
         <>
           <GenerateButton
-            label={`Render ${duration}s Video`}
+            label={
+              editingAsset && !saveAsNew
+                ? `Re-render ${duration}s Video`
+                : `Render ${duration}s Video`
+            }
             toolName={TOOL}
             phase={PHASE}
             onClick={generate}
@@ -172,8 +307,11 @@ export default function ImageToVideo() {
           <RailSection title="How this renders">
             <p className="text-xs leading-relaxed text-muted">
               Rendered by your browser, not by a model — free, offline, and the file never
-              leaves this machine. Two consequences: recording takes as long as the video
-              is, and there is no audio track.
+              leaves this machine. Three consequences: recording takes as long as the video
+              is, there is no audio track, and{' '}
+              {campaign
+                ? 'the campaign keeps the settings rather than the file — download it below to keep that.'
+                : 'the file exists only until you leave this page — download it below.'}
             </p>
           </RailSection>
 
@@ -190,7 +328,7 @@ export default function ImageToVideo() {
               <button
                 type="button"
                 onClick={generate}
-                disabled={rendering || !image}
+                disabled={rendering || !source}
                 className="btn btn-secondary btn-sm w-full"
               >
                 Re-render

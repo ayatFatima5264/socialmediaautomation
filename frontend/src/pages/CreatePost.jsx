@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { api } from '../lib/api'
 import { useToast } from '../context/ToastContext.jsx'
 import { useAuth } from '../context/AuthContext.jsx'
@@ -64,6 +64,9 @@ function minLocal() {
 export default function CreatePost() {
   const toast = useToast()
   const navigate = useNavigate()
+  // `routerLocation`, not `location` — this page already has a `location`
+  // state, which is the post's geotag and an entirely different thing.
+  const routerLocation = useLocation()
   const { user } = useAuth()
 
   const [selected, setSelected] = useState(['instagram', 'facebook'])
@@ -86,6 +89,36 @@ export default function CreatePost() {
   const textRef = useRef(null)
   const fileRef = useRef(null)
   const [emojiOpen, setEmojiOpen] = useState(false)
+
+  // ---- Seeded from AI Ads Studio ------------------------------------------
+  // "Use in Post" on a campaign asset navigates here carrying that asset. The
+  // seed is consumed once and then cleared out of history state: without that,
+  // a refresh silently re-attaches an image the user may have just removed, and
+  // the back button reads as broken.
+  useEffect(() => {
+    const seed = routerLocation.state?.prefill
+    if (!seed) return
+
+    if (seed.content) setContent(seed.content)
+    if (seed.url) {
+      setMedia((m) =>
+        m.some((x) => x.id === seed.url)
+          ? m
+          : [
+              ...m,
+              {
+                id: seed.url,
+                url: seed.url,
+                type: seed.type || 'image',
+                name: seed.name || 'Campaign asset',
+              },
+            ],
+      )
+    }
+    if (seed.schedule) setScheduleMode('later')
+
+    navigate(routerLocation.pathname, { replace: true, state: null })
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Import Content (optional)
   const [importOpen, setImportOpen] = useState(false)

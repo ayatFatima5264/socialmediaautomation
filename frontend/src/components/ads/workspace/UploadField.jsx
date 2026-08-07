@@ -13,6 +13,17 @@ import MediaLibraryModal from '../../media/MediaLibraryModal.jsx'
 // Object URLs are revoked when the selection changes or the field unmounts. A
 // workspace where someone tries eight product shots would otherwise leak eight
 // decoded images for the life of the page.
+//
+// ---- `sourceUrl` on a picked file -----------------------------------------
+// A file from the Media Library came from a URL that still exists tomorrow; a
+// file dragged off the desktop did not. The video tools need to know which,
+// because a render can only be reproduced later from a source that outlives the
+// page — so a library pick carries its origin URL along on the File.
+//
+// Set as a plain property rather than threaded through `onChange` because every
+// existing caller takes a File array and only the video tools care. A File is
+// an ordinary object; the property rides with it and is simply absent on an
+// upload, which is exactly the distinction the caller needs to make.
 // ---------------------------------------------------------------------------
 
 export default function UploadField({ multiple = false, hint, onChange }) {
@@ -104,7 +115,11 @@ export default function UploadField({ multiple = false, hint, onChange }) {
       <MediaLibraryModal
         open={libraryOpen}
         onCancel={() => setLibraryOpen(false)}
-        onSelect={(file) => {
+        onSelect={(file, asset) => {
+          // The library hands back both the bytes and the asset they came
+          // from. Keeping the asset's URL on the File is what lets a video
+          // render be reproduced after a reload — see the note at the top.
+          if (asset?.url) file.sourceUrl = asset.url
           addFiles([file])
           setLibraryOpen(false)
         }}

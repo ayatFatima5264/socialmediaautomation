@@ -21,6 +21,7 @@ import AdsStudio from './pages/ads/AdsStudio.jsx'
 import AdToolRoute from './pages/ads/AdToolRoute.jsx'
 import CampaignBuilder from './pages/ads/CampaignBuilder.jsx'
 import CampaignDetail from './pages/ads/CampaignDetail.jsx'
+import CampaignList from './pages/ads/CampaignList.jsx'
 // Public marketing website — accessible without authentication.
 import PublicLayout from './components/marketing/PublicLayout.jsx'
 import Home from './pages/marketing/Home.jsx'
@@ -113,6 +114,7 @@ export default function App() {
             never to the tool placeholder. Tool slugs come from the registry
             in lib/ads/tools.js — one entry there is a routed page here. */}
         <Route path="/ads" element={<AdsStudio />} />
+        <Route path="/ads/campaigns" element={<CampaignList />} />
         <Route path="/ads/campaigns/new" element={<CampaignBuilder />} />
         <Route path="/ads/campaigns/:id" element={<CampaignDetail />} />
         <Route path="/ads/:slug" element={<AdToolRoute />} />

@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import AdsWorkspace, { Field, RailSection } from '../../../components/ads/workspace/AdsWorkspace.jsx'
+import useCampaignContext from '../../../hooks/useCampaignContext'
 import AdCreativeArt from '../../../components/ads/AdCreativeArt.jsx'
 import GenerateButton from '../../../components/ads/workspace/GenerateButton.jsx'
 import ChipSelect from '../../../components/ChipSelect.jsx'
@@ -27,6 +28,10 @@ const DURATIONS = ['3 days', '7 days', '14 days', 'Until significant']
 const SPLITS = ['50 / 50', '70 / 30', '80 / 20']
 
 export default function AbTesting() {
+  // Nothing here generates, but a tool reached from a campaign must still
+  // return to it — a Back button that jumps to the Studio home loses the thread.
+  const { campaign } = useCampaignContext()
+
   const toast = useToast()
   const blocked = getAdTool('ab-testing')?.blocked
   const [metric, setMetric] = useState('Click-through rate')
@@ -36,6 +41,7 @@ export default function AbTesting() {
   return (
     <AdsWorkspace
       title={TOOL}
+      campaign={campaign}
       description="Run creatives against each other with a split that holds, and get a readout that says whether the gap is real yet."
       controls={
         <>
