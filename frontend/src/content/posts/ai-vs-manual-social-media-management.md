@@ -76,7 +76,7 @@ The practical resolution is a division of labour: humans supply the insight, AI 
 
 Untuned AI has a recognisable register: rhetorical opening questions, tidy three-item lists, phrases like "in today's fast-paced digital landscape." Audiences do notice.
 
-But this is a configuration problem, not a capability limit. With a proper brand voice profile — the four dimensions covered in [building a consistent brand voice with AI](/blog/build-consistent-brand-voice-with-ai) — plus your own best posts fed in as examples, output lands close enough that a light edit finishes the job.
+But this is a configuration problem, not a capability limit. With a proper brand voice profile — your vocabulary, your sentence rhythm, your level of formality, and an explicit list of the things you never say — plus your own best posts fed in as examples, output lands close enough that a light edit finishes the job.
 
 Ironically, AI often produces *more* consistent voice than a human team, where three different people write in three different registers.
 

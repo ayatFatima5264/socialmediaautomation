@@ -21,6 +21,18 @@ export const CATEGORIES = [
 
 export const POSTS = [
   {
+    slug: 'ai-vs-manual-social-media-management',
+    title: 'AI vs Manual Social Media Management: Which Is Better?',
+    metaTitle: 'AI vs Manual Social Media Management: Which Wins?',
+    description:
+      'A fair, side-by-side comparison of AI and manual social media management across speed, cost, quality, and risk — plus the hybrid model most teams land on.',
+    keyword: 'AI vs manual social media management',
+    category: 'Strategy',
+    date: '2026-08-07',
+    readMinutes: 11,
+    cover: { palette: 5, pattern: 0, icon: '◐' },
+  },
+  {
     slug: 'best-ai-tools-for-social-media-managers',
     title: 'Best AI Tools for Social Media Managers in 2026',
     metaTitle: 'Best AI Tools for Social Media Managers in 2026',
@@ -81,5 +93,17 @@ export const POSTS = [
     readMinutes: 11,
     featured: true,
     cover: { palette: 2, pattern: 2, icon: '◷' },
+  },
+  {
+    slug: 'how-to-schedule-social-media-posts',
+    title: 'How to Schedule Social Media Posts Like a Pro',
+    metaTitle: 'How to Schedule Social Media Posts Like a Pro',
+    description:
+      'Scheduling is more than picking a time. Learn the queue structure, buffer rules, and approval habits that separate professional social teams from the rest.',
+    keyword: 'schedule social media posts',
+    category: 'Productivity',
+    date: '2026-06-16',
+    readMinutes: 10,
+    cover: { palette: 6, pattern: 1, icon: '▣' },
   },
 ]

@@ -62,7 +62,7 @@ Three principles that hold up better than any chart:
 
 **Consistency of slot beats optimality of slot.** An audience that knows roughly when you post is worth more than a fifteen-minute improvement in timing.
 
-If you want to find your real peak times properly, we cover a four-week testing method in [best time to post on social media](/blog/best-time-to-post-on-social-media).
+If you want to find your real peak times properly, test rather than guess: hold one slot steady for two weeks, shift it by ninety minutes for the next two, and compare reach on like-for-like content. Four weeks gives you an answer specific to your audience, which no published benchmark can.
 
 ## Step 5: Adapt Per Platform
 
