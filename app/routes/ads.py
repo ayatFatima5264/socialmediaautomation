@@ -11,15 +11,21 @@ start being saved against an account.
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.core.deps import get_current_user, get_current_user_optional
 from app.database import get_db
 from app.models.ad_campaign import AdCampaign
+from app.models.campaign_asset import ASSET_KINDS, CampaignAsset as CampaignAssetRow
 from app.models.user import User
 from app.schemas.ads import (
     AdCopyRequest,
     Campaign,
+    CampaignAsset,
+    CampaignAssetBatch,
+    CampaignAssetUpdate,
+    CampaignAssetWithCampaign,
     CampaignCreate,
     CampaignUpdate,
     AdCopyResponse,
@@ -205,18 +211,53 @@ def _owned(db: Session, user: User, campaign_id: int) -> AdCampaign:
     return row
 
 
+# How the campaign list can be ordered. A whitelist rather than accepting a
+# column name from the query string, which would be an injection surface and
+# would let a client sort by a column the UI has no way to display.
+_CAMPAIGN_SORTS = {
+    "updated": AdCampaign.updated_at.desc(),
+    "created": AdCampaign.created_at.desc(),
+    "name": AdCampaign.name.asc(),
+}
+
+
 @router.get("/campaigns", response_model=list[Campaign])
 def list_campaigns(
+    status: str | None = None,
+    q: str | None = None,
+    sort: str = "updated",
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> list[AdCampaign]:
-    """The user's campaigns, most recently touched first."""
-    return (
-        db.query(AdCampaign)
-        .filter(AdCampaign.user_id == user.id)
-        .order_by(AdCampaign.updated_at.desc())
-        .all()
-    )
+    """The user's campaigns, most recently touched first.
+
+    Filtering happens in SQL rather than in the client so the list page stays
+    correct as an account grows past the point where shipping every row to the
+    browser is reasonable.
+
+    ---- Archived ----------------------------------------------------------
+    Archiving exists to get finished work out of the way, so an unfiltered list
+    EXCLUDES archived campaigns. Asking for them explicitly (`status=archived`)
+    is the only way to see them — otherwise archiving would be a label that
+    changes nothing, and the Studio home would fill up with work the user has
+    already put away.
+    """
+    query = db.query(AdCampaign).filter(AdCampaign.user_id == user.id)
+
+    if status:
+        query = query.filter(AdCampaign.status == status)
+    else:
+        query = query.filter(AdCampaign.status != "archived")
+
+    if q and q.strip():
+        # Name and brief: the two fields a user actually remembers a campaign
+        # by. ilike keeps it case-insensitive on Postgres and SQLite alike.
+        term = f"%{q.strip()}%"
+        query = query.filter(
+            or_(AdCampaign.name.ilike(term), AdCampaign.brief.ilike(term))
+        )
+
+    return query.order_by(_CAMPAIGN_SORTS.get(sort, _CAMPAIGN_SORTS["updated"])).all()
 
 
 @router.post("/campaigns", response_model=Campaign, status_code=201)
@@ -230,6 +271,65 @@ def create_campaign(
     db.commit()
     db.refresh(row)
     return row
+
+
+@router.post("/campaigns/{campaign_id}/duplicate", response_model=Campaign, status_code=201)
+def duplicate_campaign(
+    campaign_id: int,
+    with_assets: bool = True,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> AdCampaign:
+    """Copy a campaign, by default with everything it has produced.
+
+    A campaign is a project, and duplicating a project that arrived empty would
+    surprise anyone who meant "start the summer version of this". `with_assets`
+    is there for the other case — reusing a brief for a genuinely new run.
+
+    The copy is always a DRAFT whatever the original's status: duplicating an
+    active campaign must not produce a second campaign that claims to be live.
+    """
+    source = _owned(db, user, campaign_id)
+
+    copy = AdCampaign(
+        user_id=user.id,
+        name=f"{source.name} (copy)"[:200],
+        campaign_type=source.campaign_type,
+        objective=source.objective,
+        platforms=list(source.platforms or []),
+        status="draft",
+        brief=source.brief,
+        tone=source.tone,
+        audience=source.audience,
+        creatives=0,
+    )
+    db.add(copy)
+    db.flush()
+
+    if with_assets:
+        for asset in (
+            db.query(CampaignAssetRow)
+            .filter(CampaignAssetRow.campaign_id == source.id)
+            .all()
+        ):
+            db.add(
+                CampaignAssetRow(
+                    user_id=user.id,
+                    campaign_id=copy.id,
+                    kind=asset.kind,
+                    title=asset.title,
+                    url=asset.url,
+                    body=asset.body,
+                    tool=asset.tool,
+                    meta=dict(asset.meta or {}),
+                )
+            )
+        db.flush()
+        _recount(db, copy)
+
+    db.commit()
+    db.refresh(copy)
+    return copy
 
 
 @router.get("/campaigns/{campaign_id}", response_model=Campaign)
@@ -263,5 +363,194 @@ def delete_campaign(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> None:
-    db.delete(_owned(db, user, campaign_id))
+    row = _owned(db, user, campaign_id)
+    # Assets are deleted explicitly rather than relying on the FK's ON DELETE
+    # CASCADE: SQLite does not enforce foreign keys unless the pragma is on, so
+    # on a dev database the cascade would silently leave orphans behind.
+    db.query(CampaignAssetRow).filter(
+        CampaignAssetRow.campaign_id == row.id
+    ).delete(synchronize_session=False)
+    db.delete(row)
+    db.commit()
+
+
+# ---------------------------------------------------------------------------
+# Campaign assets
+# ---------------------------------------------------------------------------
+# The creative library. Every generator saves what it produced here against the
+# campaign it was opened from, so the work survives navigating away — which is
+# what makes a campaign a project rather than a form.
+
+
+def _recount(db: Session, campaign: AdCampaign) -> None:
+    """Set the campaign's creative count from its assets.
+
+    Recounted rather than incremented: a counter that is nudged up on create
+    and down on delete drifts the first time either path is missed, and the
+    number is on the campaign card where a user will notice it being wrong.
+    """
+    campaign.creatives = (
+        db.query(CampaignAssetRow)
+        .filter(CampaignAssetRow.campaign_id == campaign.id)
+        .count()
+    )
+
+
+def _owned_asset(db: Session, user: User, campaign_id: int, asset_id: int) -> CampaignAssetRow:
+    row = (
+        db.query(CampaignAssetRow)
+        .filter(
+            CampaignAssetRow.id == asset_id,
+            CampaignAssetRow.campaign_id == campaign_id,
+            CampaignAssetRow.user_id == user.id,
+        )
+        .first()
+    )
+    if row is None:
+        raise HTTPException(status_code=404, detail="Asset not found.")
+    return row
+
+
+@router.get("/assets", response_model=list[CampaignAssetWithCampaign])
+def recent_assets(
+    limit: int = 12,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> list[CampaignAssetWithCampaign]:
+    """The user's most recent assets across every campaign.
+
+    Powers the Studio home's Recent Assets strip, which is deliberately NOT a
+    per-campaign view — it is the answer to "what was I last working on".
+    """
+    rows = (
+        db.query(CampaignAssetRow, AdCampaign.name)
+        .join(AdCampaign, AdCampaign.id == CampaignAssetRow.campaign_id)
+        .filter(CampaignAssetRow.user_id == user.id)
+        .order_by(CampaignAssetRow.created_at.desc(), CampaignAssetRow.id.desc())
+        .limit(max(1, min(limit, 50)))
+        .all()
+    )
+    return [
+        CampaignAssetWithCampaign(
+            **CampaignAsset.model_validate(asset).model_dump(),
+            campaign_name=name,
+        )
+        for asset, name in rows
+    ]
+
+
+@router.get("/campaigns/{campaign_id}/assets", response_model=list[CampaignAsset])
+def list_assets(
+    campaign_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> list[CampaignAssetRow]:
+    _owned(db, user, campaign_id)
+    return (
+        db.query(CampaignAssetRow)
+        .filter(CampaignAssetRow.campaign_id == campaign_id)
+        .order_by(CampaignAssetRow.created_at.desc(), CampaignAssetRow.id.desc())
+        .all()
+    )
+
+
+@router.post(
+    "/campaigns/{campaign_id}/assets",
+    response_model=list[CampaignAsset],
+    status_code=201,
+)
+def create_assets(
+    campaign_id: int,
+    body: CampaignAssetBatch,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> list[CampaignAssetRow]:
+    campaign = _owned(db, user, campaign_id)
+
+    unknown = {a.kind for a in body.assets} - set(ASSET_KINDS)
+    if unknown:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Unknown asset kind(s): {', '.join(sorted(unknown))}",
+        )
+
+    rows = [
+        CampaignAssetRow(
+            user_id=user.id,
+            campaign_id=campaign.id,
+            **asset.model_dump(),
+        )
+        for asset in body.assets
+    ]
+    db.add_all(rows)
+    db.flush()
+    _recount(db, campaign)
+    db.commit()
+    for row in rows:
+        db.refresh(row)
+    return rows
+
+
+@router.patch(
+    "/campaigns/{campaign_id}/assets/{asset_id}", response_model=CampaignAsset
+)
+def update_asset(
+    campaign_id: int,
+    asset_id: int,
+    body: CampaignAssetUpdate,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> CampaignAssetRow:
+    row = _owned_asset(db, user, campaign_id, asset_id)
+    for field, value in body.model_dump(exclude_unset=True).items():
+        setattr(row, field, value)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+@router.post(
+    "/campaigns/{campaign_id}/assets/{asset_id}/duplicate",
+    response_model=CampaignAsset,
+    status_code=201,
+)
+def duplicate_asset(
+    campaign_id: int,
+    asset_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> CampaignAssetRow:
+    campaign = _owned(db, user, campaign_id)
+    source = _owned_asset(db, user, campaign_id, asset_id)
+
+    copy = CampaignAssetRow(
+        user_id=user.id,
+        campaign_id=campaign.id,
+        kind=source.kind,
+        # Truncated so repeatedly duplicating cannot grow past the column.
+        title=f"{source.title} (copy)"[:200],
+        url=source.url,
+        body=source.body,
+        tool=source.tool,
+        meta=dict(source.meta or {}),
+    )
+    db.add(copy)
+    db.flush()
+    _recount(db, campaign)
+    db.commit()
+    db.refresh(copy)
+    return copy
+
+
+@router.delete("/campaigns/{campaign_id}/assets/{asset_id}", status_code=204)
+def delete_asset(
+    campaign_id: int,
+    asset_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> None:
+    campaign = _owned(db, user, campaign_id)
+    db.delete(_owned_asset(db, user, campaign_id, asset_id))
+    db.flush()
+    _recount(db, campaign)
     db.commit()

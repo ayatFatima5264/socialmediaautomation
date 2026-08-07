@@ -75,7 +75,9 @@ def init_db() -> None:
 # Columns added to a table after its first release. `create_all` only creates
 # missing *tables*, never alters existing ones, so we add any missing columns in
 # place — idempotent and safe on both SQLite and Postgres. Only ever *adds*
-# nullable columns, so it can never lose data.
+# columns, never drops or retypes one, so it can never lose data. A column
+# declared NOT NULL must carry a DEFAULT, which is what lets the ALTER backfill
+# the rows that already exist instead of failing on them.
 # (table -> {column -> SQL type used in `ALTER TABLE ... ADD COLUMN`}.)
 _ADDED_COLUMNS: dict[str, dict[str, str]] = {
     "social_accounts": {
@@ -105,6 +107,21 @@ _ADDED_COLUMNS: dict[str, dict[str, str]] = {
         "summary": "TEXT",
         # Plan-level template / brand / image-style defaults.
         "image_defaults": "JSON",
+    },
+    # Campaign memory — what a campaign advertises, and the voice it uses.
+    # Every generator inherits these, so an existing campaign needs them
+    # backfilled rather than the column simply appearing on new rows.
+    #
+    # campaign_type carries NOT NULL to match `nullable=False` on the model.
+    # The DEFAULT is what makes that safe to add to a populated table: both
+    # SQLite and Postgres backfill existing rows with it as part of the ALTER.
+    # A database migrated before this constraint was added keeps a nullable
+    # column — harmless, since the ORM always supplies a value and the DEFAULT
+    # already filled the rows that predate it.
+    "ad_campaigns": {
+        "campaign_type": "VARCHAR(60) NOT NULL DEFAULT 'Product Promotion'",
+        "tone": "VARCHAR(60)",
+        "audience": "VARCHAR(300)",
     },
     # Brand Kit — branding overlaid on generated images.
     "business_profiles": {

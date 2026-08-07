@@ -111,11 +111,15 @@ async def generate_ad_copy(
         "RULES\n"
         f"- Each variant takes a different angle (e.g. benefit, curiosity, objection, proof, urgency).\n"
         f"- headline: at most {HEADLINE_LIMIT} characters.\n"
-        f"- body: at most {char_limit} characters, and far shorter is better.\n"
+        "- description: at most 90 characters. This is the short support line that "
+        "sits under the headline in a link ad, NOT a summary of the body.\n"
+        f"- body: the primary text. At most {char_limit} characters, and far shorter is better.\n"
         f"- cta: use exactly \"{cta}\".\n"
-        "- No emoji unless the tone is Playful. No hashtags.\n\n"
+        "- hashtags: 3 to 6, lowercase, no '#' prefix, specific to the brief rather "
+        "than generic marketing tags. Return an empty list for LinkedIn.\n"
+        "- No emoji unless the tone is Playful.\n\n"
         'Return ONLY: {"variants": [{"angle": "...", "headline": "...", '
-        '"body": "...", "cta": "..."}]}'
+        '"description": "...", "body": "...", "cta": "...", "hashtags": ["..."]}]}'
     )
 
     data = await _complete_json(
@@ -130,14 +134,25 @@ async def generate_ad_copy(
         body = str(item.get("body", "")).strip()
         if not headline and not body:
             continue
+        # Hashtags come back with or without the '#' depending on the model's
+        # mood. Normalised to bare words here so the client can render them one
+        # way rather than defending against both.
+        hashtags = [
+            str(tag).strip().lstrip("#")
+            for tag in _as_list(item.get("hashtags"))
+            if str(tag).strip().lstrip("#")
+        ][:6]
+
         out.append(
             {
                 "angle": str(item.get("angle", "")).strip() or "General",
                 "headline": headline,
+                "description": str(item.get("description", "")).strip()[:90],
                 # Truncation is the caller's contract with the platform, so it
                 # is enforced here rather than trusted to the model.
                 "body": body[:char_limit],
                 "cta": str(item.get("cta", "")).strip() or cta,
+                "hashtags": hashtags,
             }
         )
     return out

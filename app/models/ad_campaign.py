@@ -26,6 +26,15 @@ class AdCampaign(Base):
     )
 
     name: Mapped[str] = mapped_column(String(200), nullable=False)
+
+    # WHAT is being advertised — a product, a service, a website, an event.
+    # Distinct from `objective`, which is what the campaign should achieve.
+    # Both are needed: "Traffic" says nothing about whether the creative should
+    # show a product on a surface or a browser window, and a Website campaign
+    # asking the user to upload a product photo is the bug this column fixes.
+    campaign_type: Mapped[str] = mapped_column(
+        String(60), default="Product Promotion", nullable=False
+    )
     objective: Mapped[str] = mapped_column(String(60), default="Brand Awareness")
     # Stored as a JSON array; works on both SQLite and PostgreSQL, matching how
     # Post stores its hashtags.
@@ -37,7 +46,17 @@ class AdCampaign(Base):
     )
 
     brief: Mapped[str | None] = mapped_column(Text, default=None)
-    # How many creatives have been produced for this campaign so far.
+
+    # ---- Campaign memory ---------------------------------------------------
+    # Entered once on the campaign and inherited by every generator opened from
+    # it, so no tool ever asks for the same thing twice. Nullable because they
+    # are refinements of the brief rather than requirements of it.
+    tone: Mapped[str | None] = mapped_column(String(60), default=None)
+    audience: Mapped[str | None] = mapped_column(String(300), default=None)
+
+    # How many creatives have been produced for this campaign so far. Kept in
+    # step by the asset endpoints, which recount rather than increment — an
+    # increment drifts the first time a delete is missed.
     creatives: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
     # ---- Performance -------------------------------------------------------
