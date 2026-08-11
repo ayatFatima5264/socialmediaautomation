@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -180,6 +181,19 @@ class Settings(BaseSettings):
     # every preview deployment (https://<anything>.vercel.app). Set to an empty
     # string to disable, or override for a custom domain.
     cors_origin_regex: str = r"https://.*\.vercel\.app"
+
+    @field_validator("frontend_url", "backend_url")
+    @classmethod
+    def _strip_trailing_slash(cls, value: str) -> str:
+        """Normalize the public URLs so joining a path can't double the slash.
+
+        Both are used as `{url}/some/path`. A trailing slash in the environment
+        (easy to leave in a dashboard field) would produce `https://host//path`
+        — which is a *different* path: the SPA router doesn't match `//accounts`
+        and shows its 404, and an OAuth redirect URI with a doubled slash no
+        longer matches the one registered in the provider's portal.
+        """
+        return value.rstrip("/")
 
     def oauth_credentials(self, platform: str) -> tuple[str | None, str | None]:
         """Return (client_id, client_secret) for a platform, or (None, None)."""

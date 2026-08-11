@@ -217,6 +217,27 @@ def test_callback_handles_user_cancellation(client):
     assert "platform=pinterest" in r.headers["location"]
 
 
+def test_public_urls_tolerate_a_trailing_slash(client, monkeypatch):
+    """A trailing slash in FRONTEND_URL/BACKEND_URL must not double the slash.
+
+    `https://host//accounts` is a different path from `/accounts` — the SPA
+    router misses it and shows its 404 — and a redirect URI with a doubled
+    slash no longer matches the one registered in the provider's portal.
+    """
+    from app.config import Settings
+
+    s = Settings(frontend_url="https://app.example.com/", backend_url="https://api.example.com/")
+    assert s.frontend_url == "https://app.example.com"
+    assert s.callback_url("pinterest") == "https://api.example.com/api/auth/pinterest/callback"
+
+    r = client.get(
+        "/api/auth/pinterest/callback",
+        params={"error": "access_denied"},
+        follow_redirects=False,
+    )
+    assert "//accounts" not in r.headers["location"].split("://", 1)[1]
+
+
 def test_callback_rejects_a_tampered_state(client):
     r = client.get(
         "/api/auth/pinterest/callback",
