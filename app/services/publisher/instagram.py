@@ -30,6 +30,7 @@ class InstagramPublisher(BasePublisher):
         hashtags: list[str],
         image_url: str | None = None,
         media_urls: list[str] | None = None,
+        options: dict | None = None,
     ) -> PublishResult:
         # Instagram publishes a single image; use the first attached media URL
         # when the caller supplies the general list instead of `image_url`.

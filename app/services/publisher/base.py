@@ -31,6 +31,7 @@ class BasePublisher(ABC):
         hashtags: list[str],
         image_url: str | None = None,
         media_urls: list[str] | None = None,
+        options: dict | None = None,
     ) -> PublishResult:
         """Publish a post to the platform.
 
@@ -38,6 +39,10 @@ class BasePublisher(ABC):
         contract). `media_urls` is the ordered list of public media URLs from
         `Post.media`, for platforms that support several (e.g. X, up to 4 images).
         A publisher uses whichever it supports; text-only platforms ignore both.
-        Both default to None so existing callers are unaffected.
+
+        `options` carries per-post, platform-specific choices made in the UI and
+        persisted on `Post.platform_options` — e.g. Pinterest's target
+        `board_id` and destination `link`. Publishers that need none ignore it.
+        Every argument defaults to None so existing callers are unaffected.
         """
         raise NotImplementedError

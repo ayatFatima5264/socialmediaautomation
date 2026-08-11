@@ -131,3 +131,29 @@ class SelectAccountRequest(BaseModel):
 
     pending_id: str
     account_id: str
+
+
+# ---------------------------------------------------------------------------
+# Pinterest boards — every Pin must be saved to a board, so the composer needs
+# the user's board list and a default to fall back on.
+# ---------------------------------------------------------------------------
+class PinterestBoard(BaseModel):
+    """One board the connected Pinterest account can pin to."""
+
+    id: str
+    name: str
+    # "PUBLIC" | "PROTECTED" | "SECRET" — shown as a hint in the picker.
+    privacy: str | None = None
+
+
+class PinterestBoardsResponse(BaseModel):
+    """The board list plus which one is currently the default."""
+
+    boards: list[PinterestBoard]
+    default_board_id: str | None = None
+
+
+class SetDefaultBoardRequest(BaseModel):
+    """Pick the board Pins go to when a post doesn't name one."""
+
+    board_id: str = Field(..., min_length=1, max_length=255)

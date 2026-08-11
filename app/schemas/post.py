@@ -89,6 +89,10 @@ class PostCreate(BaseModel):
     # Persisted to Post.media so publishers that support media (Instagram, X,
     # LinkedIn) receive the image(s) on publish. None/empty for text-only posts.
     media: list[dict] | None = None
+    # Platform-specific publishing choices for this post, passed through to the
+    # publisher. Pinterest uses {"board_id": "<id>", "link": "<destination>"};
+    # platforms that need nothing extra leave it null.
+    platform_options: dict | None = None
     # If set and in the future, the post is scheduled; otherwise it's a draft.
     scheduled_time: datetime | None = None
 
@@ -96,6 +100,9 @@ class PostCreate(BaseModel):
 class PostUpdate(BaseModel):
     content: str | None = Field(default=None, min_length=1, max_length=63206)
     hashtags: list[str] | None = None
+    # Replaces the stored platform options (e.g. changing the Pinterest board
+    # before a scheduled Pin goes out). Omit to leave them untouched.
+    platform_options: dict | None = None
     # Setting this (to a future time) (re)schedules the post.
     scheduled_time: datetime | None = None
 
@@ -113,4 +120,7 @@ class PostRead(BaseModel):
     published_time: datetime | None
     external_id: str | None
     error: str | None
+    # Echoed back so the UI can show what a post will publish with (e.g. the
+    # Pinterest board a scheduled Pin targets).
+    platform_options: dict | None = None
     created_at: datetime

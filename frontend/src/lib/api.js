@@ -138,6 +138,17 @@ export const api = {
     request(`/api/social/${platform}`, { method: 'DELETE' }),
   refreshAccount: (platform) =>
     request(`/api/social/${platform}/refresh`, { method: 'POST' }),
+  // Pinterest boards — every Pin must be saved to a board, so the composer and
+  // the account card both read this list. Always fetched live, so calling it
+  // again is exactly what "refresh boards" does.
+  pinterestBoards: () => request('/api/social/pinterest/boards'),
+  setPinterestDefaultBoard: (boardId) =>
+    request('/api/social/pinterest/default-board', {
+      method: 'PUT',
+      body: { board_id: boardId },
+    }),
+  clearPinterestDefaultBoard: () =>
+    request('/api/social/pinterest/default-board', { method: 'DELETE' }),
   // Multi-account selection (e.g. choosing one Instagram Business account).
   pendingConnection: (pendingId) =>
     request(`/api/social/connections/pending/${pendingId}`),

@@ -100,6 +100,8 @@ _ADDED_COLUMNS: dict[str, dict[str, str]] = {
         "topic": "VARCHAR(300)",
         "approval_status": "VARCHAR(20)",
         "media": "JSON",
+        # Per-platform publishing choices (e.g. the Pinterest board a Pin goes to).
+        "platform_options": "JSON",
     },
     # Strategy theme/rationale added after the plan table's first release.
     "content_plans": {

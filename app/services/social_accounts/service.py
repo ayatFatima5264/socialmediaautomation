@@ -401,7 +401,11 @@ def _upsert(
     provider = get_provider(platform)
     account.scopes = tokens.raw.get("scope") or " ".join(provider.scopes) or None
     account.account_id = profile.account_id or account.account_id or f"{platform.value}:{user.id}"
-    account.page_id = profile.page_id
+    # Only overwrite page_id when the provider actually supplies one. Providers
+    # that don't carry a page (Pinterest stores the user's default board here)
+    # would otherwise wipe the stored value every time the user reconnects.
+    if profile.page_id is not None:
+        account.page_id = profile.page_id
     account.username = profile.username
     account.display_name = profile.display_name
     account.profile_picture = profile.profile_picture

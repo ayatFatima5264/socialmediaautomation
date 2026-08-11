@@ -80,6 +80,9 @@ services:
         sync: false
       - key: PINTEREST_CLIENT_SECRET
         sync: false
+      # Optional; must match the Pinterest dashboard exactly.
+      - key: PINTEREST_REDIRECT_URI
+        sync: false
       - key: THREADS_CLIENT_ID
         sync: false
       - key: THREADS_CLIENT_SECRET

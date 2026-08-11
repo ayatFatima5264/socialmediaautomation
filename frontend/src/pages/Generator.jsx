@@ -42,6 +42,7 @@ import {
 } from '../lib/contentTypes'
 import PlatformIcon from '../components/PlatformIcon.jsx'
 import ScheduleModal from '../components/ScheduleModal.jsx'
+import PinterestBoardSelect from '../components/PinterestBoardSelect.jsx'
 import { SourceDropdown, Accordion } from '../components/FormControls.jsx'
 
 const STORAGE_KEY = 'composer_state_v1'
@@ -777,6 +778,19 @@ export default function Generator() {
   }
 
   // --- persistence / publishing (existing behaviour, image-aware) -----------
+  // The generated visuals as the API's media shape. Publishers that need media
+  // (Instagram, X, LinkedIn, Pinterest) receive these public URLs.
+  function mediaOf(c) {
+    return (c.images || []).filter((im) => im?.url).map((im) => ({ type: 'image', url: im.url }))
+  }
+
+  // Per-platform publishing choices. Only Pinterest needs any: the board its
+  // Pin is saved to.
+  function platformOptionsOf(c) {
+    if (c.platform !== 'pinterest' || !c.boardId) return {}
+    return { platform_options: { board_id: c.boardId } }
+  }
+
   async function saveDraft(i) {
     const c = drafts[i]
     try {
@@ -784,6 +798,8 @@ export default function Generator() {
         platform: c.platform,
         content: c.content,
         hashtags: hashtagList(c.hashtags),
+        media: mediaOf(c),
+        ...platformOptionsOf(c),
       })
       toast.success(`Saved ${PLATFORMS[c.platform].label} draft`)
     } catch (err) {
@@ -803,10 +819,10 @@ export default function Generator() {
         content: c.content,
         hashtags: hashtagList(c.hashtags),
         // Attach the generated visuals so platforms that need/support media
-        // (Instagram, X, LinkedIn) publish with the image, not text-only.
-        media: (c.images || [])
-          .filter((im) => im?.url)
-          .map((im) => ({ type: 'image', url: im.url })),
+        // (Instagram, X, LinkedIn, Pinterest) publish with the image, not
+        // text-only.
+        media: mediaOf(c),
+        ...platformOptionsOf(c),
       })
       // The publish endpoint returns the updated post — inspect it for the real
       // outcome (a non-throwing response can still be a platform failure).
@@ -872,6 +888,11 @@ export default function Generator() {
             platform: c.platform,
             content: c.content,
             hashtags: hashtagList(c.hashtags),
+            // A scheduled post publishes without the user present, so it must
+            // carry its visuals and platform choices — Pinterest can't pin
+            // without an image and a board.
+            media: mediaOf(c),
+            ...platformOptionsOf(c),
             scheduled_time: iso,
           })
           updateDraft(i, { status: 'scheduled' })
@@ -899,6 +920,8 @@ export default function Generator() {
             platform: c.platform,
             content: c.content,
             hashtags: hashtagList(c.hashtags),
+            media: mediaOf(c),
+            ...platformOptionsOf(c),
           }),
         ),
       )
@@ -1008,6 +1031,10 @@ export default function Generator() {
         platform: c.platform,
         content: c.content,
         hashtags: hashtagList(c.hashtags),
+        // Scheduled posts publish unattended, so the visuals and platform
+        // choices have to travel with them.
+        media: mediaOf(c),
+        ...platformOptionsOf(c),
         scheduled_time: localInputToISO(localValue),
       })
       toast.success(`Scheduled ${PLATFORMS[c.platform].label} post`)
@@ -1746,6 +1773,7 @@ export default function Generator() {
               onPublish={() => publishNow(i)}
               onClearPlatform={() => clearPlatform(i)}
               onDuplicate={() => duplicatePlatform(i)}
+              onBoardChange={(boardId) => updateDraft(i, { boardId })}
             />
           ))}
           </>
@@ -1871,7 +1899,7 @@ function PostCard({
   c, limit, label,
   onContent, onHashtags, onImageResolved, onImagePlacement, onCopy, onDownload, onDownloadAll,
   onDownloadAssets, onRegenCaption, onRegenImages, onRegenSlide, onRegenAll, onEditImage,
-  onSave, onSchedule, onPublish, onClearPlatform, onDuplicate,
+  onSave, onSchedule, onPublish, onClearPlatform, onDuplicate, onBoardChange,
 }) {
   const over = c.content.length > limit
   const isCarousel = c.settings.carousel && c.images.length > 1
@@ -1917,6 +1945,18 @@ function PostCard({
         onChange={(e) => onHashtags(e.target.value)}
         placeholder="space or comma separated"
       />
+
+      {/* Pinterest saves every Pin to a board, so this card needs one chosen. */}
+      {c.platform === 'pinterest' && (
+        <div className="mt-3">
+          <PinterestBoardSelect
+            value={c.boardId || null}
+            onChange={onBoardChange}
+            help="Where this Pin will be saved."
+            onLoaded={(data) => onBoardChange(c.boardId || data.default_board_id || null)}
+          />
+        </div>
+      )}
 
       {/* Images */}
       {c.settings.aiImage && (

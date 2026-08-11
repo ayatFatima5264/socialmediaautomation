@@ -186,6 +186,7 @@ export default function Accounts() {
                 onConnect={() => connect(p)}
                 onDisconnect={() => disconnect(p)}
                 onRefresh={() => refresh(p)}
+                onChanged={load}
               />
             ))}
       </div>

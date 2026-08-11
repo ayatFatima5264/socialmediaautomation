@@ -103,6 +103,10 @@ class OAuthProvider:
     # Extra query params merged into the authorize URL (e.g. forcing a fresh
     # login / account selection). Overridden per provider.
     authorize_params: dict[str, str] = {}
+    # Extra form fields sent with every token request (code exchange AND
+    # refresh), for providers that need one — e.g. Pinterest's
+    # `continuous_refresh`. Empty for everyone else, so nothing changes.
+    token_params: dict[str, str] = {}
 
     # ---- authorize -------------------------------------------------------
     def authorize_url(self, *, state: str, code_challenge: str | None = None) -> str:
@@ -141,6 +145,7 @@ class OAuthProvider:
 
     async def _token_request(self, data: dict) -> OAuthTokens:
         headers = {"Accept": "application/json"}
+        data = {**data, **self.token_params}
         auth = None
         if self.token_auth == "basic":
             auth = (self.client_id or "", self.client_secret or "")

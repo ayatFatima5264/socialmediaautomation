@@ -40,7 +40,8 @@ def get_publisher(
     `account` is the user's connected account for that platform (if any). A real
     publisher is used only when both a connected account and a real adapter
     exist; everything else is simulated. `db` is passed to adapters that must
-    persist state during publishing (e.g. X refreshing a rotated OAuth token).
+    persist state during publishing (e.g. X and Pinterest refreshing a rotated
+    OAuth token).
     """
     if account is not None and platform in _REAL_PLATFORMS:
         if platform is Platform.instagram:
@@ -54,5 +55,5 @@ def get_publisher(
         if platform is Platform.threads:
             return ThreadsPublisher(account)
         if platform is Platform.pinterest:
-            return PinterestPublisher(account)
+            return PinterestPublisher(account, db)
     return SimulatedPublisher(platform)

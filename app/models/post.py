@@ -55,6 +55,13 @@ class Post(Base):
     # compatible with the AI Visuals step; empty for text-only posts.
     media: Mapped[list | None] = mapped_column(JSON, default=None)
 
+    # Per-post, platform-specific publishing choices made in the UI, e.g.
+    # Pinterest's {"board_id": "...", "link": "https://…"}. Kept as one JSON
+    # column so a platform that needs an extra field doesn't add a column to
+    # every post; publishers receive it as `options` and ignore what they don't
+    # use. None for posts that need no platform-specific choice.
+    platform_options: Mapped[dict | None] = mapped_column(JSON, default=None)
+
     # Naive UTC (see app.core.timeutils).
     scheduled_time: Mapped[datetime | None] = mapped_column(
         DateTime, index=True, default=None

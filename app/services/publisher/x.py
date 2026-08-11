@@ -58,6 +58,7 @@ class XPublisher(BasePublisher):
         hashtags: list[str],
         image_url: str | None = None,
         media_urls: list[str] | None = None,
+        options: dict | None = None,
     ) -> PublishResult:
         # Accept both the legacy single `image_url` and the general `media_urls`
         # list the scheduler now supplies from Post.media.

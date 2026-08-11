@@ -50,6 +50,7 @@ def create_post(
         status=post_status,
         scheduled_time=scheduled,
         media=data.media or None,
+        platform_options=data.platform_options or None,
     )
     db.add(post)
     db.commit()
@@ -97,6 +98,8 @@ def update_post(
         post.content = data.content
     if data.hashtags is not None:
         post.hashtags = data.hashtags
+    if data.platform_options is not None:
+        post.platform_options = data.platform_options or None
     if data.scheduled_time is not None:
         scheduled = to_naive_utc(data.scheduled_time)
         if scheduled <= utcnow():

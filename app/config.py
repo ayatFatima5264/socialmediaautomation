@@ -164,6 +164,11 @@ class Settings(BaseSettings):
     x_client_secret: str | None = None
     pinterest_client_id: str | None = None
     pinterest_client_secret: str | None = None
+    # Pinterest matches the redirect URI byte-for-byte against the one registered
+    # in the developer dashboard. Leave unset to use the standard
+    # {backend_url}/api/auth/pinterest/callback form; set it when the registered
+    # value must differ (e.g. the backend is behind a proxy on another host).
+    pinterest_redirect_uri: str | None = None
     threads_client_id: str | None = None
     threads_client_secret: str | None = None
 

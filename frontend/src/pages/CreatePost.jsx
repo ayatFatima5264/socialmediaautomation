@@ -13,7 +13,13 @@ import {
 import { localInputToISO } from '../lib/datetime'
 import PlatformIcon from '../components/PlatformIcon.jsx'
 import { SourceDropdown } from '../components/FormControls.jsx'
+import PinterestBoardSelect from '../components/PinterestBoardSelect.jsx'
 import HelpTip from '../components/HelpTip.jsx'
+
+// Only a publicly reachable URL can be published — Pinterest and the Meta
+// platforms fetch the image from it server-side. Files dropped into this
+// composer are local `blob:` previews, so they never qualify.
+const isPublicUrl = (url) => /^https?:\/\//i.test(url || '')
 
 const EMOJIS = ['😀', '😂', '🙌', '🔥', '✨', '🎉', '❤️', '👍', '🚀', '💡',
   '📈', '🙏', '😎', '🤝', '📢', '🌟', '✅', '💪', '👀', '🎯']
@@ -80,6 +86,10 @@ export default function CreatePost() {
   const [hashtagDraft, setHashtagDraft] = useState('')
   const [location, setLocation] = useState('')
   const [firstComment, setFirstComment] = useState('')
+  // Pinterest: every Pin must be saved to a board. `pinterestDefaultBoard` is
+  // the one saved on the connected account, used when none is picked here.
+  const [pinterestBoard, setPinterestBoard] = useState(null)
+  const [pinterestDefaultBoard, setPinterestDefaultBoard] = useState(null)
   const [scheduleMode, setScheduleMode] = useState('now') // 'now' | 'later'
   const [scheduleAt, setScheduleAt] = useState(minLocal())
   const [busy, setBusy] = useState(false)
@@ -361,6 +371,12 @@ export default function CreatePost() {
   // --- derived: per-platform warnings --------------------------------------
   const charCount = content.length
   const imageCount = media.filter((m) => m.type !== 'video').length
+  // Images a platform can actually fetch (see isPublicUrl).
+  const publishableImages = useMemo(
+    () => media.filter((m) => m.type !== 'video' && isPublicUrl(m.url)).map((m) => m.url),
+    [media],
+  )
+  const publishableImageCount = publishableImages.length
 
   const warnings = useMemo(() => {
     const out = {}
@@ -373,8 +389,20 @@ export default function CreatePost() {
       if (p === 'instagram' && imageCount === 0) {
         list.push('Instagram requires at least one image')
       }
-      if (p === 'pinterest' && imageCount === 0) {
-        list.push('Pinterest needs an image (portrait recommended)')
+      if (p === 'pinterest') {
+        if (imageCount === 0) {
+          list.push('Pinterest needs an image (portrait recommended)')
+        } else if (publishableImageCount === 0) {
+          // A Pin is created from an image URL Pinterest fetches itself, so a
+          // local upload can't be pinned. Say so here rather than letting the
+          // publish fail later.
+          list.push(
+            'Pinterest can only pin an image with a public URL — generate one in the AI Generator',
+          )
+        }
+        if (!pinterestBoard && !pinterestDefaultBoard) {
+          list.push('Choose a Pinterest board for this Pin')
+        }
       }
       if (p === 'twitter' && charCount > 280) {
         list.push('X character limit exceeded')
@@ -385,7 +413,16 @@ export default function CreatePost() {
       out[p] = list
     }
     return out
-  }, [selected, charCount, imageCount, content, hashtags])
+  }, [
+    selected,
+    charCount,
+    imageCount,
+    publishableImageCount,
+    pinterestBoard,
+    pinterestDefaultBoard,
+    content,
+    hashtags,
+  ])
 
   const videoCount = media.filter((m) => m.type === 'video').length
 
@@ -418,6 +455,17 @@ export default function CreatePost() {
     setScheduleAt(minLocal())
   }
 
+  // Per-platform publishing choices sent with the post. Pinterest is the only
+  // platform that needs any today: the target board and the Pin's destination
+  // link. Everything else sends nothing extra.
+  function platformOptionsFor(platform) {
+    if (platform !== 'pinterest') return {}
+    const options = {}
+    if (pinterestBoard) options.board_id = pinterestBoard
+    if (link.trim()) options.link = link.trim()
+    return Object.keys(options).length ? { platform_options: options } : {}
+  }
+
   async function submit(asDraft = false) {
     if (!selected.length) return toast.error('Select at least one platform')
     // Article posts lead with their title.
@@ -436,11 +484,19 @@ export default function CreatePost() {
       const body = {
         content: text,
         hashtags,
+        // Only publicly reachable images can be published; local previews are
+        // left out rather than sent as unusable blob: URLs.
+        ...(publishableImages.length
+          ? { media: publishableImages.map((url) => ({ type: 'image', url })) }
+          : {}),
         ...(scheduled ? { scheduled_time: localInputToISO(scheduleAt) } : {}),
       }
-      // One post per platform (mirrors the rest of the app).
+      // One post per platform (mirrors the rest of the app), each carrying its
+      // own platform-specific choices (Pinterest: the board and destination link).
       const created = await Promise.all(
-        selected.map((p) => api.createPost({ ...body, platform: p })),
+        selected.map((p) =>
+          api.createPost({ ...body, platform: p, ...platformOptionsFor(p) }),
+        ),
       )
       if (!asDraft && scheduleMode === 'now') {
         await Promise.all(created.map((post) => api.publishPost(post.id)))
@@ -815,7 +871,26 @@ export default function CreatePost() {
                 onChange={(e) => setLink(e.target.value)}
                 placeholder="https://example.com/article"
               />
+              {selected.includes('pinterest') && (
+                <p className="mt-1.5 text-xs text-muted">
+                  Used as the Pin's destination link.
+                </p>
+              )}
             </div>
+
+            {/* Pinterest saves every Pin to a board, so one must be chosen. */}
+            {selected.includes('pinterest') && (
+              <PinterestBoardSelect
+                value={pinterestBoard}
+                onChange={setPinterestBoard}
+                help="Where this Pin will be saved."
+                onLoaded={(data) => {
+                  setPinterestDefaultBoard(data.default_board_id || null)
+                  // Start from the account's default so the common case is one click.
+                  setPinterestBoard((b) => b || data.default_board_id || null)
+                }}
+              />
+            )}
 
             <div>
               <label className="label">Hashtags</label>

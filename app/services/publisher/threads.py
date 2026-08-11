@@ -33,6 +33,7 @@ class ThreadsPublisher(BasePublisher):
         hashtags: list[str],
         image_url: str | None = None,
         media_urls: list[str] | None = None,
+        options: dict | None = None,
     ) -> PublishResult:
         text = _compose(content, hashtags)
         image = image_url or (media_urls[0] if media_urls else None)

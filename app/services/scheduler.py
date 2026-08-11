@@ -63,6 +63,8 @@ async def publish_post(db: Session, post: Post) -> Post:
             content=post.content,
             hashtags=post.hashtags or [],
             media_urls=_media_urls(post),
+            # Per-platform choices saved with the post (e.g. the Pinterest board).
+            options=post.platform_options or None,
         )
     except Exception as exc:  # adapter blew up — record, don't crash the loop
         logger.exception("Publisher raised for post %s", post.id)

@@ -1,7 +1,48 @@
+import { useState } from 'react'
 import { PLATFORMS } from '../lib/constants'
 import { formatDateTime, formatRelative } from '../lib/datetime'
+import { api, ApiError } from '../lib/api'
+import { useToast } from '../context/ToastContext.jsx'
 import PlatformIcon from './PlatformIcon.jsx'
+import PinterestBoardSelect from './PinterestBoardSelect.jsx'
 import AccountStatusBadge from './AccountStatusBadge.jsx'
+
+// Pinterest stores the user's default board on the account, so Pins scheduled
+// without an explicit board still have somewhere to go. Shown only on a healthy
+// Pinterest connection.
+function DefaultBoard({ account, onSaved }) {
+  const toast = useToast()
+  const [boardId, setBoardId] = useState(account?.page_id || null)
+  const [saving, setSaving] = useState(false)
+
+  async function save(nextId) {
+    setBoardId(nextId)
+    if (!nextId || nextId === account?.page_id) return
+    setSaving(true)
+    try {
+      await api.setPinterestDefaultBoard(nextId)
+      toast.success('Default board saved')
+      onSaved?.()
+    } catch (err) {
+      setBoardId(account?.page_id || null) // roll back
+      toast.error(err instanceof ApiError ? err.message : 'Could not save the board')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="rounded-xl bg-inset p-3">
+      <PinterestBoardSelect
+        value={boardId}
+        onChange={save}
+        disabled={saving}
+        label="Default board"
+        help="Pins go here when a post doesn't pick a board."
+      />
+    </div>
+  )
+}
 
 // Connected account's avatar with the platform chip badged on its corner. Falls
 // back to the plain platform chip when there's no profile picture.
@@ -39,6 +80,7 @@ export default function AccountCard({
   onConnect,
   onDisconnect,
   onRefresh,
+  onChanged,
 }) {
   const meta = PLATFORMS[platform]
   const status = account ? account.status : 'not_connected'
@@ -107,6 +149,11 @@ export default function AccountCard({
             {meta.label}. Text-only posts still work until you do.
           </p>
         </div>
+      )}
+
+      {/* Pinterest needs a target board for every Pin — offer a default here. */}
+      {connected && !needsReauth && platform === 'pinterest' && (
+        <DefaultBoard account={account} onSaved={onChanged} />
       )}
 
       {/* Actions — pinned to the bottom so every card is the same height */}

@@ -58,7 +58,7 @@ THREADS_CLIENT_SECRET=
 | Instagram | `instagram_business_basic`, `instagram_business_content_publish` |
 | LinkedIn  | `openid`, `profile`, `email`, `w_member_social` |
 | X (Twitter) | `tweet.read`, `tweet.write`, `users.read`, `offline.access` (PKCE) |
-| Pinterest | `user_accounts:read`, `boards:read`, `pins:read`, `pins:write` |
+| Pinterest | `user_accounts:read`, `boards:read`, `boards:write`, `pins:read`, `pins:write` |
 | Threads   | `threads_basic`, `threads_content_publish` |
 
 ## How the flow works
@@ -89,6 +89,63 @@ THREADS_CLIENT_SECRET=
 `{platform}` here is the internal key (`instagram`, `facebook`, `twitter`,
 `linkedin`, `threads`, `pinterest`). Only the OAuth **callback** uses the `x`
 slug for Twitter.
+
+Pinterest adds three endpoints, because every Pin must be saved to a board:
+
+| Method & path | Purpose |
+|---|---|
+| `GET /api/social/pinterest/boards` | The caller's boards (live from Pinterest) + current default |
+| `PUT /api/social/pinterest/default-board` | Set the board Pins default to (`{"board_id": "..."}`) |
+| `DELETE /api/social/pinterest/default-board` | Clear that default |
+
+---
+
+# Pinterest Setup (API v5)
+
+## 1. Developer dashboard
+
+At <https://developers.pinterest.com/apps/> open your app and set:
+
+- **Redirect URI** — exactly `{BACKEND_URL}/api/auth/pinterest/callback`
+  (local: `http://localhost:8000/api/auth/pinterest/callback`). Pinterest
+  matches this byte-for-byte, including the trailing path and scheme.
+- Copy the **App ID** → `PINTEREST_CLIENT_ID` and **App secret** →
+  `PINTEREST_CLIENT_SECRET` into `.env`, then restart the backend.
+
+Pinterest only allows an HTTPS redirect URI on some app configurations; if
+`http://localhost` is rejected, register the deployed HTTPS callback and test
+the connect flow against the deployed backend.
+
+## 2. Scopes
+
+Requested at connect time: `user_accounts:read`, `boards:read`, `boards:write`,
+`pins:read`, `pins:write`. The last four are exactly what `POST /v5/pins`
+requires, so all four are marked **required** — an account authorized before one
+of them was requested shows "Reconnect required" on its card instead of failing
+at publish time.
+
+## 3. Tokens
+
+- Access token: 30 days. Refresh token: 60 days, refreshable indefinitely
+  (continuous refresh).
+- Token requests use HTTP **Basic** client auth and always send
+  `continuous_refresh=true` — required by apps created before 2025-09-25 and
+  ignored by newer ones.
+- The backend refreshes proactively before publishing and reactively once on a
+  401, persisting rotated tokens immediately.
+
+## 4. Trial access
+
+A newly approved app has **Trial** access. Publishing works, but:
+
+- Pins and boards created under Trial access are visible **only to their
+  creator** (they behave as sandbox entities) — a published Pin will not appear
+  publicly until the app is upgraded.
+- Rate limits are per-app **per-day** rather than per-user per-minute; a 429
+  surfaces as "Pinterest rate limit reached" on the post.
+
+Nothing in this integration depends on Standard-only functionality, so
+upgrading later needs no code change.
 
 ---
 

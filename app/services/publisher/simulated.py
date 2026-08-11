@@ -26,6 +26,7 @@ class SimulatedPublisher(BasePublisher):
         hashtags: list[str],
         image_url: str | None = None,
         media_urls: list[str] | None = None,
+        options: dict | None = None,
     ) -> PublishResult:
         # Simulate network latency to a platform API.
         await asyncio.sleep(0.1)

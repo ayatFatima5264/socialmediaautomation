@@ -6,6 +6,10 @@
     DELETE /api/social/{platform}         — disconnect and remove credentials
     POST   /api/social/{platform}/refresh — refresh tokens / re-sync
 
+    GET    /api/social/pinterest/boards        — the user's Pinterest boards
+    PUT    /api/social/pinterest/default-board — board Pins default to
+    DELETE /api/social/pinterest/default-board — clear that default
+
 Access/refresh tokens are write-only over the API — SocialAccountRead never
 exposes them. Mutating endpoints answer with a uniform {success, message}
 envelope. The OAuth redirect leg lives in routes/oauth.py.
@@ -23,10 +27,13 @@ from app.schemas.social_account import (
     AccountsOverview,
     ApiResponse,
     PendingConnectionRead,
+    PinterestBoard,
+    PinterestBoardsResponse,
     SelectAccountRequest,
+    SetDefaultBoardRequest,
     SocialAccountRead,
 )
-from app.services.social_accounts import service
+from app.services.social_accounts import pinterest_boards, service
 from app.services.social_accounts.service import ConnectError
 
 router = APIRouter(prefix="/api/social", tags=["social-accounts"])
@@ -71,6 +78,63 @@ def select_pending(
     return ApiResponse(
         success=True,
         message=f"{account.platform.capitalize()} connected.",
+        account=service.serialize(account),
+    )
+
+
+# Pinterest boards. Declared before /{platform} for clarity — a Pin must name a
+# board, so the composer and the account card both read this list.
+@router.get("/pinterest/boards", response_model=PinterestBoardsResponse)
+async def pinterest_board_list(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> PinterestBoardsResponse:
+    """The signed-in user's Pinterest boards, fetched live from Pinterest.
+
+    Called again whenever the UI's "refresh boards" action runs, so a board
+    created seconds ago appears without reconnecting.
+    """
+    try:
+        boards = await pinterest_boards.list_boards(db, user)
+    except ConnectError as exc:
+        raise _handle(exc) from exc
+    account = service.get_account(db, user, Platform.pinterest)
+    return PinterestBoardsResponse(
+        boards=[PinterestBoard(**b) for b in boards],
+        default_board_id=account.page_id if account else None,
+    )
+
+
+@router.put("/pinterest/default-board", response_model=ApiResponse)
+async def pinterest_set_default_board(
+    data: SetDefaultBoardRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> ApiResponse:
+    """Set the board Pins go to when a post doesn't name one."""
+    try:
+        account = await pinterest_boards.set_default_board(db, user, data.board_id)
+    except ConnectError as exc:
+        raise _handle(exc) from exc
+    return ApiResponse(
+        success=True,
+        message="Default Pinterest board saved.",
+        account=service.serialize(account),
+    )
+
+
+@router.delete("/pinterest/default-board", response_model=ApiResponse)
+def pinterest_clear_default_board(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> ApiResponse:
+    try:
+        account = pinterest_boards.clear_default_board(db, user)
+    except ConnectError as exc:
+        raise _handle(exc) from exc
+    return ApiResponse(
+        success=True,
+        message="Default Pinterest board cleared.",
         account=service.serialize(account),
     )
 
