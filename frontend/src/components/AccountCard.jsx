@@ -32,15 +32,13 @@ function DefaultBoard({ account, onSaved }) {
   }
 
   return (
-    <div className="rounded-xl bg-inset p-3">
-      <PinterestBoardSelect
-        value={boardId}
-        onChange={save}
-        disabled={saving}
-        label="Default board"
-        help="Pins go here when a post doesn't pick a board."
-      />
-    </div>
+    <PinterestBoardSelect
+      value={boardId}
+      onChange={save}
+      disabled={saving}
+      label="Default board"
+      compact
+    />
   )
 }
 
@@ -135,6 +133,13 @@ export default function AccountCard({
             {account?.last_synced_at ? formatRelative(account.last_synced_at) : '—'}
           </dd>
         </div>
+
+        {/* Pinterest needs a target board for every Pin — offer a default here.
+            Sits inside the detail list, as one more line, so this card stays
+            the same height as the others sharing its row in the grid. */}
+        {connected && !needsReauth && platform === 'pinterest' && (
+          <DefaultBoard account={account} onSaved={onChanged} />
+        )}
       </dl>
 
       {/* Re-authorization notice — connected, but missing a required permission.
@@ -149,11 +154,6 @@ export default function AccountCard({
             {meta.label}. Text-only posts still work until you do.
           </p>
         </div>
-      )}
-
-      {/* Pinterest needs a target board for every Pin — offer a default here. */}
-      {connected && !needsReauth && platform === 'pinterest' && (
-        <DefaultBoard account={account} onSaved={onChanged} />
       )}
 
       {/* Actions — pinned to the bottom so every card is the same height */}

@@ -16,6 +16,9 @@ export default function PinterestBoardSelect({
   // Extra hint under the control (e.g. "Used when a post doesn't pick one").
   help = null,
   disabled = false,
+  // One-line variant for the account card, where a full-size labelled control
+  // would make that card taller than the others sharing its grid row.
+  compact = false,
   // Called with the loaded boards, so a parent can pre-select a default.
   onLoaded = null,
 }) {
@@ -54,6 +57,61 @@ export default function PinterestBoardSelect({
   const loading = boards === null
   const empty = !loading && boards.length === 0 && !error
 
+  const options = (
+    <>
+      <option value="">{loading ? 'Loading boards…' : 'Select a board…'}</option>
+      {(boards || []).map((b) => (
+        <option key={b.id} value={b.id}>
+          {b.name}
+          {b.privacy && b.privacy !== 'PUBLIC' ? ` (${b.privacy.toLowerCase()})` : ''}
+          {/* Marking the default is only useful where a post picks a board.
+              On the account card this control *is* the default, so the suffix
+              would be redundant — and it truncates the name it follows. */}
+          {!compact && b.id === defaultBoardId ? ' — default' : ''}
+        </option>
+      ))}
+    </>
+  )
+  const isDisabled = disabled || loading || empty || !!error
+  const onSelect = (e) => onChange(e.target.value || null)
+  const emptyHint =
+    'No boards yet — create one on Pinterest, then refresh.'
+
+  // Compact: one row that matches the surrounding detail lines, so adding this
+  // control doesn't make its card taller than the others in the grid row.
+  if (compact) {
+    return (
+      <div className="space-y-1">
+        <div className="flex items-center justify-between gap-2">
+          <span className="shrink-0 text-xs text-muted">{label}</span>
+          <div className="flex min-w-0 flex-1 items-center justify-end gap-1">
+            <select
+              aria-label={label}
+              className="select max-w-[190px] truncate py-1 text-xs"
+              value={value || ''}
+              disabled={isDisabled}
+              onChange={onSelect}
+            >
+              {options}
+            </select>
+            <button
+              type="button"
+              onClick={load}
+              disabled={busy}
+              title="Refresh boards"
+              aria-label="Refresh boards"
+              className="shrink-0 rounded-md px-1.5 py-1 text-xs text-muted hover:bg-inset disabled:opacity-50"
+            >
+              {busy ? '…' : '↻'}
+            </button>
+          </div>
+        </div>
+        {error && <p className="text-right text-xs text-rose-600">{error}</p>}
+        {empty && <p className="text-right text-xs text-muted">{emptyHint}</p>}
+      </div>
+    )
+  }
+
   return (
     <div>
       <div className="mb-1.5 flex items-center justify-between gap-2">
@@ -74,19 +132,10 @@ export default function PinterestBoardSelect({
         id="pinterest-board"
         className="select"
         value={value || ''}
-        disabled={disabled || loading || empty || !!error}
-        onChange={(e) => onChange(e.target.value || null)}
+        disabled={isDisabled}
+        onChange={onSelect}
       >
-        <option value="">
-          {loading ? 'Loading boards…' : 'Select a board…'}
-        </option>
-        {(boards || []).map((b) => (
-          <option key={b.id} value={b.id}>
-            {b.name}
-            {b.privacy && b.privacy !== 'PUBLIC' ? ` (${b.privacy.toLowerCase()})` : ''}
-            {b.id === defaultBoardId ? ' — default' : ''}
-          </option>
-        ))}
+        {options}
       </select>
 
       {error && <p className="mt-1.5 text-xs text-rose-600">{error}</p>}
