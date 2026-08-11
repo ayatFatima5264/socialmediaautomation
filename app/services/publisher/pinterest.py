@@ -224,6 +224,19 @@ def _compose(content: str, hashtags: list[str]) -> tuple[str, str]:
     return title, description
 
 
+def _detail(exc: pinterest_api.PinterestAPIError) -> str:
+    """Pinterest's own explanation, if it sent one worth repeating.
+
+    Only the `message` field is used — never the whole payload — so nothing
+    about the request, including the token that made it, can be echoed back.
+    """
+    message = (exc.message or "").strip()
+    if not message or message.lower().startswith("pinterest api error"):
+        return ":"
+    code = f", code {exc.code}" if exc.code else ""
+    return f': "{message.rstrip(".")}"{code}.'
+
+
 def _user_message(exc: pinterest_api.PinterestAPIError) -> str:
     """Turn a PinterestAPIError into a clear, actionable message for the post
     record. Never includes a token, a client secret or a raw API payload."""
@@ -239,10 +252,16 @@ def _user_message(exc: pinterest_api.PinterestAPIError) -> str:
             "Reconnect your Pinterest account and try again."
         )
     if exc.status_code == 403:
+        # Pinterest returns 403 for several unrelated reasons — a missing scope,
+        # an account that isn't a business account, a feature the app's access
+        # tier doesn't cover. Its own sentence is the only thing that
+        # distinguishes them, so pass it through: it names the cause and
+        # contains no credential.
         return (
-            "Pinterest refused the request — the connection is missing a required "
-            "permission. Reconnect your Pinterest account to grant board and Pin "
-            "access, then try again."
+            "Pinterest refused the request"
+            f"{_detail(exc)} This usually means the connection is missing a "
+            "permission, or your Pinterest account isn't a business account "
+            "(Pin creation needs one). Try reconnecting Pinterest first."
         )
     if exc.is_not_found:
         return (

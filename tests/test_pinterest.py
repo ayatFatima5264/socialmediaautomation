@@ -698,7 +698,7 @@ async def test_publish_reports_a_failed_refresh_as_reconnect(
     ("status", "payload", "expected"),
     [
         (400, {"code": 3, "message": "Invalid image."}, "Pinterest rejected the Pin"),
-        (403, {"code": 7, "message": "Forbidden"}, "missing a required permission"),
+        (403, {"code": 7, "message": "Forbidden"}, "Pinterest refused the request"),
         (429, {"code": 8, "message": "Too many requests"}, "rate limit reached"),
         (500, {"code": 1, "message": "Server error"}, "having trouble right now"),
     ],
@@ -724,6 +724,38 @@ async def test_pin_api_errors_become_safe_user_messages(
     # A failure message must never leak the credential that produced it.
     assert "pina-test-token" not in result.error
     assert "pinr-test-refresh" not in result.error
+
+
+@pytest.mark.anyio
+async def test_a_403_repeats_pinterests_own_explanation(
+    session_factory, fake_pinterest
+):
+    """403 covers unrelated causes — a missing scope, a personal (non-business)
+    account, a feature the access tier lacks. Only Pinterest's sentence tells
+    them apart, so it has to reach the user."""
+    fake_pinterest(
+        {
+            ("GET", "boards/111"): (200, {"id": "111"}),
+            ("POST", "pins"): (
+                403,
+                {"code": 7, "message": "You are not permitted to access that resource"},
+            ),
+        }
+    )
+    account = _connect_pinterest(session_factory, 1)
+    db = session_factory()
+    result = await PinterestPublisher(db.merge(account), db).publish(
+        content="Pin me",
+        hashtags=[],
+        media_urls=["https://cdn.example.com/a.png"],
+        options={"board_id": "111"},
+    )
+    db.close()
+
+    assert result.success is False
+    assert "not permitted to access that resource" in result.error
+    assert "code 7" in result.error
+    assert "pina-test-token" not in result.error
 
 
 @pytest.mark.anyio

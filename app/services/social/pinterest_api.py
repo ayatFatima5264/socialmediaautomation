@@ -173,7 +173,7 @@ async def _request(
                 )
             return data if isinstance(data, dict) else {"data": data}
 
-        error = _classify_error(resp)
+        error = _classify_error(resp, f"{method} {path}")
         # 5xx is transient; so is a 429 that tells us how long to wait for.
         retryable = error.is_server_error or error.is_rate_limited
         if retryable and attempt < _MAX_ATTEMPTS:
@@ -189,7 +189,7 @@ async def _request(
     raise last_error or PinterestAPIError("Pinterest API request failed after retries.")
 
 
-def _classify_error(resp: httpx.Response) -> PinterestAPIError:
+def _classify_error(resp: httpx.Response, operation: str = "") -> PinterestAPIError:
     try:
         data = resp.json()
     except ValueError:
@@ -212,8 +212,13 @@ def _classify_error(resp: httpx.Response) -> PinterestAPIError:
         is_server_error=status >= 500,
         retry_after=_retry_after(resp),
     )
-    # Log the status and Pinterest's message only — never the token or headers.
-    logger.warning("Pinterest API error %d (code=%s): %s", status, code, error.message)
+    # Log the failing call, the status and Pinterest's message — never the token
+    # or headers. The operation matters: a 403 listing boards and a 403 creating
+    # a Pin have completely different causes.
+    logger.warning(
+        "Pinterest API error %d on %s (code=%s): %s",
+        status, operation or "?", code, error.message,
+    )
     return error
 
 
