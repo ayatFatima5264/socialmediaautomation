@@ -58,3 +58,4 @@ def complete_onboarding(
         user.onboarding_completed = True
         db.commit()
     return {"success": True, "onboarding_completed": True}
+

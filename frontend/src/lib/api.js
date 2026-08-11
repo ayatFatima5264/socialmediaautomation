@@ -138,6 +138,14 @@ export const api = {
     request(`/api/social/${platform}`, { method: 'DELETE' }),
   refreshAccount: (platform) =>
     request(`/api/social/${platform}/refresh`, { method: 'POST' }),
+  // Upload an image and get back a public URL. Needed because platforms fetch
+  // the image from a URL themselves — a local file preview can't be published.
+  uploadMedia: (file) => {
+    const fd = new FormData()
+    fd.append('file', file)
+    return request('/api/media', { method: 'POST', formData: fd })
+  },
+
   // Pinterest boards — every Pin must be saved to a board, so the composer and
   // the account card both read this list. Always fetched live, so calling it
   // again is exactly what "refresh boards" does.

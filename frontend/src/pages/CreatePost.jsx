@@ -267,7 +267,16 @@ export default function CreatePost() {
         : file.type === 'image/gif'
           ? 'gif'
           : 'image'
-      return { id: `${file.name}-${file.size}-${file.lastModified}`, url: URL.createObjectURL(file), type, name: file.name }
+      // `file` is kept alongside the preview URL: the preview is a local
+      // blob: URL no platform can fetch, so the bytes are uploaded at publish
+      // time to get a public URL (see uploadLocalImages).
+      return {
+        id: `${file.name}-${file.size}-${file.lastModified}`,
+        url: URL.createObjectURL(file),
+        type,
+        name: file.name,
+        file,
+      }
     })
     setMedia((m) => [...m, ...items.filter((it) => !m.some((x) => x.id === it.id))])
   }
@@ -370,13 +379,13 @@ export default function CreatePost() {
 
   // --- derived: per-platform warnings --------------------------------------
   const charCount = content.length
-  const imageCount = media.filter((m) => m.type !== 'video').length
-  // Images a platform can actually fetch (see isPublicUrl).
-  const publishableImages = useMemo(
-    () => media.filter((m) => m.type !== 'video' && isPublicUrl(m.url)).map((m) => m.url),
-    [media],
-  )
-  const publishableImageCount = publishableImages.length
+  const images = useMemo(() => media.filter((m) => m.type !== 'video'), [media])
+  const imageCount = images.length
+  // An image is publishable if a platform can fetch it: either it already has a
+  // public URL, or we still hold the file and can upload it at publish time.
+  const publishableImageCount = images.filter(
+    (m) => isPublicUrl(m.url) || m.file,
+  ).length
 
   const warnings = useMemo(() => {
     const out = {}
@@ -393,12 +402,7 @@ export default function CreatePost() {
         if (imageCount === 0) {
           list.push('Pinterest needs an image (portrait recommended)')
         } else if (publishableImageCount === 0) {
-          // A Pin is created from an image URL Pinterest fetches itself, so a
-          // local upload can't be pinned. Say so here rather than letting the
-          // publish fail later.
-          list.push(
-            'Pinterest can only pin an image with a public URL — generate one in the AI Generator',
-          )
+          list.push('This image can no longer be uploaded — re-add it')
         }
         if (!pinterestBoard && !pinterestDefaultBoard) {
           list.push('Choose a Pinterest board for this Pin')
@@ -455,6 +459,29 @@ export default function CreatePost() {
     setScheduleAt(minLocal())
   }
 
+  // Turn the attached images into URLs a platform can fetch.
+  //
+  // A dropped file is only a local blob: preview — Pinterest, Instagram and
+  // Facebook publish by fetching the URL from their own servers, so the bytes
+  // are uploaded here and the returned public URL is what gets saved on the
+  // post. An image that already has a public URL is passed through untouched.
+  async function uploadLocalImages() {
+    const out = []
+    for (const item of images) {
+      if (isPublicUrl(item.url)) {
+        out.push(item.url)
+        continue
+      }
+      if (!item.file) continue
+      // Sequential: a burst of large uploads on a slow connection is worse
+      // than a short wait, and the order of the images is meaningful.
+      // eslint-disable-next-line no-await-in-loop
+      const { url } = await api.uploadMedia(item.file)
+      out.push(url)
+    }
+    return out
+  }
+
   // Per-platform publishing choices sent with the post. Pinterest is the only
   // platform that needs any today: the target board and the Pin's destination
   // link. Everything else sends nothing extra.
@@ -481,13 +508,14 @@ export default function CreatePost() {
     setBusy(true)
     try {
       const scheduled = !asDraft && scheduleMode === 'later'
+      // Upload first: the post must carry URLs the platforms can fetch, and a
+      // scheduled post publishes long after this page is closed.
+      const imageUrls = await uploadLocalImages()
       const body = {
         content: text,
         hashtags,
-        // Only publicly reachable images can be published; local previews are
-        // left out rather than sent as unusable blob: URLs.
-        ...(publishableImages.length
-          ? { media: publishableImages.map((url) => ({ type: 'image', url })) }
+        ...(imageUrls.length
+          ? { media: imageUrls.map((url) => ({ type: 'image', url })) }
           : {}),
         ...(scheduled ? { scheduled_time: localInputToISO(scheduleAt) } : {}),
       }

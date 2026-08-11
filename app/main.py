@@ -20,6 +20,7 @@ from app.routes import (
     auth,
     business_profile,
     instagram,
+    media,
     oauth,
     planner,
     posts,
@@ -69,6 +70,7 @@ app.include_router(schedule.router)
 app.include_router(social.router)
 app.include_router(oauth.router)
 app.include_router(instagram.router)
+app.include_router(media.router)
 app.include_router(business_profile.router)
 app.include_router(planner.router)
 app.include_router(ads.router)
