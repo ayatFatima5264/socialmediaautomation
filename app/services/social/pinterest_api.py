@@ -40,6 +40,8 @@ TITLE_MAX = 100
 DESCRIPTION_MAX = 800
 LINK_MAX = 2048
 ALT_TEXT_MAX = 500
+BOARD_NAME_MAX = 180
+BOARD_DESCRIPTION_MAX = 500
 
 # Boards are paged; 250 is the API maximum page size.
 _BOARD_PAGE_SIZE = 250
@@ -109,6 +111,33 @@ async def get_board(access_token: str, board_id: str) -> dict:
         "id": str(data.get("id") or board_id),
         "name": data.get("name") or "Untitled board",
         "privacy": data.get("privacy"),
+    }
+
+
+async def create_board(
+    *,
+    access_token: str,
+    name: str,
+    description: str | None = None,
+    privacy: str = "PUBLIC",
+) -> dict:
+    """Create a board and return it as {id, name, privacy}.
+
+    Needed because a Pin can't exist without a board and boards don't cross
+    environments: an account with boards in production starts with none in
+    Sandbox, and Pinterest's own website only manages the production ones.
+    """
+    body: dict[str, Any] = {"name": name[:BOARD_NAME_MAX], "privacy": privacy}
+    if description:
+        body["description"] = description[:BOARD_DESCRIPTION_MAX]
+
+    data = await _request("POST", "boards", access_token, json=body)
+    if not data.get("id"):
+        raise PinterestAPIError("Pinterest did not return a board id.")
+    return {
+        "id": str(data["id"]),
+        "name": data.get("name") or name,
+        "privacy": data.get("privacy") or privacy,
     }
 
 

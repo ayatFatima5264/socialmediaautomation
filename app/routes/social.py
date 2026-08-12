@@ -7,6 +7,7 @@
     POST   /api/social/{platform}/refresh — refresh tokens / re-sync
 
     GET    /api/social/pinterest/boards        — the user's Pinterest boards
+    POST   /api/social/pinterest/boards        — create a board
     PUT    /api/social/pinterest/default-board — board Pins default to
     DELETE /api/social/pinterest/default-board — clear that default
 
@@ -26,6 +27,7 @@ from app.schemas.post import Platform
 from app.schemas.social_account import (
     AccountsOverview,
     ApiResponse,
+    CreateBoardRequest,
     PendingConnectionRead,
     PinterestBoard,
     PinterestBoardsResponse,
@@ -103,6 +105,27 @@ async def pinterest_board_list(
         boards=[PinterestBoard(**b) for b in boards],
         default_board_id=account.page_id if account else None,
     )
+
+
+@router.post("/pinterest/boards", response_model=PinterestBoard, status_code=201)
+async def pinterest_create_board(
+    data: CreateBoardRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> PinterestBoard:
+    """Create a board on the caller's Pinterest account.
+
+    Boards don't cross Pinterest environments, so an account with boards in
+    production has none in Sandbox — where a Trial-tier app must publish. Every
+    Pin needs a board, so the app has to be able to make one.
+    """
+    try:
+        board = await pinterest_boards.create_board(
+            db, user, data.name, privacy=data.privacy
+        )
+    except ConnectError as exc:
+        raise _handle(exc) from exc
+    return PinterestBoard(**board)
 
 
 @router.put("/pinterest/default-board", response_model=ApiResponse)

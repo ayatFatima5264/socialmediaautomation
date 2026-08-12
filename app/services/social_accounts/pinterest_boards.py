@@ -78,6 +78,40 @@ async def set_default_board(db: Session, user: User, board_id: str) -> SocialAcc
     return SocialAccountRepository(db).save(account)
 
 
+async def create_board(
+    db: Session, user: User, name: str, *, privacy: str = "PUBLIC"
+) -> dict:
+    """Create a board on the connected account and return {id, name, privacy}.
+
+    This exists because boards don't cross environments. An account with boards
+    in production has none in Sandbox, and Pinterest's website only manages the
+    production ones — so without this, a Trial-tier user has no way to get the
+    board that every Pin requires.
+    """
+    account = _require_account(db, user)
+    name = (name or "").strip()
+    if not name:
+        raise ConnectError("Give the board a name.", 400)
+
+    await _ensure_fresh_token(db, account)
+    try:
+        board = await pinterest_api.create_board(
+            access_token=account.access_token, name=name, privacy=privacy
+        )
+    except pinterest_api.PinterestAPIError as exc:
+        _flag_if_auth_error(db, account, exc)
+        if exc.status_code == 400:
+            raise ConnectError(
+                f"Pinterest wouldn't create that board: {exc.message} "
+                "Try a different name.",
+                400,
+            ) from exc
+        raise ConnectError(_user_message(exc), _status_for(exc)) from exc
+
+    logger.info("Created Pinterest board %s for user %s", board["id"], user.id)
+    return board
+
+
 def clear_default_board(db: Session, user: User) -> SocialAccount:
     """Forget the default board (posts must then name one)."""
     account = _require_account(db, user)

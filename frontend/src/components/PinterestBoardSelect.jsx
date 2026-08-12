@@ -26,6 +26,11 @@ export default function PinterestBoardSelect({
   const [defaultBoardId, setDefaultBoardId] = useState(null)
   const [error, setError] = useState(null)
   const [busy, setBusy] = useState(false)
+  // Creating a board in-app is not a convenience: boards don't cross Pinterest
+  // environments, so a Sandbox connection starts with none and Pinterest's own
+  // website can't make one there.
+  const [newName, setNewName] = useState(null) // null = form closed
+  const [creating, setCreating] = useState(false)
 
   const load = useCallback(async () => {
     setBusy(true)
@@ -54,8 +59,75 @@ export default function PinterestBoardSelect({
     load()
   }, [load])
 
+  async function createBoard() {
+    const name = (newName || '').trim()
+    if (!name || creating) return
+    setCreating(true)
+    setError(null)
+    try {
+      const board = await api.createPinterestBoard(name)
+      setBoards((list) => [...(list || []), board])
+      setNewName(null)
+      onChange(board.id) // a board made right now is the one they meant
+    } catch (err) {
+      setError(
+        err instanceof ApiError ? err.message : 'Could not create the board.',
+      )
+    } finally {
+      setCreating(false)
+    }
+  }
+
   const loading = boards === null
   const empty = !loading && boards.length === 0 && !error
+
+  // The inline "new board" form, shared by both layouts.
+  const createForm = newName !== null && (
+    <div className="mt-1.5 flex items-center gap-1.5">
+      <input
+        autoFocus
+        className="input py-1 text-xs"
+        value={newName}
+        maxLength={180}
+        placeholder="Board name"
+        disabled={creating}
+        onChange={(e) => setNewName(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault()
+            createBoard()
+          }
+          if (e.key === 'Escape') setNewName(null)
+        }}
+      />
+      <button
+        type="button"
+        onClick={createBoard}
+        disabled={creating || !newName.trim()}
+        className="btn btn-primary btn-sm shrink-0 disabled:opacity-50"
+      >
+        {creating ? 'Creating…' : 'Create'}
+      </button>
+      <button
+        type="button"
+        onClick={() => setNewName(null)}
+        disabled={creating}
+        className="btn btn-ghost btn-sm shrink-0"
+      >
+        Cancel
+      </button>
+    </div>
+  )
+
+  const newBoardButton = newName === null && !loading && !error && (
+    <button
+      type="button"
+      onClick={() => setNewName('')}
+      className="shrink-0 text-xs text-accent underline-offset-2 hover:underline"
+    >
+      + New board
+    </button>
+  )
 
   const options = (
     <>
@@ -74,8 +146,7 @@ export default function PinterestBoardSelect({
   )
   const isDisabled = disabled || loading || empty || !!error
   const onSelect = (e) => onChange(e.target.value || null)
-  const emptyHint =
-    'No boards yet — create one on Pinterest, then refresh.'
+  const emptyHint = 'No boards yet — create one to publish Pins.'
 
   // Compact: one row that matches the surrounding detail lines, so adding this
   // control doesn't make its card taller than the others in the grid row.
@@ -107,7 +178,13 @@ export default function PinterestBoardSelect({
           </div>
         </div>
         {error && <p className="text-right text-xs text-rose-600">{error}</p>}
-        {empty && <p className="text-right text-xs text-muted">{emptyHint}</p>}
+        {empty && newName === null && (
+          <p className="text-right text-xs text-muted">{emptyHint}</p>
+        )}
+        {createForm}
+        {newName === null && !loading && (
+          <div className="flex justify-end">{newBoardButton}</div>
+        )}
       </div>
     )
   }
@@ -118,14 +195,17 @@ export default function PinterestBoardSelect({
         <label className="label mb-0" htmlFor="pinterest-board">
           {label}
         </label>
-        <button
-          type="button"
-          onClick={load}
-          disabled={busy}
-          className="text-xs text-muted underline-offset-2 hover:underline disabled:opacity-50"
-        >
-          {busy ? 'Refreshing…' : 'Refresh'}
-        </button>
+        <div className="flex items-center gap-3">
+          {newBoardButton}
+          <button
+            type="button"
+            onClick={load}
+            disabled={busy}
+            className="text-xs text-muted underline-offset-2 hover:underline disabled:opacity-50"
+          >
+            {busy ? 'Refreshing…' : 'Refresh'}
+          </button>
+        </div>
       </div>
 
       <select
@@ -138,11 +218,13 @@ export default function PinterestBoardSelect({
         {options}
       </select>
 
+      {createForm}
+
       {error && <p className="mt-1.5 text-xs text-rose-600">{error}</p>}
-      {empty && (
+      {empty && newName === null && (
         <p className="mt-1.5 text-xs text-muted">
-          No boards yet. Create one on Pinterest, then hit Refresh — every Pin
-          must be saved to a board.
+          No boards yet — every Pin must be saved to one. Use “+ New board”
+          above to make your first.
         </p>
       )}
       {help && !error && !empty && (

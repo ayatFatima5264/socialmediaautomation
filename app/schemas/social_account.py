@@ -157,3 +157,15 @@ class SetDefaultBoardRequest(BaseModel):
     """Pick the board Pins go to when a post doesn't name one."""
 
     board_id: str = Field(..., min_length=1, max_length=255)
+
+
+class CreateBoardRequest(BaseModel):
+    """Create a board on the connected Pinterest account.
+
+    Needed because boards don't cross Pinterest environments — an account with
+    boards in production starts with none in Sandbox, and every Pin needs one.
+    """
+
+    name: str = Field(..., min_length=1, max_length=180)
+    # PUBLIC | PROTECTED | SECRET, per Pinterest's BoardPrivacy.
+    privacy: str = Field(default="PUBLIC", pattern="^(PUBLIC|PROTECTED|SECRET)$")

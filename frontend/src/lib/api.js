@@ -150,6 +150,13 @@ export const api = {
   // the account card both read this list. Always fetched live, so calling it
   // again is exactly what "refresh boards" does.
   pinterestBoards: () => request('/api/social/pinterest/boards'),
+  // Boards don't cross Pinterest environments, so an account with boards in
+  // production starts with none in Sandbox — and every Pin needs one.
+  createPinterestBoard: (name, privacy = 'PUBLIC') =>
+    request('/api/social/pinterest/boards', {
+      method: 'POST',
+      body: { name, privacy },
+    }),
   setPinterestDefaultBoard: (boardId) =>
     request('/api/social/pinterest/default-board', {
       method: 'PUT',

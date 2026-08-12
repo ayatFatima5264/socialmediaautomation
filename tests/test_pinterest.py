@@ -459,6 +459,95 @@ def test_boards_are_listed_with_the_default(client, session_factory, fake_pinter
     ] == "111"
 
 
+def test_a_board_can_be_created_from_the_app(client, session_factory, fake_pinterest):
+    """Sandbox starts with no boards and Pinterest's website can't make one
+    there, so creating a board in-app is what makes publishing possible."""
+    fake = fake_pinterest(
+        {("POST", "boards"): (201, {"id": "555", "name": "AutoSocial", "privacy": "PUBLIC"})}
+    )
+    headers = _register(client, "makeboard@example.com")
+    _connect_pinterest(session_factory, _user_id(client, headers))
+
+    r = client.post(
+        "/api/social/pinterest/boards",
+        json={"name": "AutoSocial"},
+        headers=headers,
+    )
+    assert r.status_code == 201
+    assert r.json() == {"id": "555", "name": "AutoSocial", "privacy": "PUBLIC"}
+    body = next(b for m, p, b in fake.calls if (m, p) == ("POST", "boards"))
+    assert body == {"name": "AutoSocial", "privacy": "PUBLIC"}
+
+
+def test_creating_a_board_requires_a_name_and_a_connection(client, session_factory):
+    headers = _register(client, "noname@example.com")
+    # Not connected at all.
+    assert client.post(
+        "/api/social/pinterest/boards", json={"name": "X"}, headers=headers
+    ).status_code == 404
+
+    _connect_pinterest(session_factory, _user_id(client, headers))
+    # An empty name never reaches Pinterest.
+    assert client.post(
+        "/api/social/pinterest/boards", json={"name": "   "}, headers=headers
+    ).status_code in (400, 422)
+    assert client.post("/api/social/pinterest/boards", json={"name": "X"}).status_code == 401
+
+
+def test_board_creation_rejected_by_pinterest_is_reported(
+    client, session_factory, fake_pinterest
+):
+    fake_pinterest(
+        {("POST", "boards"): (400, {"code": 3, "message": "Board name already exists"})}
+    )
+    headers = _register(client, "dupboard@example.com")
+    _connect_pinterest(session_factory, _user_id(client, headers))
+
+    r = client.post(
+        "/api/social/pinterest/boards", json={"name": "Taken"}, headers=headers
+    )
+    assert r.status_code == 400
+    assert "Board name already exists" in r.json()["detail"]
+
+
+def test_a_new_board_can_be_pinned_to_immediately(
+    client, session_factory, fake_pinterest
+):
+    """The whole point of the flow: no boards → create one → publish to it."""
+    fake_pinterest(
+        {
+            ("GET", "boards"): (200, {"items": [], "bookmark": None}),
+            ("POST", "boards"): (201, {"id": "777", "name": "First", "privacy": "PUBLIC"}),
+            ("GET", "boards/777"): (200, {"id": "777", "name": "First"}),
+            ("POST", "pins"): PIN_OK,
+        }
+    )
+    headers = _register(client, "firstboard@example.com")
+    _connect_pinterest(session_factory, _user_id(client, headers))
+
+    # Starts empty, as a fresh Sandbox connection does.
+    assert client.get("/api/social/pinterest/boards", headers=headers).json()["boards"] == []
+
+    board = client.post(
+        "/api/social/pinterest/boards", json={"name": "First"}, headers=headers
+    ).json()
+
+    post = client.post(
+        "/api/posts",
+        json={
+            "platform": "pinterest",
+            "content": "First pin",
+            "media": [{"type": "image", "url": "https://cdn.example.com/a.png"}],
+            "platform_options": {"board_id": board["id"]},
+        },
+        headers=headers,
+    ).json()
+    published = client.post(f"/api/posts/{post['id']}/publish", headers=headers).json()
+
+    assert published["status"] == "published"
+    assert published["external_id"] == "pin-123"
+
+
 def test_setting_a_deleted_board_as_default_is_rejected(
     client, session_factory, fake_pinterest
 ):
