@@ -37,12 +37,36 @@ class ThreadsAPIError(Exception):
         message: str,
         *,
         status_code: int | None = None,
+        code: int | None = None,
+        subcode: int | None = None,
         is_auth_error: bool = False,
+        is_rate_limited: bool = False,
+        is_permission_error: bool = False,
+        is_server_error: bool = False,
+        is_media_error: bool = False,
     ) -> None:
         super().__init__(message)
         self.message = message
         self.status_code = status_code
+        # Meta's own error code / subcode from the response body.
+        self.code = code
+        self.subcode = subcode
         self.is_auth_error = is_auth_error
+        self.is_rate_limited = is_rate_limited
+        self.is_permission_error = is_permission_error
+        self.is_server_error = is_server_error
+        # The container was rejected because of the media itself (bad URL,
+        # unsupported format, download failure) rather than the request.
+        self.is_media_error = is_media_error
+
+
+# Meta error codes that mean "slow down" regardless of HTTP status — the Graph
+# API often returns them as 400.
+_RATE_LIMIT_CODES = {4, 17, 32, 613}
+# "Permissions error" / "requires permission" family.
+_PERMISSION_CODES = {10, 200, 803}
+# Token problems Meta reports as code 190 (with subcodes for expiry/revocation).
+_AUTH_CODES = {102, 190}
 
 
 async def publish_post(
@@ -136,8 +160,10 @@ async def _request(path: str, params: dict, *, method: str = "POST") -> dict:
                 )
             return data if isinstance(data, dict) else {"data": data}
 
-        error = _classify_error(resp)
-        if resp.status_code >= 500 and attempt < _MAX_ATTEMPTS:
+        error = _classify_error(resp, f"{method} {path}")
+        # 5xx is transient. A rate limit is too, but only briefly worth waiting
+        # out — a longer block is the caller's to report, not to sit through.
+        if (error.is_server_error or error.is_rate_limited) and attempt < _MAX_ATTEMPTS:
             last_error = error
             await asyncio.sleep(_BACKOFF_BASE * (2 ** (attempt - 1)))
             continue
@@ -146,21 +172,46 @@ async def _request(path: str, params: dict, *, method: str = "POST") -> dict:
     raise last_error or ThreadsAPIError("Threads API request failed after retries.")
 
 
-def _classify_error(resp: httpx.Response) -> ThreadsAPIError:
+def _classify_error(resp: httpx.Response, operation: str = "") -> ThreadsAPIError:
+    """Turn a Graph error body into flags callers can branch on.
+
+    Meta reports most failures as HTTP 400 and distinguishes them by `code` /
+    `error_subcode`, so the status alone says very little — a rate limit, an
+    expired token and a bad image URL all arrive the same way.
+    """
     try:
         data = resp.json()
     except ValueError:
         data = {}
-    message = ""
-    if isinstance(data, dict):
-        message = (data.get("error") or {}).get("message", "") if isinstance(
-            data.get("error"), dict
-        ) else str(data.get("error") or "")
+    err = data.get("error") if isinstance(data, dict) else None
+    if not isinstance(err, dict):
+        err = {}
+    message = err.get("message") or err.get("error_user_msg") or ""
+    code = err.get("code") if isinstance(err.get("code"), int) else None
+    subcode = (
+        err.get("error_subcode") if isinstance(err.get("error_subcode"), int) else None
+    )
+
     status = resp.status_code
+    lowered = message.lower()
     error = ThreadsAPIError(
         message or f"Threads API error {status}",
         status_code=status,
-        is_auth_error=status in (401, 403),
+        code=code,
+        subcode=subcode,
+        is_auth_error=status == 401 or code in _AUTH_CODES,
+        is_rate_limited=status == 429 or code in _RATE_LIMIT_CODES,
+        is_permission_error=status == 403 or code in _PERMISSION_CODES,
+        is_server_error=status >= 500,
+        is_media_error=any(
+            hint in lowered
+            for hint in ("media", "image", "video", "url", "download", "format")
+        ),
     )
-    logger.warning("Threads API error %d: %s", status, error.message)
+    # The failing call, the status and Meta's message only — never the params,
+    # which carry the access token.
+    logger.warning(
+        "Threads API error %d on %s (code=%s subcode=%s): %s",
+        status, operation or "?", code, subcode, error.message,
+    )
     return error

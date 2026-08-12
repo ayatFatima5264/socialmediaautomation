@@ -300,13 +300,24 @@ def reauth_required(account: SocialAccount) -> bool:
 def token_needs_refresh(account: SocialAccount, *, leeway_seconds: int = 120) -> bool:
     """True if the account's access token is expired or about to expire.
 
-    Only refreshable accounts qualify: one with no stored refresh token, or no
-    known expiry (a long-lived token), is left untouched. `leeway_seconds` gives
-    callers a margin so they refresh just before a token would lapse mid-request.
+    Only refreshable accounts qualify: one with no known expiry (a long-lived
+    token) is left untouched, as is one with no refresh token — unless the
+    platform renews the access token itself (Meta's Instagram/Threads), where
+    there is no separate refresh token to store. `leeway_seconds` gives callers a
+    margin so they refresh just before a token would lapse mid-request.
     """
-    if not account.refresh_token or account.token_expires_at is None:
+    if account.token_expires_at is None:
+        return False
+    if not account.refresh_token and not _self_refreshing(account):
         return False
     return account.token_expires_at <= utcnow() + timedelta(seconds=leeway_seconds)
+
+
+def _self_refreshing(account: SocialAccount) -> bool:
+    """True when the platform renews its access token instead of issuing a
+    refresh token, so `refresh()` takes the access token."""
+    provider = get_provider(Platform(account.platform))
+    return bool(getattr(provider, "refresh_uses_access_token", False))
 
 
 async def refresh_tokens(db: Session, account: SocialAccount) -> SocialAccount:
@@ -317,10 +328,16 @@ async def refresh_tokens(db: Session, account: SocialAccount) -> SocialAccount:
     later failure in the same request can't lose a freshly rotated refresh token.
     Raises OAuthError if there is no refresh token or the provider refresh fails.
     """
-    if not account.refresh_token:
-        raise OAuthError("No refresh token stored — reconnect the account.")
     provider = get_provider(Platform(account.platform))
-    tokens = await provider.refresh(account.refresh_token)
+    # Meta's Instagram/Threads renew the access token itself — there is no
+    # separate refresh token to require.
+    if provider.refresh_uses_access_token:
+        token_arg = account.access_token
+    elif account.refresh_token:
+        token_arg = account.refresh_token
+    else:
+        raise OAuthError("No refresh token stored — reconnect the account.")
+    tokens = await provider.refresh(token_arg)
     _apply_tokens(account, tokens)
     account.last_synced_at = utcnow()
     db.commit()
@@ -343,17 +360,18 @@ async def refresh_account(db: Session, user: User, platform: Platform) -> Social
             f"{platform.value.capitalize()} is not configured — cannot refresh.", 503
         )
 
-    if not account.refresh_token and platform not in (
-        Platform.instagram,
-        Platform.threads,
-    ):
+    if not account.refresh_token and not provider.refresh_uses_access_token:
         raise ConnectError(
             f"{platform.value.capitalize()} has no refresh token — reconnect it.", 400
         )
 
     try:
-        # Instagram/Threads refresh the long-lived access token itself.
-        token_arg = account.refresh_token or account.access_token
+        # Instagram/Threads renew the long-lived access token itself.
+        token_arg = (
+            account.access_token
+            if provider.refresh_uses_access_token
+            else account.refresh_token
+        )
         tokens = await provider.refresh(token_arg)
     except (OAuthError, NotImplementedError) as exc:
         account.status = AccountStatus.error.value

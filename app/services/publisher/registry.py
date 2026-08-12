@@ -53,7 +53,7 @@ def get_publisher(
         if platform is Platform.facebook:
             return FacebookPublisher(account)
         if platform is Platform.threads:
-            return ThreadsPublisher(account)
+            return ThreadsPublisher(account, db)
         if platform is Platform.pinterest:
             return PinterestPublisher(account, db)
     return SimulatedPublisher(platform)

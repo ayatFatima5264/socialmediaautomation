@@ -59,7 +59,7 @@ THREADS_CLIENT_SECRET=
 | LinkedIn  | `openid`, `profile`, `email`, `w_member_social` |
 | X (Twitter) | `tweet.read`, `tweet.write`, `users.read`, `offline.access` (PKCE) |
 | Pinterest | `user_accounts:read`, `boards:read`, `boards:write`, `pins:read`, `pins:write` |
-| Threads   | `threads_basic`, `threads_content_publish` |
+| Threads   | `threads_basic`, `threads_content_publish` (both required) |
 
 ## How the flow works
 
@@ -97,6 +97,61 @@ Pinterest adds three endpoints, because every Pin must be saved to a board:
 | `GET /api/social/pinterest/boards` | The caller's boards (live from Pinterest) + current default |
 | `PUT /api/social/pinterest/default-board` | Set the board Pins default to (`{"board_id": "..."}`) |
 | `DELETE /api/social/pinterest/default-board` | Clear that default |
+
+---
+
+# Threads Setup (Threads API)
+
+## 1. Meta dashboard
+
+At <https://developers.facebook.com/apps/> open (or create) the app, add the
+**Threads API** product, and under *Threads API → Settings* set:
+
+- **Redirect Callback URL** — exactly `{BACKEND_URL}/api/auth/threads/callback`:
+  - local: `http://localhost:8000/api/auth/threads/callback`
+  - production: `https://autosocial-backend-282n.onrender.com/api/auth/threads/callback`
+- Copy the **App ID** → `THREADS_CLIENT_ID` (or `THREADS_APP_ID`) and the
+  **App secret** → `THREADS_CLIENT_SECRET` (or `THREADS_APP_SECRET`).
+
+Add yourself as a **Threads tester** (*App roles → Roles*) and accept the
+invite from the Threads app settings, or authorization fails until the app is
+reviewed. The Threads account being connected must be a public profile.
+
+## 2. Permissions
+
+`threads_basic` and `threads_content_publish`, both marked **required**: the
+first identifies the account, the second creates and publishes the post. An
+account authorized without one shows "Reconnect required" rather than failing at
+publish time.
+
+## 3. Tokens
+
+- The code exchange returns a **short-lived** token (~1 hour), immediately
+  swapped for a **long-lived** one (60 days) via
+  `GET /access_token?grant_type=th_exchange_token`.
+- Threads issues **no refresh token** — the long-lived token renews *itself* via
+  `GET /refresh_access_token?grant_type=th_refresh_token`, returning a fresh
+  60-day token. It must be at least 24 hours old to be refreshable.
+- **A token left unrefreshed for 60 days dies permanently** and the account must
+  be reconnected. The backend therefore refreshes proactively before publishing,
+  and once reactively if a token is rejected mid-post.
+
+## 4. Publishing
+
+Two steps, the same container model as Instagram:
+
+1. `POST /v1.0/{threads-user-id}/threads` with `media_type=TEXT` (plus `text`),
+   or `media_type=IMAGE` with `image_url` — returns a `creation_id`.
+2. `POST /v1.0/{threads-user-id}/threads_publish` with that `creation_id` —
+   returns the published post id, saved as the post's `external_id`.
+
+Image containers are polled until Threads reports `FINISHED` before publishing.
+Threads downloads the image itself, so it must be a public URL — which is what
+`POST /api/media` provides for uploads.
+
+Limits: 500 characters per post; images JPEG/PNG. **Video is not published** —
+nothing in the post pipeline hosts video, so a video attachment is refused with
+a clear message instead of being sent as an image.
 
 ---
 

@@ -180,6 +180,13 @@ class Settings(BaseSettings):
     pinterest_redirect_uri: str | None = None
     threads_client_id: str | None = None
     threads_client_secret: str | None = None
+    # Meta's dashboard labels these the App ID / App secret, so both namings are
+    # accepted for Threads; *_client_* wins if both are set.
+    threads_app_id: str | None = None
+    threads_app_secret: str | None = None
+    # Exact redirect URI registered for Threads, when it must match to the
+    # letter. Unset falls back to {backend_url}/api/auth/threads/callback.
+    threads_redirect_uri: str | None = None
 
     # ---- CORS (React frontend dev server) --------------------------------
     cors_origins: list[str] = ["http://localhost:5173", "http://localhost:3000"]

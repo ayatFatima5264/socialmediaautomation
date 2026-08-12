@@ -82,6 +82,11 @@ class OAuthProvider:
     # HTTP Basic Authorization header (X, Pinterest).
     token_auth: str = "body"
     use_pkce: bool = False
+    # True for platforms that renew the long-lived access token itself instead
+    # of issuing a separate refresh token (Meta: Instagram, Threads). Their
+    # `refresh()` takes the *access* token, and an account with no refresh_token
+    # is still refreshable — which is what the token-lifecycle helpers check.
+    refresh_uses_access_token: bool = False
 
     # ---- configuration ---------------------------------------------------
     @property
