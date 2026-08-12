@@ -183,9 +183,13 @@ class PinterestPublisher(BasePublisher):
 
         boards = await pinterest_api.list_boards(token)
         if not boards:
+            # Not "make one on Pinterest": in Sandbox — where a Trial-tier app
+            # must publish — the website manages a different set of boards and
+            # can't create one here. The picker's "+ New board" can.
             raise BoardError(
-                "No Pinterest board found. Create a board on Pinterest, then try "
-                "again — every Pin must be saved to a board."
+                "No Pinterest board found — every Pin must be saved to one. "
+                'Use "+ New board" next to the board picker to create your '
+                "first, then try again."
             )
         if len(boards) > 1:
             raise BoardError(
@@ -193,6 +197,10 @@ class PinterestPublisher(BasePublisher):
                 f"{len(boards)} boards, so there is no obvious default. Pick one "
                 "on the post, or set a default board on the Accounts page."
             )
+        logger.info(
+            "Pinterest publish: no board chosen — using the account's only board %s",
+            boards[0]["id"],
+        )
         return boards[0]["id"]
 
     async def _ensure_fresh_token(self) -> None:

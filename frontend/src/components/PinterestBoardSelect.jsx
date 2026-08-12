@@ -144,8 +144,19 @@ export default function PinterestBoardSelect({
       ))}
     </>
   )
-  const isDisabled = disabled || loading || empty || !!error
+  // Deliberately NOT disabled when the list is empty. Greying the control out
+  // adds nothing — there is nothing to pick either way — but it reads as broken,
+  // and it hides the fact that the list may simply be stale: a board created in
+  // the composer isn't known to this picker until it reloads. Leaving it live
+  // keeps Refresh and "+ New board" the obvious next move.
+  const isDisabled = disabled || loading || !!error
   const onSelect = (e) => onChange(e.target.value || null)
+  // An empty list is the one state that is often just stale — a board created
+  // in another picker, or on Pinterest itself. Reload the moment the user
+  // reaches for the control, so it fills itself in instead of looking broken.
+  const onFocus = () => {
+    if (empty && !busy) load()
+  }
   const emptyHint = 'No boards yet — create one to publish Pins.'
 
   // Compact: one row that matches the surrounding detail lines, so adding this
@@ -162,6 +173,7 @@ export default function PinterestBoardSelect({
               value={value || ''}
               disabled={isDisabled}
               onChange={onSelect}
+              onFocus={onFocus}
             >
               {options}
             </select>
@@ -214,6 +226,7 @@ export default function PinterestBoardSelect({
         value={value || ''}
         disabled={isDisabled}
         onChange={onSelect}
+        onFocus={onFocus}
       >
         {options}
       </select>
