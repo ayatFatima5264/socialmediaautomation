@@ -107,11 +107,35 @@ Pinterest adds three endpoints, because every Pin must be saved to a board:
 At <https://developers.facebook.com/apps/> open (or create) the app, add the
 **Threads API** product, and under *Threads API → Settings* set:
 
-- **Redirect Callback URL** — exactly `{BACKEND_URL}/api/auth/threads/callback`:
-  - local: `http://localhost:8000/api/auth/threads/callback`
-  - production: `https://autosocial-backend-282n.onrender.com/api/auth/threads/callback`
-- Copy the **App ID** → `THREADS_CLIENT_ID` (or `THREADS_APP_ID`) and the
-  **App secret** → `THREADS_CLIENT_SECRET` (or `THREADS_APP_SECRET`).
+| Dashboard field | URL (production) |
+|---|---|
+| Redirect Callback URL | `https://autosocial-backend-282n.onrender.com/api/auth/threads/callback` |
+| Uninstall Callback URL | `https://autosocial-backend-282n.onrender.com/api/auth/threads/uninstall` |
+| Delete Callback URL | `https://autosocial-backend-282n.onrender.com/api/auth/threads/delete` |
+
+Locally the same three paths on `http://localhost:8000`. All three must be
+**HTTPS in production** — Meta will not call an unsecured URL.
+
+Meta requires all three before the settings will save, and validates the
+uninstall/delete URLs by requesting them. Both answer `200` with JSON and
+**never redirect**, which is what lets the dashboard save.
+
+Copy the **App ID** → `THREADS_CLIENT_ID` (or `THREADS_APP_ID`) and the
+**App secret** → `THREADS_CLIENT_SECRET` (or `THREADS_APP_SECRET`). The secret
+is what verifies Meta's `signed_request` on those two callbacks, so an app with
+no secret configured accepts the call and deletes nothing.
+
+### What the uninstall / delete callbacks do
+
+Meta POSTs a `signed_request` (HMAC-SHA256 over the payload, keyed with the app
+secret) naming the Threads user. Both callbacks verify it and delete that
+Threads connection — the stored token and handle, which is the entirety of what
+this app holds for Threads. An unverified call is answered identically and
+changes nothing, so the endpoint cannot be used to probe which accounts exist.
+
+`delete` additionally answers with the `url` + `confirmation_code` pair Meta's
+spec requires; the status URL (`/api/auth/threads/delete/status`) reports the
+deletion complete, because it is done inline rather than queued.
 
 Add yourself as a **Threads tester** (*App roles → Roles*) and accept the
 invite from the Threads app settings, or authorization fails until the app is
