@@ -12,11 +12,17 @@ continuous refresh token 60 days, refreshable indefinitely. Apps created before
 2025-09-25 only receive a continuous refresh token when the token request sends
 `continuous_refresh=true`; newer apps get one automatically and ignore the
 field — so it is always sent, which is correct for both.
+
+Environment: a Trial-tier app may only create Pins in Pinterest's Sandbox, so
+the token exchange follows `pinterest_api.api_base()` rather than being pinned
+to production. Tokens are not portable between the two, which is why changing
+`PINTEREST_SANDBOX` requires reconnecting the account.
 """
 from __future__ import annotations
 
 from app.config import settings
 from app.schemas.post import Platform
+from app.services.social import pinterest_api
 from app.services.social_accounts.base import OAuthProvider, OAuthTokens, ProfileInfo
 
 
@@ -24,8 +30,10 @@ class PinterestProvider(OAuthProvider):
     platform = Platform.pinterest
     slug = "pinterest"
 
+    # The consent screen is always the real Pinterest — a user authorizes with
+    # their actual account either way. Only the token exchange and the API calls
+    # move hosts, which is why a sandbox connection needs its own reconnect.
     authorize_endpoint = "https://www.pinterest.com/oauth/"
-    token_endpoint = "https://api.pinterest.com/v5/oauth/token"
     scopes = [
         "user_accounts:read",
         "boards:read",
@@ -42,6 +50,12 @@ class PinterestProvider(OAuthProvider):
     token_params = {"continuous_refresh": "true"}
 
     @property
+    def token_endpoint(self) -> str:
+        """Tokens must come from the environment they will be used against — a
+        production token is rejected by Sandbox and vice versa."""
+        return f"{pinterest_api.api_base()}/oauth/token"
+
+    @property
     def redirect_uri(self) -> str:
         """Pinterest matches this byte-for-byte against the registered URI, so an
         explicit override wins over the derived {backend_url}/... default."""
@@ -49,7 +63,7 @@ class PinterestProvider(OAuthProvider):
 
     async def fetch_profile(self, tokens: OAuthTokens) -> ProfileInfo:
         data = await self._get_json(
-            "https://api.pinterest.com/v5/user_account", token=tokens.access_token
+            f"{pinterest_api.api_base()}/user_account", token=tokens.access_token
         )
         username = data.get("username")
         return ProfileInfo(

@@ -22,6 +22,15 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 
 PINTEREST_API_BASE = "https://api.pinterest.com/v5"
+# Same v5 API, separate environment. A Trial-tier app may only create Pins here
+# — production answers 403 — so this is where publishing happens until the app
+# is granted Standard access. See settings.pinterest_sandbox.
+PINTEREST_SANDBOX_BASE = "https://api-sandbox.pinterest.com/v5"
+
+
+def api_base() -> str:
+    """The v5 host to call, per the app's access tier."""
+    return PINTEREST_SANDBOX_BASE if settings.pinterest_sandbox else PINTEREST_API_BASE
 
 _MAX_ATTEMPTS = 3
 _BACKOFF_BASE = 0.5
@@ -145,7 +154,7 @@ async def _request(
     json: dict | None = None,
     params: dict | None = None,
 ) -> dict:
-    url = f"{PINTEREST_API_BASE}/{path}"
+    url = f"{api_base()}/{path}"
     headers = {
         "Authorization": f"Bearer {access_token}",
         "Accept": "application/json",

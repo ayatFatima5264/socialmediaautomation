@@ -134,18 +134,35 @@ at publish time.
 - The backend refreshes proactively before publishing and reactively once on a
   401, persisting rotated tokens immediately.
 
-## 4. Trial access
+## 4. Trial access and the Sandbox
 
-A newly approved app has **Trial** access. Publishing works, but:
+A newly approved app has **Trial** access, and this is the part that decides
+whether publishing works at all:
 
-- Pins and boards created under Trial access are visible **only to their
-  creator** (they behave as sandbox entities) — a published Pin will not appear
-  publicly until the app is upgraded.
+> A Trial-tier app may create Pins **only in Pinterest's Sandbox environment**.
+> Creating one in production is refused with **403**.
+
+Sandbox is the same v5 API on a different host, with its own tokens:
+
+| | Production | Sandbox |
+|---|---|---|
+| API + token host | `api.pinterest.com/v5` | `api-sandbox.pinterest.com/v5` |
+| Consent screen | `www.pinterest.com/oauth/` | same |
+| Creating Pins on Trial | ❌ 403 | ✅ |
+
+`PINTEREST_SANDBOX` (default `true`) selects the host for **both** the token
+exchange and every API call. Once the app is granted Standard access, set it to
+`false` and **reconnect Pinterest** — a token issued by one environment is
+rejected by the other. No other change is needed.
+
+Other Trial notes:
+
+- Pins created in Sandbox are visible on your own profile but are separate
+  entities from production ones.
+- Video Pins are not available in Sandbox. This integration only creates image
+  Pins, so nothing here depends on that.
 - Rate limits are per-app **per-day** rather than per-user per-minute; a 429
   surfaces as "Pinterest rate limit reached" on the post.
-
-Nothing in this integration depends on Standard-only functionality, so
-upgrading later needs no code change.
 
 ---
 

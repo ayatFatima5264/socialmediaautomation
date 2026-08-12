@@ -165,6 +165,14 @@ class Settings(BaseSettings):
     x_client_secret: str | None = None
     pinterest_client_id: str | None = None
     pinterest_client_secret: str | None = None
+    # Pinterest's access tiers decide which host may create Pins. A Trial-tier
+    # app can only create them in the Sandbox environment — creating one in
+    # production comes back as 403. Sandbox mirrors the v5 API on a separate
+    # host with its own tokens, so switching is a host change plus a reconnect.
+    #
+    # Leave this true until the Pinterest app is granted Standard access, then
+    # set PINTEREST_SANDBOX=false and reconnect. Nothing else changes.
+    pinterest_sandbox: bool = True
     # Pinterest matches the redirect URI byte-for-byte against the one registered
     # in the developer dashboard. Leave unset to use the standard
     # {backend_url}/api/auth/pinterest/callback form; set it when the registered

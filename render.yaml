@@ -83,6 +83,10 @@ services:
       # Optional; must match the Pinterest dashboard exactly.
       - key: PINTEREST_REDIRECT_URI
         sync: false
+      # true on Trial access (Pins can only be created in Sandbox);
+      # set to false after the app is granted Standard access.
+      - key: PINTEREST_SANDBOX
+        value: "true"
       - key: THREADS_CLIENT_ID
         sync: false
       - key: THREADS_CLIENT_SECRET

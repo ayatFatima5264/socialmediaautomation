@@ -105,14 +105,14 @@ def _user_id(client, headers) -> int:
 # "boards/123 is a 404" without patching internals.
 # ---------------------------------------------------------------------------
 class FakePinterest:
-    def __init__(self, routes: dict, *, api_base: str = pinterest_api.PINTEREST_API_BASE):
+    def __init__(self, routes: dict):
         self.routes = routes
-        self.api_base = api_base
         self.calls: list[tuple[str, str, dict | None]] = []
         self.tokens_seen: list[str | None] = []
 
     def handler(self, request: httpx.Request) -> httpx.Response:
-        path = str(request.url).removeprefix(f"{self.api_base}/").split("?")[0]
+        # Split on /v5/ so the stub matches production and sandbox alike.
+        path = str(request.url).rsplit("/v5/", 1)[-1].split("?")[0]
         key = (request.method, path)
         body = None
         if request.content:
@@ -164,7 +164,7 @@ def fake_pinterest(monkeypatch):
 def test_provider_matches_api_v5_contract():
     p = get_provider(Platform.pinterest)
     assert p.authorize_endpoint == "https://www.pinterest.com/oauth/"
-    assert p.token_endpoint == "https://api.pinterest.com/v5/oauth/token"
+    assert p.token_endpoint.endswith("/v5/oauth/token")
     # POST /v5/pins requires exactly these four; user_accounts:read powers the
     # profile card.
     for scope in ("boards:read", "boards:write", "pins:read", "pins:write"):
@@ -176,6 +176,70 @@ def test_provider_matches_api_v5_contract():
     assert p.scope_separator == ","
     # Continuous refresh: needed by apps created before 2025-09-25, ignored by newer ones.
     assert p.token_params == {"continuous_refresh": "true"}
+
+
+def test_sandbox_switch_moves_every_api_call_and_the_token_exchange(monkeypatch):
+    """A Trial-tier app may only create Pins in Sandbox — production answers 403.
+
+    One setting has to move the whole surface: the token exchange and every v5
+    call. Missing one of them means a token minted in one environment being sent
+    to the other, which is rejected.
+    """
+    from app.config import settings
+
+    p = get_provider(Platform.pinterest)
+
+    monkeypatch.setattr(settings, "pinterest_sandbox", True)
+    assert pinterest_api.api_base() == "https://api-sandbox.pinterest.com/v5"
+    assert p.token_endpoint == "https://api-sandbox.pinterest.com/v5/oauth/token"
+
+    monkeypatch.setattr(settings, "pinterest_sandbox", False)
+    assert pinterest_api.api_base() == "https://api.pinterest.com/v5"
+    assert p.token_endpoint == "https://api.pinterest.com/v5/oauth/token"
+
+    # The consent screen is the real Pinterest either way — the user authorizes
+    # with their actual account, and only the token/API hosts differ.
+    assert p.authorize_endpoint == "https://www.pinterest.com/oauth/"
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("sandbox", "expected_host"),
+    [(True, "api-sandbox.pinterest.com"), (False, "api.pinterest.com")],
+)
+async def test_pins_are_created_on_the_configured_host(
+    session_factory, monkeypatch, sandbox, expected_host
+):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "pinterest_sandbox", sandbox)
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.url.host)
+        if "/boards/" in str(request.url):
+            return httpx.Response(200, json={"id": "111"})
+        return httpx.Response(201, json={"id": "pin-1"})
+
+    real_client = httpx.AsyncClient
+    monkeypatch.setattr(
+        httpx,
+        "AsyncClient",
+        lambda *a, **kw: real_client(*a, **{**kw, "transport": httpx.MockTransport(handler)}),
+    )
+
+    account = _connect_pinterest(session_factory, 1)
+    db = session_factory()
+    result = await PinterestPublisher(db.merge(account), db).publish(
+        content="Pin me",
+        hashtags=[],
+        media_urls=["https://cdn.example.com/a.png"],
+        options={"board_id": "111"},
+    )
+    db.close()
+
+    assert result.success is True
+    assert set(seen) == {expected_host}
 
 
 def test_authorize_url_carries_state_and_scopes():
