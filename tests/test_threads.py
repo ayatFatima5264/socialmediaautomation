@@ -632,3 +632,160 @@ def test_one_user_cannot_use_another_users_threads_connection(client, session_fa
 @pytest.fixture()
 def anyio_backend():
     return "asyncio"
+
+
+# ---------------------------------------------------------------------------
+# Meta's deauthorize / data-deletion callbacks
+#
+# Meta requires both URLs before the Threads API settings will save, calls them
+# itself with no session, and proves the call with a signed_request.
+# ---------------------------------------------------------------------------
+def _signed_request(payload: dict, secret: str) -> str:
+    """Build a signed_request exactly the way Meta does."""
+    import base64, hashlib, hmac, json
+
+    def b64(raw: bytes) -> str:
+        return base64.urlsafe_b64encode(raw).decode().rstrip("=")
+
+    encoded = b64(json.dumps(payload).encode())
+    sig = hmac.new(secret.encode(), encoded.encode(), hashlib.sha256).digest()
+    return f"{b64(sig)}.{encoded}"
+
+
+@pytest.fixture()
+def threads_secret(monkeypatch):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "threads_client_id", "app-id")
+    monkeypatch.setattr(settings, "threads_client_secret", "app-secret")
+    return "app-secret"
+
+
+def _threads_account_count(session_factory) -> int:
+    db = session_factory()
+    try:
+        return (
+            db.query(SocialAccount)
+            .filter(SocialAccount.platform == Platform.threads.value)
+            .count()
+        )
+    finally:
+        db.close()
+
+
+@pytest.mark.parametrize("path", ["/api/auth/threads/uninstall", "/api/auth/threads/delete"])
+def test_bare_get_answers_200_without_redirecting(client, path):
+    """This is Meta's dashboard checking the URL while you press Save. A
+    redirect or an error here is exactly what stops the settings saving."""
+    r = client.get(path, follow_redirects=False)
+    assert r.status_code == 200
+    assert "location" not in {k.lower() for k in r.headers}
+    assert r.headers["content-type"].startswith("application/json")
+
+
+@pytest.mark.parametrize("path", ["/api/auth/threads/uninstall", "/api/auth/threads/delete"])
+def test_callbacks_need_no_authentication(client, path):
+    """Meta calls these with no session of ours."""
+    assert client.post(path, data={}).status_code == 200
+
+
+def test_uninstall_removes_only_that_threads_connection(
+    client, session_factory, threads_secret
+):
+    headers = _register(client, "uninstall@example.com")
+    _connect_threads(session_factory, _user_id(client, headers), account_id="th-user-1")
+
+    # A second user's Threads account, and a Pinterest one, must both survive.
+    other = _register(client, "bystander@example.com")
+    _connect_threads(session_factory, _user_id(client, other), account_id="th-user-2")
+    db = session_factory()
+    db.add(
+        SocialAccount(
+            user_id=_user_id(client, headers),
+            platform=Platform.pinterest.value,
+            access_token="pina-token",
+            account_id="pintester",
+            status=AccountStatus.connected.value,
+        )
+    )
+    db.commit()
+    db.close()
+
+    signed = _signed_request(
+        {"algorithm": "HMAC-SHA256", "user_id": "th-user-1", "issued_at": 1},
+        threads_secret,
+    )
+    r = client.post("/api/auth/threads/uninstall", data={"signed_request": signed})
+    assert r.status_code == 200
+
+    assert client.get("/api/social/threads", headers=headers).status_code == 404
+    assert client.get("/api/social/threads", headers=other).status_code == 200
+    assert client.get("/api/social/pinterest", headers=headers).status_code == 200
+
+
+def test_delete_answers_with_a_status_url_and_confirmation_code(
+    client, session_factory, threads_secret
+):
+    headers = _register(client, "delete@example.com")
+    _connect_threads(session_factory, _user_id(client, headers), account_id="th-del")
+
+    signed = _signed_request(
+        {"algorithm": "HMAC-SHA256", "user_id": "th-del", "issued_at": 1}, threads_secret
+    )
+    r = client.post("/api/auth/threads/delete", data={"signed_request": signed})
+    assert r.status_code == 200
+
+    body = r.json()
+    assert body["confirmation_code"]
+    assert body["url"].endswith(f"code={body['confirmation_code']}")
+    # The data really is gone, not merely promised.
+    assert client.get("/api/social/threads", headers=headers).status_code == 404
+
+    # And the status URL is reachable and says so.
+    status = client.get(
+        "/api/auth/threads/delete/status", params={"code": body["confirmation_code"]}
+    )
+    assert status.status_code == 200
+    assert status.json()["status"] == "completed"
+
+
+def test_a_forged_signature_deletes_nothing(client, session_factory, threads_secret):
+    """The signature is the only thing separating Meta from an anonymous POST."""
+    headers = _register(client, "forged@example.com")
+    _connect_threads(session_factory, _user_id(client, headers), account_id="th-safe")
+
+    forged = _signed_request(
+        {"algorithm": "HMAC-SHA256", "user_id": "th-safe", "issued_at": 1},
+        "not-the-app-secret",
+    )
+    r = client.post("/api/auth/threads/uninstall", data={"signed_request": forged})
+
+    # Answered identically to a valid call, so it reveals nothing...
+    assert r.status_code == 200
+    # ...but the connection is untouched.
+    assert client.get("/api/social/threads", headers=headers).status_code == 200
+
+
+def test_malformed_signed_requests_are_survived(client, session_factory, threads_secret):
+    before = _threads_account_count(session_factory)
+    for bad in ["", "garbage", "only-one-part", "a.b", "!!!.???"]:
+        r = client.post("/api/auth/threads/uninstall", data={"signed_request": bad})
+        assert r.status_code == 200
+    assert _threads_account_count(session_factory) == before
+
+
+def test_callbacks_never_leak_tokens_or_account_details(
+    client, session_factory, threads_secret
+):
+    headers = _register(client, "noleak@example.com")
+    _connect_threads(session_factory, _user_id(client, headers), account_id="th-leak")
+
+    signed = _signed_request(
+        {"algorithm": "HMAC-SHA256", "user_id": "th-leak", "issued_at": 1}, threads_secret
+    )
+    for path in ("/api/auth/threads/uninstall", "/api/auth/threads/delete"):
+        body = client.post(path, data={"signed_request": signed}).text
+        assert "th-long-lived-token" not in body
+        assert "app-secret" not in body
+        assert "threadsuser" not in body
+        assert "noleak@example.com" not in body
