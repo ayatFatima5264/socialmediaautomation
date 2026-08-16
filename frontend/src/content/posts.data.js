@@ -21,6 +21,18 @@ export const CATEGORIES = [
 
 export const POSTS = [
   {
+    slug: 'ultimate-guide-to-ai-content-creation',
+    title: 'The Ultimate Guide to AI Content Creation',
+    metaTitle: 'The Ultimate Guide to AI Content Creation',
+    description:
+      'A complete, practical guide to AI content creation: prompting, brand voice, editing, fact-checking, and the workflow that keeps quality high at volume.',
+    keyword: 'AI content creation',
+    category: 'AI & Automation',
+    date: '2026-08-15',
+    readMinutes: 13,
+    cover: { palette: 9, pattern: 4, icon: '❋' },
+  },
+  {
     slug: 'social-media-marketing-trends-2026',
     title: 'Top Social Media Marketing Trends for 2026',
     metaTitle: 'Top Social Media Marketing Trends for 2026',
@@ -32,6 +44,18 @@ export const POSTS = [
     readMinutes: 12,
     featured: true,
     cover: { palette: 7, pattern: 2, icon: '➔' },
+  },
+  {
+    slug: 'instagram-content-ideas-for-small-businesses',
+    title: 'Instagram Content Ideas for Small Businesses',
+    metaTitle: '30 Instagram Content Ideas for Small Businesses',
+    description:
+      'Thirty Instagram content ideas built for real small businesses — organised by goal, with formats, caption angles, and a simple weekly posting rhythm.',
+    keyword: 'Instagram content ideas for small business',
+    category: 'Platform Guides',
+    date: '2026-08-10',
+    readMinutes: 12,
+    cover: { palette: 13, pattern: 3, icon: '◎' },
   },
   {
     slug: 'high-engagement-linkedin-posts-with-ai',

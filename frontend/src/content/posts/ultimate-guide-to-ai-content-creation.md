@@ -76,7 +76,7 @@ Define voice across four dimensions rather than with adjectives:
 
 Position yourself on each, write one example sentence demonstrating each, and store it. That document does more for consistency than any tool setting.
 
-The full method, including a scoring test for generated drafts, is in [how to build a consistent brand voice with AI](/blog/build-consistent-brand-voice-with-ai).
+Score every generated draft against that document before it goes anywhere: read it back and mark each of the four dimensions as on, off, or drifting. A draft that misses on two of them is a prompt problem, not an editing problem — fix the voice document rather than the sentence.
 
 ## Part 4: The Editing Pass
 

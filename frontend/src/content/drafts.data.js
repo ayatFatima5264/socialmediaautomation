@@ -13,18 +13,6 @@
 
 export const DRAFT_POSTS = [
   {
-    slug: 'ultimate-guide-to-ai-content-creation',
-    title: 'The Ultimate Guide to AI Content Creation',
-    metaTitle: 'The Ultimate Guide to AI Content Creation',
-    description:
-      'A complete, practical guide to AI content creation: prompting, brand voice, editing, fact-checking, and the workflow that keeps quality high at volume.',
-    keyword: 'AI content creation',
-    category: 'AI & Automation',
-    date: '2026-05-26',
-    readMinutes: 13,
-    cover: { palette: 9, pattern: 4, icon: '❋' },
-  },
-  {
     slug: 'repurpose-one-content-into-10-social-posts',
     title: 'How to Repurpose One Piece of Content into 10 Social Media Posts',
     metaTitle: 'Repurpose 1 Piece of Content Into 10 Social Posts',
@@ -59,18 +47,6 @@ export const DRAFT_POSTS = [
     date: '2026-05-05',
     readMinutes: 11,
     cover: { palette: 12, pattern: 2, icon: '◉' },
-  },
-  {
-    slug: 'instagram-content-ideas-for-small-businesses',
-    title: 'Instagram Content Ideas for Small Businesses',
-    metaTitle: '30 Instagram Content Ideas for Small Businesses',
-    description:
-      'Thirty Instagram content ideas built for real small businesses — organised by goal, with formats, caption angles, and a simple weekly posting rhythm.',
-    keyword: 'Instagram content ideas for small business',
-    category: 'Platform Guides',
-    date: '2026-04-28',
-    readMinutes: 12,
-    cover: { palette: 13, pattern: 3, icon: '◎' },
   },
   {
     slug: 'linkedin-marketing-tips-for-b2b-companies',
