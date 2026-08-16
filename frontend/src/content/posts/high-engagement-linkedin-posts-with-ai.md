@@ -88,7 +88,7 @@ The substance is entirely yours. The formatting labour disappears. This produces
 
 ### 4. Repurposing long-form content
 
-One blog post, webinar, or case study contains many LinkedIn posts — a statistic, a contrarian take, a step-by-step, a mistake, a customer quote. AI extracts these reliably because the source supplies the substance. See [repurposing one piece of content into ten social posts](/blog/repurpose-one-content-into-10-social-posts).
+One blog post, webinar, or case study contains many LinkedIn posts — a statistic, a contrarian take, a step-by-step, a mistake, a customer quote. AI extracts these reliably because the source supplies the substance. See [how to create a month of social media posts in one hour](/blog/create-month-of-social-media-posts-in-one-hour).
 
 ### 5. Adapting one idea across platforms
 

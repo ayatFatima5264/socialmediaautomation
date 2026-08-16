@@ -120,7 +120,7 @@ Particularly in B2B, personal accounts consistently reach further than company p
 - Encourage employees to post about their work, without scripting them.
 - Use the company page for credibility and reference rather than expecting reach.
 
-**Should a small business act on this?** Yes, especially B2B. This is covered in more depth in our [LinkedIn marketing guide for B2B companies](/blog/linkedin-marketing-tips-for-b2b-companies).
+**Should a small business act on this?** Yes, especially B2B. This is covered in more depth in our guide to [writing high-engagement LinkedIn posts with AI](/blog/high-engagement-linkedin-posts-with-ai).
 
 ## 10. Measurement Got Harder, So Simpler Metrics Won
 

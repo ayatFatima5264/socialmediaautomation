@@ -21,6 +21,31 @@ export const CATEGORIES = [
 
 export const POSTS = [
   {
+    slug: 'social-media-marketing-trends-2026',
+    title: 'Top Social Media Marketing Trends for 2026',
+    metaTitle: 'Top Social Media Marketing Trends for 2026',
+    description:
+      'The social media trends that actually matter in 2026 — from AI-assisted search and creator partnerships to the quiet return of owned audiences.',
+    keyword: 'social media marketing trends 2026',
+    category: 'Trends',
+    date: '2026-08-16',
+    readMinutes: 12,
+    featured: true,
+    cover: { palette: 7, pattern: 2, icon: '➔' },
+  },
+  {
+    slug: 'high-engagement-linkedin-posts-with-ai',
+    title: 'How to Write High-Engagement LinkedIn Posts Using AI',
+    metaTitle: 'Write High-Engagement LinkedIn Posts Using AI',
+    description:
+      'The hook, structure, and formatting patterns that make LinkedIn posts perform — and exactly how to use AI for each without sounding like everyone else.',
+    keyword: 'LinkedIn posts with AI',
+    category: 'Platform Guides',
+    date: '2026-08-12',
+    readMinutes: 11,
+    cover: { palette: 8, pattern: 3, icon: '✧' },
+  },
+  {
     slug: 'ai-vs-manual-social-media-management',
     title: 'AI vs Manual Social Media Management: Which Is Better?',
     metaTitle: 'AI vs Manual Social Media Management: Which Wins?',
