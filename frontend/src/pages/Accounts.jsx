@@ -26,17 +26,20 @@ export default function Accounts() {
   const [connectError, setConnectError] = useState(null)
 
   async function load() {
+    let data
     try {
-      setOverview(await api.accountsOverview())
+      data = await api.accountsOverview()
     } catch {
       // Not logged in / backend down — show an empty (but usable) page.
-      setOverview({
+      data = {
         accounts: [],
         summary: EMPTY_SUMMARY,
         connected_count: 0,
         total_platforms: PLATFORM_KEYS.length,
-      })
+      }
     }
+    setOverview(data)
+    return data
   }
 
   async function openSelection(platform, pendingId) {
@@ -49,7 +52,7 @@ export default function Accounts() {
   }
 
   useEffect(() => {
-    load()
+    const loaded = load()
     // Handle the OAuth redirect landing back on /accounts.
     const params = new URLSearchParams(window.location.search)
     const connected = params.get('connected')
@@ -65,9 +68,18 @@ export default function Accounts() {
       openSelection(select, pending)
       window.history.replaceState({}, '', '/accounts')
     } else if (error) {
-      // Show a persistent banner (not just a fleeting toast) with the reason.
-      setConnectError({ platform: params.get('platform'), message: error })
+      const platform = params.get('platform')
       window.history.replaceState({}, '', '/accounts')
+      // Reloading or going back to the callback URL replays an authorization
+      // code the provider has already spent, so the second callback fails even
+      // though the first one connected the account. Report the failure only if
+      // the platform is not, in fact, healthily connected — otherwise the page
+      // contradicts itself with "not connected" above a connected card.
+      loaded.then((data) => {
+        if (platformStatus(data, platform) === 'connected') return
+        // A persistent banner (not just a fleeting toast) with the reason.
+        setConnectError({ platform, message: error })
+      })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -202,6 +214,16 @@ export default function Accounts() {
       )}
     </div>
   )
+}
+
+// Effective status of one platform in a loaded overview: 'connected',
+// 'token_expired', 'error', or 'not_connected' when the platform is absent.
+function platformStatus(overview, platform) {
+  if (!overview || !platform) return 'not_connected'
+  const account = (overview.accounts || []).find((a) => a.platform === platform)
+  if (account) return account.status
+  const summary = (overview.summary || []).find((s) => s.platform === platform)
+  return summary?.status || 'not_connected'
 }
 
 function applyRemoval(overview, platform) {
