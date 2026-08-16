@@ -81,6 +81,21 @@ async def exchange_for_long_lived_token(short_token: str) -> tuple[str, int | No
     return data["access_token"], data.get("expires_in")
 
 
+async def get_user_id(access_token: str) -> str | None:
+    """The app-scoped Facebook user id behind this token, or None.
+
+    Meta names exactly this id in the `signed_request` it posts to an app's
+    deauthorize and data-deletion callbacks. An Instagram row stores the
+    Instagram Business account id as its `account_id`, so without recording the
+    Facebook user id alongside it those callbacks would have no way to tell
+    which Instagram connection a deletion request refers to.
+    """
+    async with httpx.AsyncClient(timeout=settings.ai_request_timeout) as client:
+        data = await _get(client, "me", {"fields": "id", "access_token": access_token})
+    user_id = data.get("id")
+    return str(user_id) if user_id else None
+
+
 async def list_instagram_accounts(access_token: str) -> list[dict]:
     """Return EVERY Instagram Business account linked to the user's Pages.
 

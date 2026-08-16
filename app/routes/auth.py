@@ -22,6 +22,8 @@ from app.core.security import (
 from app.database import get_db
 from app.models.user import User
 from app.schemas.user import (
+    DELETE_CONFIRMATION,
+    DeleteAccountRequest,
     ForgotPasswordRequest,
     MessageResponse,
     ResetPasswordRequest,
@@ -30,7 +32,7 @@ from app.schemas.user import (
     UserRead,
     UserUpdate,
 )
-from app.services import email_service
+from app.services import account_deletion, email_service
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -101,6 +103,37 @@ def update_me(
     db.commit()
     db.refresh(current_user)
     return current_user
+
+
+@router.delete("/me", response_model=MessageResponse)
+def delete_me(
+    data: DeleteAccountRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> MessageResponse:
+    """Permanently delete the signed-in user's account and all of their data.
+
+    Multi-tenancy: the account deleted is the one `get_current_user` resolved
+    from the bearer token. The request body carries no user id and none is
+    accepted, so there is no input a client could vary to reach another account.
+
+    The typed confirmation is checked server-side as well as in the UI — a modal
+    is a convenience, not a control, and this endpoint is reachable without one.
+    """
+    if data.confirmation.strip() != DELETE_CONFIRMATION:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f'Type "{DELETE_CONFIRMATION}" to confirm deleting your account.',
+        )
+
+    account_deletion.delete_user_account(db, current_user)
+    return MessageResponse(
+        message=(
+            "Your account and all of its data have been permanently deleted. "
+            "Any connected social accounts have been disconnected and their "
+            "access tokens erased."
+        )
+    )
 
 
 @router.post("/forgot-password", response_model=MessageResponse)

@@ -22,6 +22,7 @@ import hashlib
 import hmac
 import json
 import logging
+from collections.abc import Iterable
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +66,26 @@ def parse_signed_request(signed_request: str | None, app_secret: str | None) -> 
         return None
 
     return payload
+
+
+def parse_signed_request_any(
+    signed_request: str | None, app_secrets: Iterable[str | None]
+) -> dict | None:
+    """Verify against several app secrets; return the first payload that checks.
+
+    Facebook/Instagram and Threads can live in separate Meta apps with separate
+    secrets, while Meta gives an app a single data-deletion callback URL. One
+    endpoint therefore has to be able to verify a call from either app, so every
+    configured secret is tried and the request is rejected only if none matches.
+
+    Order carries no meaning and no result is leaked between attempts, so this
+    cannot be used to learn which app a signature belongs to.
+    """
+    for secret in app_secrets:
+        payload = parse_signed_request(signed_request, secret)
+        if payload is not None:
+            return payload
+    return None
 
 
 def user_id_of(payload: dict | None) -> str | None:

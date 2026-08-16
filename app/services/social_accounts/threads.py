@@ -120,8 +120,15 @@ class ThreadsProvider(OAuthProvider):
             data = {}
         if resp.status_code != 200 or "access_token" not in data:
             detail = ""
-            if isinstance(data, dict) and isinstance(data.get("error"), dict):
-                detail = data["error"].get("message") or ""
+            if isinstance(data, dict):
+                err = data.get("error")
+                if isinstance(err, dict):
+                    detail = err.get("error_user_msg") or err.get("message") or ""
+                else:
+                    # Threads reports the reason at the top level rather than
+                    # nested under `error` — e.g. "The user has not accepted
+                    # the invite to test the app." (error_code 1349245).
+                    detail = data.get("error_message") or ""
             raise OAuthError(f"threads: {failure}.{f' {detail}' if detail else ''}")
         return data
 
@@ -133,9 +140,13 @@ class ThreadsProvider(OAuthProvider):
             params={"fields": "id,username,name,threads_profile_picture_url"},
             bearer=False,
         )
+        account_id = str(data.get("id", ""))
         return ProfileInfo(
-            account_id=str(data.get("id", "")),
+            account_id=account_id,
             username=data.get("username"),
             display_name=data.get("name") or data.get("username"),
             profile_picture=data.get("threads_profile_picture_url"),
+            # The Threads user id is both the publishing target and the id Meta
+            # names in its deauthorize / data-deletion signed_request.
+            platform_user_id=account_id or None,
         )

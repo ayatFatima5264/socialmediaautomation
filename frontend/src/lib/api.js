@@ -81,6 +81,10 @@ export const api = {
     request('/auth/login', { method: 'POST', form: { username: email, password }, auth: false }),
   me: () => request('/auth/me'),
   updateMe: (body) => request('/auth/me', { method: 'PATCH', body }),
+  // Permanently deletes the signed-in account. The backend takes the user from
+  // the bearer token — no id is sent — and re-checks the typed confirmation.
+  deleteAccount: (confirmation) =>
+    request('/auth/me', { method: 'DELETE', body: { confirmation } }),
   forgotPassword: (email) =>
     request('/auth/forgot-password', { method: 'POST', body: { email }, auth: false }),
   resetPassword: (token, password) =>

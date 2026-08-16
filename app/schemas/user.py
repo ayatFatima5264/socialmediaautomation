@@ -50,3 +50,23 @@ class ResetPasswordRequest(BaseModel):
 
 class MessageResponse(BaseModel):
     message: str
+
+
+# The word a user must type to confirm account deletion. Deliberately not
+# localized: it is a deliberate-action check, not a message to be read.
+DELETE_CONFIRMATION = "DELETE"
+
+
+class DeleteAccountRequest(BaseModel):
+    """Confirmation for permanent account deletion.
+
+    The account deleted is always the one the bearer token authenticates — this
+    body carries no user id, deliberately, so it cannot name someone else.
+    `confirmation` must be exactly "DELETE": deletion is irreversible, and a
+    typed word is what separates it from a mis-click on a button.
+    """
+
+    confirmation: str = Field(
+        description=f'Must be exactly "{DELETE_CONFIRMATION}".',
+        max_length=20,
+    )

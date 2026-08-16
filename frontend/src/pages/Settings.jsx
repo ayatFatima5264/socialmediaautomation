@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
 import { useToast } from '../context/ToastContext.jsx'
 import HelpTip from '../components/HelpTip.jsx'
-import { api } from '../lib/api'
+import DeleteAccountModal from '../components/DeleteAccountModal.jsx'
+import { api, ApiError } from '../lib/api'
 import { formatDateTime } from '../lib/datetime'
 import { profileCompletion } from '../lib/businessProfile'
 
@@ -328,29 +329,92 @@ function SecurityCard() {
 
 // ---- Danger zone -----------------------------------------------------------
 
-// Account deletion is intentionally absent: there is no endpoint for it, and a
-// button that appears to delete an account but does nothing is far worse than
-// its absence. Add it here once the backend supports it.
+// Two actions that both end the session, kept visibly apart because only one of
+// them destroys anything. Deletion is gated behind a modal that requires the
+// word DELETE to be typed (see DeleteAccountModal), and the backend enforces the
+// same check — the dialog is there to make the act deliberate, not to secure it.
 function DangerZone() {
-  const { logout } = useAuth()
+  const { user, logout } = useAuth()
+  const toast = useToast()
+  const navigate = useNavigate()
+  const [confirming, setConfirming] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [error, setError] = useState(null)
+
+  async function deleteAccount() {
+    setDeleting(true)
+    setError(null)
+    try {
+      await api.deleteAccount('DELETE')
+      // Navigate BEFORE clearing the session. Both are state updates in the same
+      // tick, so React renders them together: the route is already the public
+      // home page, and ProtectedRoute — which would otherwise see a null user
+      // and bounce to /login — never renders at all. Clearing first makes the
+      // landing page a race between that redirect and this one.
+      navigate('/', { replace: true })
+      logout()
+      toast.success('Your account and all of its data have been deleted.')
+    } catch (err) {
+      setError(
+        err instanceof ApiError
+          ? err.message
+          : 'Could not delete your account. Please try again.',
+      )
+      setDeleting(false)
+    }
+  }
 
   return (
     <section className="card border-rose-400/40 p-4 md:p-5">
       <SectionHeader
         title="Danger Zone"
-        description="Actions here end your current session. Nothing is deleted."
+        description="Ending your session is reversible. Deleting your account is not."
       />
+
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line bg-inset px-3 py-2.5">
-        <div>
+        <div className="min-w-0 flex-1 sm:min-w-[16rem]">
           <div className="text-sm font-semibold">Log out</div>
           <p className="mt-0.5 text-xs text-muted">
             Sign out on this device. Your content and schedule are unaffected.
           </p>
         </div>
-        <button onClick={logout} className="btn btn-danger shrink-0">
+        <button onClick={logout} className="btn btn-secondary shrink-0">
           Log Out
         </button>
       </div>
+
+      <div className="mt-2.5 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-rose-400/40 bg-rose-500/10 px-3 py-2.5">
+        <div className="min-w-0 flex-1 sm:min-w-[16rem]">
+          <div className="text-sm font-semibold text-rose-700">Delete account</div>
+          <p className="mt-0.5 text-xs leading-relaxed text-muted">
+            Permanently erase your account, your content, and every connected social
+            account along with its stored access token. This cannot be undone. See the{' '}
+            <Link to="/data-deletion" className="link-accent font-medium">
+              data deletion page
+            </Link>{' '}
+            for exactly what is removed.
+          </p>
+        </div>
+        <button
+          onClick={() => {
+            setError(null)
+            setConfirming(true)
+          }}
+          className="btn btn-danger shrink-0"
+        >
+          Delete Account
+        </button>
+      </div>
+
+      {confirming && (
+        <DeleteAccountModal
+          email={user?.email}
+          busy={deleting}
+          error={error}
+          onConfirm={deleteAccount}
+          onClose={() => setConfirming(false)}
+        />
+      )}
     </section>
   )
 }

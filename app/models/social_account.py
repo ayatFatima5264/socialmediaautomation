@@ -9,9 +9,9 @@ connect at most one account per platform. Tokens are stored here so the
 background scheduler can publish without the user present; they are never
 returned by the API (see schemas.social_account.SocialAccountRead).
 
-NOTE: tokens are stored as-is for now. For production, encrypt `access_token` /
-`refresh_token` at rest (e.g. Fernet / a KMS) — left as a clearly-marked
-follow-up.
+Tokens are encrypted at rest: `access_token` and `refresh_token` use the
+`EncryptedString` column type, so they are ciphertext in the database and plain
+values everywhere in the app. See app/core/crypto.py for the key handling.
 """
 from __future__ import annotations
 
@@ -20,6 +20,7 @@ from datetime import datetime
 from sqlalchemy import DateTime, ForeignKey, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 
+from app.core.crypto import EncryptedString
 from app.database import Base
 from app.schemas.social_account import AccountStatus
 
@@ -39,10 +40,10 @@ class SocialAccount(Base):
 
     platform: Mapped[str] = mapped_column(String(20), nullable=False)
 
-    # ---- Credentials (never serialized) ----------------------------------
+    # ---- Credentials (never serialized, encrypted at rest) ---------------
     # Long-lived access token used to call the platform API.
-    access_token: Mapped[str] = mapped_column(Text, nullable=False)
-    refresh_token: Mapped[str | None] = mapped_column(Text, default=None)
+    access_token: Mapped[str] = mapped_column(EncryptedString, nullable=False)
+    refresh_token: Mapped[str | None] = mapped_column(EncryptedString, default=None)
     token_expires_at: Mapped[datetime | None] = mapped_column(DateTime, default=None)
     # Space-delimited OAuth scopes actually granted for this token, recorded at
     # connect time. Used to detect when a newly-required scope is missing and the
@@ -57,6 +58,16 @@ class SocialAccount(Base):
     # and lookups have a stable handle.
     account_id: Mapped[str] = mapped_column(String(255), nullable=False)
     page_id: Mapped[str | None] = mapped_column(String(255), default=None)
+    # The id the *platform's own login* knows this person by, when it differs
+    # from the publishing target above. Meta names the app-scoped user id in the
+    # `signed_request` it sends to the deauthorize / data-deletion callbacks, and
+    # for Instagram that is the Facebook user id — not the Instagram Business
+    # account id in `account_id`. Without this column those callbacks could not
+    # identify which Instagram row to delete. NULL for platforms where the two
+    # are the same, and for rows connected before it was recorded.
+    platform_user_id: Mapped[str | None] = mapped_column(
+        String(255), index=True, default=None
+    )
 
     # ---- Display metadata (safe to serialize) ----------------------------
     username: Mapped[str | None] = mapped_column(String(255), default=None)

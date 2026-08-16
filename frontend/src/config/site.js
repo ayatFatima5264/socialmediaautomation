@@ -95,6 +95,7 @@ export const FOOTER_COLUMNS = [
       { to: '/privacy', label: 'Privacy Policy' },
       { to: '/terms', label: 'Terms of Service' },
       { to: '/cookies', label: 'Cookie Policy' },
+      { to: '/data-deletion', label: 'Data Deletion' },
     ],
   },
 ]
@@ -113,6 +114,7 @@ export const MARKETING_ROUTES = [
   '/privacy',
   '/terms',
   '/cookies',
+  '/data-deletion',
 ]
 
 export const PUBLIC_ROUTES = [

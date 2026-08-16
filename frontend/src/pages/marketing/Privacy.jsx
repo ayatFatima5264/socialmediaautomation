@@ -38,7 +38,8 @@ const SECTIONS = [
     heading: '5. Connected Social Media Accounts',
     body: [
       'When you connect a social platform, you authorize us to access the permissions you grant (for example, publishing content). We store only the tokens and metadata needed to provide the Service.',
-      'You can disconnect any account at any time from your dashboard, which revokes our access to that platform going forward.',
+      'Access and refresh tokens are encrypted at rest, are never returned by our API, and are never shown in your browser.',
+      'You can disconnect any account at any time from your Social Accounts page. Disconnecting deletes that platform\'s stored tokens and account details from our database immediately and revokes our access going forward. The rest of your account is unaffected.',
     ],
   },
   {
@@ -57,7 +58,9 @@ const SECTIONS = [
   {
     heading: '8. Data Retention',
     body: [
-      'We retain your information for as long as your account is active or as needed to provide the Service. You can delete your content or account at any time; we will delete or anonymize your personal data within a reasonable period, except where retention is required by law.',
+      'We retain your information for as long as your account is active or as needed to provide the Service.',
+      'You can permanently delete your account at any time from Settings, under Danger Zone. This is immediate and irreversible: your profile, posts, plans, campaigns, uploaded images and every connected social account — including its stored access tokens — are removed from our live systems as part of the request. Residual copies may remain in our hosting provider\'s encrypted database backups for a short retention period, after which those backups are overwritten.',
+      'If you cannot sign in, you can ask us to delete your account by email. Full instructions, including what we store and what happens after a request, are on our Data Deletion page at /data-deletion.',
     ],
   },
   {
@@ -69,7 +72,7 @@ const SECTIONS = [
   {
     heading: '10. Your Rights and Choices',
     body: [
-      'Depending on your location, you may have the right to access, correct, export, or delete your personal data, and to object to or restrict certain processing. You can manage most of your information directly in your settings.',
+      'Depending on your location, you may have the right to access, correct, export, or delete your personal data, and to object to or restrict certain processing. You can manage most of your information directly in your settings, and delete your account and all of its data yourself — see /data-deletion.',
       `To exercise any right or ask a question, contact us at ${SITE.supportEmail}.`,
     ],
   },
@@ -101,7 +104,7 @@ export default function Privacy() {
   return (
     <>
       <Seo />
-      <LegalPage title="Privacy Policy" updated="July 8, 2026" sections={SECTIONS} />
+      <LegalPage title="Privacy Policy" updated="August 16, 2026" sections={SECTIONS} />
     </>
   )
 }

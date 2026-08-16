@@ -34,6 +34,7 @@ import BlogPost from './pages/marketing/BlogPost.jsx'
 import Privacy from './pages/marketing/Privacy.jsx'
 import Terms from './pages/marketing/Terms.jsx'
 import Cookies from './pages/marketing/Cookies.jsx'
+import DataDeletion from './pages/marketing/DataDeletion.jsx'
 import NotFound from './pages/NotFound.jsx'
 import FullScreenLoader from './components/FullScreenLoader.jsx'
 
@@ -71,6 +72,9 @@ export default function App() {
         <Route path="/privacy" element={<Privacy />} />
         <Route path="/terms" element={<Terms />} />
         <Route path="/cookies" element={<Cookies />} />
+        {/* Public by necessity: Meta registers this as the app's Data Deletion
+            Instructions URL and its reviewers open it without an account. */}
+        <Route path="/data-deletion" element={<DataDeletion />} />
         {/* Custom 404 — rendered with the public nav + footer. */}
         <Route path="*" element={<NotFound />} />
       </Route>

@@ -111,6 +111,14 @@ export const MARKETING_PAGES = [
     priority: '0.3',
     changefreq: 'yearly',
   },
+  {
+    path: '/data-deletion',
+    title: 'Data Deletion',
+    description:
+      'How to disconnect a social account or permanently delete your AutoSocial AI account and all of its data, what we store, and how to request deletion if you cannot sign in.',
+    priority: '0.3',
+    changefreq: 'yearly',
+  },
 ]
 
 // Look up a page's metadata by path. Pages call this so the tags they render at

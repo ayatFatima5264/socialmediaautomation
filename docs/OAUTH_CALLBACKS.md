@@ -100,6 +100,64 @@ Pinterest adds three endpoints, because every Pin must be saved to a board:
 
 ---
 
+# Data Deletion
+
+Meta requires every app to declare how a user gets their data back. Three URLs
+cover it, and all three are live:
+
+| Meta dashboard field | URL (production) |
+|---|---|
+| Data Deletion Instructions URL | `https://autosocial.zaions.com/data-deletion` |
+| Data Deletion Callback URL | `{BACKEND_URL}/api/auth/meta/delete` |
+| Deauthorize Callback URL | `{BACKEND_URL}/api/auth/meta/deauthorize` |
+
+`/api/auth/threads/delete` and `/api/auth/threads/uninstall` are the *same two
+endpoints* under their original names, kept because they are already registered
+in the Threads app. Either name works in either app — the handler verifies the
+`signed_request` against every configured app secret (`THREADS_CLIENT_SECRET`
+and `META_APP_SECRET`), so one URL serves the Threads app and the
+Facebook/Instagram app alike.
+
+A verified request deletes every Facebook, Instagram and Threads connection
+belonging to the Meta user it names, including the stored access tokens, and
+answers with the `{url, confirmation_code}` pair Meta's spec requires. Rows are
+matched on `social_accounts.platform_user_id` — the app-scoped Meta user id —
+because an Instagram row's `account_id` is the Instagram Business account id,
+not the Facebook user id Meta sends. `account_id` is checked as a fallback so
+connections made before that column existed are still found.
+
+An unverifiable request is answered identically and changes nothing, so the
+endpoint cannot be used to discover which accounts exist.
+
+## The rest of the deletion flow
+
+* **Disconnect one platform** — `DELETE /api/social/{platform}`, from the
+  Social Accounts page. Deletes the row, and with it the access token, refresh
+  token and account metadata. Nothing else about the account is touched.
+* **Delete the whole account** — `DELETE /auth/me`, from Settings → Danger Zone.
+  Requires the body `{"confirmation": "DELETE"}`; the user it deletes is taken
+  from the bearer token and cannot be named in the request. Removes every
+  user-owned row (see `app/services/account_deletion.py`) and then the user.
+* **Public instructions** — `/data-deletion` on the frontend, no login required.
+
+## Token encryption at rest
+
+`social_accounts.access_token` / `refresh_token` are encrypted with Fernet via
+the `EncryptedString` column type (`app/core/crypto.py`), keyed from
+`TOKEN_ENCRYPTION_KEY`. Generate a key with:
+
+```bash
+python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+```
+
+The variable accepts a comma-separated list so keys can be rotated: the first
+encrypts, all of them are tried when decrypting. Tokens written before the key
+was set stay readable and are re-written as ciphertext on the next startup, so
+switching encryption on breaks no existing connection. **Losing the key means
+every connected account must be reconnected** — it is not recoverable.
+
+---
+
 # Threads Setup (Threads API)
 
 ## 1. Meta dashboard

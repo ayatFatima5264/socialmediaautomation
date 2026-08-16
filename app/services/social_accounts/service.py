@@ -70,6 +70,11 @@ class CallbackResult:
 # --------------------------------------------------------------------------
 def effective_status(account: SocialAccount) -> AccountStatus:
     """The status to show the UI, accounting for expiry since it was stored."""
+    # A token that will not decrypt reads as None (see app/core/crypto.py). The
+    # row is intact but unusable, so report it as an error the user can act on
+    # by reconnecting, rather than letting it look healthy until a post fails.
+    if not account.access_token:
+        return AccountStatus.error
     if (
         account.status == AccountStatus.connected.value
         and account.token_expires_at is not None
@@ -424,6 +429,10 @@ def _upsert(
     # would otherwise wipe the stored value every time the user reconnects.
     if profile.page_id is not None:
         account.page_id = profile.page_id
+    # Same rule as page_id: only overwrite when the provider supplies one, so a
+    # provider that doesn't report a separate login id can't wipe a stored value.
+    if profile.platform_user_id is not None:
+        account.platform_user_id = profile.platform_user_id
     account.username = profile.username
     account.display_name = profile.display_name
     account.profile_picture = profile.profile_picture

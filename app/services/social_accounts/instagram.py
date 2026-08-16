@@ -89,6 +89,17 @@ class InstagramProvider(OAuthProvider):
             found = await meta_graph.list_instagram_accounts(tokens.access_token)
         except meta_graph.GraphAPIError as exc:
             raise OAuthError(f"instagram: {exc}") from exc
+
+        # The Facebook user id behind this token — what Meta's data-deletion
+        # callback names, and the only way to match a deletion request back to
+        # an Instagram row (whose account_id is the Instagram Business id).
+        # Failing to read it must not block the connect: publishing does not
+        # depend on it, so the account connects with the id simply unrecorded.
+        try:
+            meta_user_id = await meta_graph.get_user_id(tokens.access_token)
+        except meta_graph.GraphAPIError:
+            meta_user_id = None
+
         return [
             ProfileInfo(
                 account_id=a["account_id"],
@@ -97,6 +108,7 @@ class InstagramProvider(OAuthProvider):
                 display_name=a.get("name") or a.get("username"),
                 profile_picture=a.get("profile_picture_url"),
                 page_name=a.get("page_name"),
+                platform_user_id=meta_user_id,
             )
             for a in found
         ]

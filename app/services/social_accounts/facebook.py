@@ -46,9 +46,14 @@ class FacebookProvider(OAuthProvider):
             bearer=False,
         )
         picture = (data.get("picture") or {}).get("data", {}).get("url")
+        account_id = str(data.get("id", ""))
         return ProfileInfo(
-            account_id=str(data.get("id", "")),
+            account_id=account_id,
             username=data.get("name"),
             display_name=data.get("name"),
             profile_picture=picture,
+            # For Facebook the publishing target and the login id are the same
+            # app-scoped user id. Recorded under both names so Meta's
+            # data-deletion callback can match on one column for every platform.
+            platform_user_id=account_id or None,
         )

@@ -29,6 +29,12 @@ services:
         generateValue: true
       - key: ACCESS_TOKEN_EXPIRE_MINUTES
         value: "1440"
+      # Encrypts stored OAuth tokens at rest. Must be a Fernet key, so Render's
+      # generateValue (a plain random string) will not do — paste one made with
+      #   python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+      # Losing this key means every connected account has to be reconnected.
+      - key: TOKEN_ENCRYPTION_KEY
+        sync: false
       # --- AI provider ------------------------------------------------------
       # Groq is the primary; it falls back to Gemini if Groq errors/rate-limits.
       - key: AI_PROVIDER

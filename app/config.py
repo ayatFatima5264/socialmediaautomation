@@ -103,6 +103,16 @@ class Settings(BaseSettings):
     # How long a password-reset link stays valid.
     password_reset_expire_minutes: int = 30
 
+    # ---- OAuth token encryption at rest ----------------------------------
+    # Fernet key(s) protecting the access/refresh tokens in `social_accounts`.
+    # Generate one with:
+    #   python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+    # Comma-separated for key rotation: the first key encrypts, all of them are
+    # tried when decrypting, so old rows keep working until they are rewritten.
+    # Unset means tokens are stored in plaintext (the pre-encryption behaviour),
+    # which keeps a deploy that has not set it yet from losing every connection.
+    token_encryption_key: str | None = None
+
     # ---- Email (SMTP) — password reset & transactional mail --------------
     # Set these to enable outbound email. Works with any SMTP provider
     # (Gmail app password, SendGrid, Mailgun, Resend SMTP, Amazon SES, ...).
@@ -114,6 +124,12 @@ class Settings(BaseSettings):
     smtp_user: str | None = None
     smtp_password: str | None = None
     smtp_from: str | None = None  # defaults to smtp_user; e.g. "AutoSocial AI <no-reply@…>"
+
+    # Where public contact-form messages are emailed. Unset falls back to
+    # smtp_from / smtp_user, so a working SMTP setup needs no extra config.
+    # Every message is stored in the contact_messages table regardless, so an
+    # unset value (or no SMTP at all) never loses a submission.
+    contact_to_email: str | None = None
 
     # ---- Scheduler -------------------------------------------------------
     # How often the background loop checks for due scheduled posts (seconds).

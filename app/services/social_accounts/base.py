@@ -49,6 +49,10 @@ class ProfileInfo:
     page_id: str | None = None
     # Human hint for the account picker (e.g. the linked Facebook Page name).
     page_name: str | None = None
+    # The id the platform's own login knows this person by, when it differs from
+    # `account_id`. Meta names it in the signed_request sent to the deauthorize /
+    # data-deletion callbacks, so it is what lets those callbacks find the row.
+    platform_user_id: str | None = None
 
 
 def generate_pkce_pair() -> tuple[str, str]:
@@ -228,7 +232,20 @@ def _provider_error(slug: str, resp: httpx.Response, payload: dict) -> str:
     """Best-effort human message from a provider's varied error shapes."""
     err = payload.get("error")
     if isinstance(err, dict):
-        msg = err.get("message") or err.get("error_description") or err.get("type")
+        msg = (
+            err.get("error_user_msg")
+            or err.get("message")
+            or err.get("error_description")
+            or err.get("type")
+        )
     else:
-        msg = payload.get("error_description") or payload.get("message") or err
+        # Threads (and some Meta token endpoints) put the reason at the top
+        # level as `error_message` instead of nesting it under `error`, so
+        # without it the real cause is lost behind "request failed (400)".
+        msg = (
+            payload.get("error_description")
+            or payload.get("error_message")
+            or payload.get("message")
+            or err
+        )
     return f"{slug}: {msg or f'request failed ({resp.status_code})'}"

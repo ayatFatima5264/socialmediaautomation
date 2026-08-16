@@ -70,6 +70,7 @@ def init_db() -> None:
 
     Base.metadata.create_all(bind=engine)
     _run_lightweight_migrations()
+    encrypt_existing_tokens()
 
 
 # Columns added to a table after its first release. `create_all` only creates
@@ -88,6 +89,9 @@ _ADDED_COLUMNS: dict[str, dict[str, str]] = {
         "connected_at": "TIMESTAMP",
         "last_synced_at": "TIMESTAMP",
         "scopes": "TEXT",
+        # The platform's own login id for this person, which Meta's
+        # deauthorize / data-deletion callbacks name in their signed_request.
+        "platform_user_id": "VARCHAR(255)",
     },
     "users": {
         "onboarding_completed": "BOOLEAN",
@@ -158,3 +162,48 @@ def _run_lightweight_migrations() -> None:
                         text("UPDATE users SET onboarding_completed = TRUE")
                     )
                     logger.info("Marked existing users as onboarding-completed")
+
+
+def encrypt_existing_tokens() -> None:
+    """Re-write any plaintext OAuth token in place as ciphertext. Idempotent.
+
+    Accounts connected before encryption was switched on still hold plaintext
+    tokens, and the column type only encrypts on write — so without this they
+    would stay in the clear until each user happened to reconnect. Reading and
+    writing through raw SQL is deliberate: it bypasses the `EncryptedString`
+    type, which is what makes it possible to see what is actually stored.
+
+    A no-op when no key is configured (nothing to encrypt with) and, after the
+    first run, on every subsequent boot. Never logs a token — only how many.
+    """
+    from app.core import crypto
+
+    if not crypto.is_enabled():
+        return
+
+    inspector = inspect(engine)
+    if "social_accounts" not in set(inspector.get_table_names()):
+        return
+
+    updated = 0
+    with engine.begin() as conn:
+        rows = conn.execute(
+            text("SELECT id, access_token, refresh_token FROM social_accounts")
+        ).all()
+        for row_id, access_token, refresh_token in rows:
+            changes: dict[str, str] = {}
+            if access_token and not crypto.is_encrypted(access_token):
+                changes["access_token"] = crypto.encrypt(access_token)
+            if refresh_token and not crypto.is_encrypted(refresh_token):
+                changes["refresh_token"] = crypto.encrypt(refresh_token)
+            if not changes:
+                continue
+            assignments = ", ".join(f"{col} = :{col}" for col in changes)
+            conn.execute(
+                text(f"UPDATE social_accounts SET {assignments} WHERE id = :id"),
+                {**changes, "id": row_id},
+            )
+            updated += 1
+
+    if updated:
+        logger.info("Encrypted stored OAuth tokens for %d connected account(s)", updated)
