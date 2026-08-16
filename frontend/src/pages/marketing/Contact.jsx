@@ -1,46 +1,79 @@
 import { useState } from 'react'
-import { Container, PageHero } from './_ui.jsx'
+import { Link } from 'react-router-dom'
+import { Container, PageHero, Section } from './_ui.jsx'
 import Seo from '../../components/Seo.jsx'
-import { useToast } from '../../context/ToastContext.jsx'
+import Icon from '../../components/marketing/Icon.jsx'
 import { api, ApiError } from '../../lib/api'
 import { SITE } from '../../config/site'
 
-const CHANNELS = [
-  { icon: '✉', label: 'Email us', value: SITE.supportEmail, href: `mailto:${SITE.supportEmail}` },
-  { icon: '💬', label: 'Live chat', value: 'Available in-app, 9am–5pm PT' },
-  { icon: '🕑', label: 'Response time', value: 'Within one business day' },
+// ---------------------------------------------------------------------------
+// Contact.
+//
+// The form now posts to POST /api/contact, which stores the message before it
+// tries to email anyone. Previously this page faked a 400ms delay and showed a
+// success toast without sending anything anywhere — every message a visitor
+// wrote was discarded.
+//
+// Removed with the rewrite: a "live chat, 9am–5pm PT" channel that does not
+// exist, "Help Center" and "Documentation" cards that were permanent
+// placeholders, and a one-business-day response promise nothing backs.
+// ---------------------------------------------------------------------------
+
+const REASONS = [
+  {
+    icon: 'target',
+    title: 'How something works',
+    body: 'Questions about what the product does before you sign up, or how to get a particular result out of it once you have.',
+  },
+  {
+    icon: 'megaphone',
+    title: 'Business and Enterprise',
+    body: 'Paid plans are arranged directly with us. Tell us roughly how many accounts and people are involved and we will take it from there.',
+  },
+  {
+    icon: 'alert',
+    title: 'Something is broken',
+    body: 'A failed connection, a post that did not publish, or anything wrong with your account. Include the network involved and roughly when it happened.',
+  },
 ]
 
-const SUPPORT = [
-  { icon: '📚', title: 'Help Center', body: 'Guides and answers to common questions.', badge: 'Coming soon' },
-  { icon: '🧑‍💻', title: 'Documentation', body: 'Setup, publishing, and best-practice docs.', badge: 'Coming soon' },
-  { icon: '🤝', title: 'Sales & partnerships', body: 'Talk to us about Business and Enterprise plans.' },
-]
+const EMPTY = { name: '', email: '', message: '', website: '' }
 
 export default function Contact() {
-  const toast = useToast()
-  const [form, setForm] = useState({ name: '', email: '', message: '' })
+  const [form, setForm] = useState(EMPTY)
   const [busy, setBusy] = useState(false)
-  const set = (patch) => setForm((f) => ({ ...f, ...patch }))
+  // 'idle' | 'sent' | { error: string }
+  const [status, setStatus] = useState('idle')
 
-  // Contact pipeline: Contact API → Email → Admin Dashboard → Reply.
-  // Flip VITE_CONTACT_API=true once the backend POST /api/contact endpoint
-  // exists; until then we acknowledge locally so the form is fully usable.
-  const apiEnabled = import.meta.env.VITE_CONTACT_API === 'true'
+  const set = (patch) => {
+    setForm((f) => ({ ...f, ...patch }))
+    // Clearing a stale error as soon as the visitor starts fixing it.
+    if (status !== 'idle') setStatus('idle')
+  }
 
   async function submit(e) {
     e.preventDefault()
     setBusy(true)
+    setStatus('idle')
     try {
-      if (apiEnabled) {
-        await api.contact(form)
-      } else {
-        await new Promise((r) => setTimeout(r, 400))
-      }
-      toast.success("Thanks for reaching out — we'll reply within one business day.")
-      setForm({ name: '', email: '', message: '' })
+      await api.contact({
+        name: form.name.trim(),
+        email: form.email.trim(),
+        message: form.message.trim(),
+        website: form.website,
+      })
+      setStatus('sent')
+      setForm(EMPTY)
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : 'Could not send message')
+      // The endpoint answers 429 when an address has sent several messages in
+      // an hour, and 422 with a per-field reason when something is malformed.
+      // Both are worth showing verbatim; anything else gets a fallback that
+      // still leaves the visitor a way to reach us.
+      const message =
+        err instanceof ApiError && err.message
+          ? err.message
+          : `Could not send your message. Please email ${SITE.supportEmail} instead.`
+      setStatus({ error: message })
     } finally {
       setBusy(false)
     }
@@ -51,107 +84,160 @@ export default function Contact() {
       <Seo />
       <PageHero
         eyebrow="Contact"
-        title="Get in touch"
-        subtitle="Questions about features, pricing, or partnerships? Send us a note and a real person will get back to you — usually within one business day."
+        title="Talk to us"
+        subtitle="One inbox, read by the people who build AutoSocial AI. Write in whatever detail you have — there is no ticket form to fill in first."
       />
-      <section className="pb-16">
-        <Container>
-          <div className="grid gap-6 lg:grid-cols-3">
-            <div className="space-y-4 lg:col-span-1">
-              {CHANNELS.map((c) => (
-                <div key={c.label} className="card p-5">
-                  <div className="flex items-center gap-3">
-                    <div className="grid h-10 w-10 place-items-center rounded-xl bg-accent-soft text-lg">
-                      {c.icon}
-                    </div>
-                    <div>
-                      <div className="text-sm font-semibold">{c.label}</div>
-                      {c.href ? (
-                        <a
-                          href={c.href}
-                          className="text-sm link-accent"
-                        >
-                          {c.value}
-                        </a>
-                      ) : (
-                        <div className="text-sm text-muted">
-                          {c.value}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              ))}
+
+      <Section>
+        <div className="grid gap-10 lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)] lg:gap-16">
+          {/* ---- What to write about ------------------------------------ */}
+          <div>
+            <div className="grid gap-3">
+              <a
+                href={`mailto:${SITE.supportEmail}`}
+                className="flex items-center gap-3 rounded-xl border border-line bg-surface p-5 transition hover:border-accent-line"
+              >
+                <Icon name="mail" size={22} className="shrink-0 text-accent" />
+                <span className="min-w-0">
+                  <span className="block text-sm text-muted">Email us directly</span>
+                  <span className="block break-all font-semibold text-body">
+                    {SITE.supportEmail}
+                  </span>
+                </span>
+              </a>
+              {SITE.supportPhone && (
+                <a
+                  href={`tel:${SITE.supportPhone}`}
+                  className="flex items-center gap-3 rounded-xl border border-line bg-surface p-5 transition hover:border-accent-line"
+                >
+                  <Icon name="phone" size={22} className="shrink-0 text-accent" />
+                  <span>
+                    <span className="block text-sm text-muted">Call or message us</span>
+                    <span className="block font-semibold text-body">
+                      {SITE.supportPhone}
+                    </span>
+                  </span>
+                </a>
+              )}
             </div>
 
-            <div className="card p-7 lg:col-span-2">
-              <form onSubmit={submit} className="space-y-4">
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div>
-                    <label className="label">Name</label>
-                    <input
-                      className="input"
-                      required
-                      value={form.name}
-                      onChange={(e) => set({ name: e.target.value })}
-                      placeholder="Your name"
-                    />
-                  </div>
-                  <div>
-                    <label className="label">Email</label>
-                    <input
-                      className="input"
-                      type="email"
-                      required
-                      value={form.email}
-                      onChange={(e) => set({ email: e.target.value })}
-                      placeholder="you@company.com"
-                    />
-                  </div>
-                </div>
+            <h2 className="mt-10 text-xs font-semibold uppercase tracking-[0.14em] text-muted">
+              What people write in about
+            </h2>
+            <ul className="mt-5 space-y-6">
+              {REASONS.map((r) => (
+                <li key={r.title}>
+                  <h3 className="flex items-center gap-2 font-bold">
+                    <Icon name={r.icon} size={18} className="text-accent" />
+                    {r.title}
+                  </h3>
+                  <p className="mt-1.5 text-[15px] leading-relaxed text-muted">{r.body}</p>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          {/* ---- Form ---------------------------------------------------- */}
+          <div className="card p-6 md:p-8">
+            <form onSubmit={submit} noValidate={false} className="space-y-5">
+              <div className="grid gap-5 sm:grid-cols-2">
                 <div>
-                  <label className="label">Message</label>
-                  <textarea
-                    className="input min-h-36"
+                  <label className="label" htmlFor="contact-name">Name</label>
+                  <input
+                    id="contact-name"
+                    className="input"
                     required
-                    value={form.message}
-                    onChange={(e) => set({ message: e.target.value })}
-                    placeholder="How can we help?"
+                    maxLength={120}
+                    autoComplete="name"
+                    value={form.name}
+                    onChange={(e) => set({ name: e.target.value })}
+                    placeholder="Your name"
                   />
                 </div>
-                <button className="btn btn-primary px-6" disabled={busy}>
+                <div>
+                  <label className="label" htmlFor="contact-email">Email</label>
+                  <input
+                    id="contact-email"
+                    className="input"
+                    type="email"
+                    required
+                    autoComplete="email"
+                    value={form.email}
+                    onChange={(e) => set({ email: e.target.value })}
+                    placeholder="you@company.com"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="label" htmlFor="contact-message">Message</label>
+                <textarea
+                  id="contact-message"
+                  className="input min-h-44 resize-y"
+                  required
+                  minLength={10}
+                  maxLength={4000}
+                  value={form.message}
+                  onChange={(e) => set({ message: e.target.value })}
+                  placeholder="What would you like to know?"
+                />
+                <p className="mt-1.5 text-xs text-muted">
+                  {form.message.trim().length}/4000
+                </p>
+              </div>
+
+              {/* Honeypot. Hidden from people and from assistive technology;
+                  bots fill every field they find, and a filled one is discarded
+                  server-side. Not `display:none`, which some bots skip. */}
+              <div className="absolute -left-[9999px] h-0 w-0 overflow-hidden" aria-hidden="true">
+                <label htmlFor="contact-website">Website</label>
+                <input
+                  id="contact-website"
+                  name="website"
+                  type="text"
+                  tabIndex={-1}
+                  autoComplete="off"
+                  value={form.website}
+                  onChange={(e) => set({ website: e.target.value })}
+                />
+              </div>
+
+              <div className="flex flex-wrap items-center gap-4">
+                <button className="btn btn-primary px-6 py-2.5" disabled={busy}>
                   {busy ? 'Sending…' : 'Send message'}
                 </button>
-              </form>
-            </div>
-          </div>
 
-          {/* Support section */}
-          <div className="mt-12">
-            <h2 className="text-center text-2xl font-bold">Looking for support?</h2>
-            <p className="mx-auto mt-2 max-w-xl text-center text-sm text-muted">
-              Already using AutoSocial AI? Here's where to find help — and what's on
-              the way.
-            </p>
-            <div className="mt-6 grid gap-5 md:grid-cols-3">
-              {SUPPORT.map((s) => (
-                <div key={s.title} className="card p-6">
-                  <div className="mb-3 grid h-10 w-10 place-items-center rounded-xl bg-accent-soft text-lg">
-                    {s.icon}
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h3 className="font-bold">{s.title}</h3>
-                    {s.badge && (
-                      <span className="rounded-full bg-accent-soft px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-accent">
-                        {s.badge}
-                      </span>
-                    )}
-                  </div>
-                  <p className="mt-2 text-sm text-muted">{s.body}</p>
-                </div>
-              ))}
-            </div>
+                {/* Status is announced as well as shown: a screen-reader user
+                    gets the same confirmation a sighted one does. */}
+                <p role="status" aria-live="polite" className="text-sm">
+                  {status === 'sent' && (
+                    <span className="flex items-center gap-2 font-medium text-accent">
+                      <Icon name="check" size={18} />
+                      Message received. We will reply to the address you gave.
+                    </span>
+                  )}
+                  {status !== 'idle' && status !== 'sent' && (
+                    <span className="flex items-start gap-2 text-rose-600">
+                      <Icon name="alert" size={18} className="mt-0.5 shrink-0" />
+                      {status.error}
+                    </span>
+                  )}
+                </p>
+              </div>
+            </form>
           </div>
+        </div>
+      </Section>
+
+      <section className="border-t border-line py-12">
+        <Container>
+          <p className="max-w-2xl text-[15px] leading-relaxed text-muted">
+            Already have an account and need to remove your data? The{' '}
+            <Link to="/data-deletion" className="link-accent font-medium">
+              data deletion page
+            </Link>{' '}
+            explains what gets deleted and how to request it.
+          </p>
         </Container>
       </section>
     </>

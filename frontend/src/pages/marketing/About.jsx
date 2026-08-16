@@ -1,18 +1,47 @@
-import { Container, CTASection, PageHero } from './_ui.jsx'
+import { Link } from 'react-router-dom'
+import { CtaPanel, PageHero, Section, SectionHead, Split } from './_ui.jsx'
 import Seo from '../../components/Seo.jsx'
+import Icon from '../../components/marketing/Icon.jsx'
+import ProductFrame from '../../components/marketing/ProductFrame.jsx'
 
-const VALUES = [
-  { icon: '🎯', title: 'Brand before AI', body: 'AI should sound like you, not like a robot. Everything we build starts from your voice, your audience, and your goals.' },
-  { icon: '⏱️', title: 'Respect people\'s time', body: 'Every feature earns its place by removing work. If it doesn\'t save you time, it doesn\'t ship.' },
-  { icon: '🧭', title: 'You stay in control', body: 'AutoSocial drafts and suggests — you review and decide. Nothing publishes without your approval.' },
-  { icon: '🔒', title: 'Trust by default', body: 'Your content and connected accounts are handled with care, clear permissions, and straightforward privacy.' },
+// ---------------------------------------------------------------------------
+// About, written from the product outward.
+//
+// Deliberately contains no company history, founding date, team size, customer
+// count, award or certification — none of that is established, and inventing it
+// is exactly what made the previous version of this page read as generated. The
+// credibility here comes from being specific about what is built and blunt
+// about what is not.
+// ---------------------------------------------------------------------------
+
+const BUILT = [
+  'A composer with a live per-platform preview and character limits',
+  'AI drafting from a prompt, a URL, a document, an image or an old post',
+  'AI image generation, carousels, and a layer-based image editor',
+  'A business profile and Brand Kit that steer every generation',
+  'A content planner that proposes, writes and schedules a fortnight at a time',
+  'A scheduler, a pending queue and a full post history',
+  'Publishing to Instagram, Facebook, LinkedIn, X, Threads and Pinterest',
+  'A media library of uploads plus curated stock',
+  'An ads studio for campaign creative: static, video and copy',
 ]
 
-const ROADMAP = [
-  { when: 'Now', title: 'Content, images & scheduling', body: 'AI post, image, caption, and carousel generation, multi-platform publishing, and a smart scheduler — live today.', done: true },
-  { when: 'Next', title: 'Analytics', body: 'Unified performance reporting across every connected platform, so you can see what works in one place.' },
-  { when: 'Next', title: 'Team collaboration', body: 'Shared workspaces, roles, and approval workflows for agencies and teams managing multiple brands.' },
-  { when: 'Later', title: 'Public API & integrations', body: 'Connect AutoSocial AI to your own tools and automate content workflows end to end.' },
+const PRINCIPLES = [
+  {
+    icon: 'shield',
+    title: 'Nothing publishes without you',
+    body: 'Every draft is editable, and planner posts sit in a review step until you approve them. There is no mode where the software posts something you have not read.',
+  },
+  {
+    icon: 'target',
+    title: 'Context beats prompting',
+    body: 'The business profile exists so you are not re-explaining your company in every prompt. The more it knows, the less you edit — which is the only measure of an AI feature that matters here.',
+  },
+  {
+    icon: 'alert',
+    title: 'Say what is not built',
+    body: 'Analytics and team collaboration are not in the product. You will find that written on the features page and the pricing table too, because finding out after signing up is worse for everyone.',
+  },
 ]
 
 export default function About() {
@@ -21,97 +50,130 @@ export default function About() {
       <Seo />
       <PageHero
         eyebrow="About"
-        title="We help teams show up online — consistently"
-        subtitle="AutoSocial AI is built for busy founders, marketers, agencies, and creators who know consistency wins, but never have enough hours to make it happen."
+        title="Why AutoSocial AI exists"
+        subtitle="Posting consistently across six networks is not hard because writing is hard. It is hard because the work is scattered across four tools that do not know about each other."
       />
 
-      <section className="pb-8">
-        <Container>
-          {/* Mission & Vision */}
-          <div className="grid gap-6 md:grid-cols-2">
-            <div className="card p-8">
-              <div className="text-sm font-semibold text-accent">Our mission</div>
-              <h2 className="mt-2 text-2xl font-bold">Make consistent, on-brand content effortless</h2>
-              <p className="mt-4 text-muted">
-                Great social media rewards those who show up every day — but creating
-                on-brand content across six platforms is exhausting. Our mission is to
-                take that weight off your plate, turning a single idea into a full set
-                of platform-ready posts, visuals, and a schedule you can actually keep.
-              </p>
-            </div>
-            <div className="card p-8">
-              <div className="text-sm font-semibold text-accent">Our vision</div>
-              <h2 className="mt-2 text-2xl font-bold">A content team in every dashboard</h2>
-              <p className="mt-4 text-muted">
-                We picture a world where any business — from a solo recruiter to a
-                growing agency — has the creative output of a full team, without the
-                overhead. AutoSocial AI is how we get there: one place to create,
-                design, schedule, and publish everything.
-              </p>
-            </div>
-          </div>
-
-          {/* Why we built it */}
-          <div className="mt-6 card p-8 md:p-10">
-            <h2 className="text-2xl font-bold">Why we built AutoSocial AI</h2>
-            <p className="mt-4 text-muted">
-              We kept seeing the same story: talented teams with real expertise going
-              quiet online — not because they had nothing to say, but because posting
-              consistently took too many tools, too much time, and too much
-              second-guessing. Writing in one app, designing in another, scheduling in
-              a third, and still missing days.
+      {/* ---- The problem -------------------------------------------------- */}
+      <Section>
+        <div className="grid gap-10 lg:grid-cols-2 lg:gap-16">
+          <div className="space-y-5 text-lg leading-relaxed text-muted">
+            <p>
+              The caption gets written in a doc. The image gets made in a design
+              app. The finished assets pile up in a downloads folder. Then a
+              scheduler asks for all of it again, formatted its own way, one
+              network at a time.
             </p>
-            <p className="mt-4 text-muted">
-              AutoSocial AI brings all of it into one workflow. You bring the ideas and
-              the judgment; the platform handles the drafting, the design, and the
-              logistics. The result is simple — you stay visible and on-brand, while
-              the busywork disappears.
+            <p>
+              None of those steps is difficult on its own. The cost is in the
+              handoffs — and in the fact that skipping a week is always easier
+              than doing the round trip again.
             </p>
           </div>
+          <div className="space-y-5 text-lg leading-relaxed">
+            <p className="text-body">
+              AutoSocial AI puts those steps in one place. You describe an idea
+              or bring something you have already written, the draft is written
+              for each network you selected, the image is made or picked in the
+              same screen, and you see the post the way each network will render
+              it before it goes anywhere.
+            </p>
+            <p className="text-body">
+              Then it goes on a calendar, and the calendar publishes it.
+            </p>
+          </div>
+        </div>
+      </Section>
 
-          {/* Values */}
-          <div className="mt-10">
-            <h2 className="mb-6 text-center text-2xl font-bold md:text-3xl">What we value</h2>
-            <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
-              {VALUES.map((v) => (
-                <div key={v.title} className="card p-6">
-                  <div className="mb-3 text-2xl">{v.icon}</div>
-                  <h3 className="font-bold">{v.title}</h3>
-                  <p className="mt-2 text-sm text-muted">{v.body}</p>
-                </div>
-              ))}
+      {/* ---- What is built ------------------------------------------------ */}
+      <Section tone="surface">
+        <Split
+          media={
+            <ProductFrame
+              src="/product/content-planner.webp"
+              width={1600}
+              height={960}
+              label="autosocial.ai/planner"
+              alt="The Content Planner review step, with generated posts grouped by day awaiting approval"
+            />
+          }
+        >
+          <SectionHead
+            eyebrow="What is built"
+            title="The whole loop works today"
+            subtitle="Not a waiting list, and not a demo. Every item below is a screen you can open once you have an account."
+          />
+          <ul className="mt-6 space-y-2.5">
+            {BUILT.map((item) => (
+              <li key={item} className="flex gap-2.5 text-[15px] leading-relaxed">
+                <Icon name="check" size={18} className="mt-0.5 shrink-0 text-accent" />
+                <span className="text-body">{item}</span>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-6 text-[15px] text-muted">
+            The{' '}
+            <Link to="/features" className="link-accent font-medium">
+              features page
+            </Link>{' '}
+            shows each of these as a screenshot from the running application.
+          </p>
+        </Split>
+      </Section>
+
+      {/* ---- What is not built -------------------------------------------- */}
+      <Section>
+        <div className="grid gap-10 lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)] lg:gap-16">
+          <SectionHead eyebrow="What is not built" title="The honest gaps" />
+          <div className="grid gap-8 sm:grid-cols-2">
+            <div>
+              <h3 className="flex items-center gap-2 text-lg font-bold">
+                <Icon name="chart" size={20} className="text-muted" />
+                Analytics
+              </h3>
+              <p className="mt-2 text-[15px] leading-relaxed text-muted">
+                AutoSocial AI does not collect or report on how your posts
+                perform. If unified reporting across networks is the reason you
+                are shopping, this is not that tool yet.
+              </p>
+            </div>
+            <div>
+              <h3 className="flex items-center gap-2 text-lg font-bold">
+                <Icon name="users" size={20} className="text-muted" />
+                Team collaboration
+              </h3>
+              <p className="mt-2 text-[15px] leading-relaxed text-muted">
+                There are no shared workspaces, roles or approval routing between
+                people. An account is one person&rsquo;s workspace, and the
+                approval step is your own review of your own posts.
+              </p>
             </div>
           </div>
+        </div>
+      </Section>
 
-          {/* Roadmap */}
-          <div className="mt-12">
-            <h2 className="mb-6 text-center text-2xl font-bold md:text-3xl">Where we're headed</h2>
-            <div className="grid gap-4 md:grid-cols-2">
-              {ROADMAP.map((r) => (
-                <div key={r.title} className="card flex gap-4 p-6">
-                  <div className="shrink-0">
-                    <span
-                      className={`badge ${
-                        r.done
-                          ? 'bg-emerald-500/15 text-emerald-600'
-                          : 'bg-accent-soft text-accent'
-                      }`}
-                    >
-                      {r.when}
-                    </span>
-                  </div>
-                  <div>
-                    <h3 className="font-bold">{r.title}</h3>
-                    <p className="mt-1 text-sm text-muted">{r.body}</p>
-                  </div>
-                </div>
-              ))}
+      {/* ---- Principles ---------------------------------------------------- */}
+      <Section tone="surface">
+        <SectionHead
+          eyebrow="How we build it"
+          title="Three things that decide what ships"
+        />
+        <div className="mt-12 grid gap-10 md:grid-cols-3">
+          {PRINCIPLES.map((p) => (
+            <div key={p.title}>
+              <Icon name={p.icon} size={22} className="text-accent" />
+              <h3 className="mt-3 text-lg font-bold">{p.title}</h3>
+              <p className="mt-2 text-[15px] leading-relaxed text-muted">{p.body}</p>
             </div>
-          </div>
-        </Container>
-      </section>
+          ))}
+        </div>
+      </Section>
 
-      <CTASection />
+      <CtaPanel
+        title="Try it against your own brand"
+        subtitle="Create an account, fill in the business profile, and see what the first set of drafts looks like."
+        secondary={{ to: '/contact', label: 'Ask us something' }}
+      />
     </>
   )
 }

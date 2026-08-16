@@ -1,106 +1,49 @@
 import { Link } from 'react-router-dom'
-import { Container, CTASection, PageHero } from './_ui.jsx'
+import { CtaPanel, FaqItem, PageHero, Section, SectionHead } from './_ui.jsx'
 import Seo from '../../components/Seo.jsx'
+import Icon from '../../components/marketing/Icon.jsx'
+import { COMPARISON, ENTERPRISE, PLANS } from '../../config/pricing'
 
-const PLANS = [
-  {
-    name: 'Free',
-    price: '$0',
-    cadence: '/mo',
-    tagline: 'For trying things out',
-    cta: 'Start free',
-    to: '/register',
-    highlight: false,
-    features: [
-      '30 AI generations / month',
-      'AI Planner — 7-day plans',
-      '1 connected account',
-      'AI captions & hashtags',
-      'Basic scheduling',
-      'Draft management',
-    ],
-  },
-  {
-    name: 'Pro',
-    price: '$29',
-    cadence: '/mo',
-    tagline: 'For creators & solo marketers',
-    cta: 'Start Pro',
-    to: '/register',
-    highlight: true,
-    features: [
-      'Unlimited AI generations',
-      'AI Planner — 7, 15 & 30-day plans',
-      'Up to 5 connected accounts',
-      'AI images & carousels',
-      'Calendar & smart scheduling',
-      'Business profile personalization',
-      'Priority support',
-    ],
-  },
-  {
-    name: 'Business',
-    price: '$79',
-    cadence: '/mo',
-    tagline: 'For teams & agencies',
-    cta: 'Start Business',
-    to: '/register',
-    highlight: false,
-    features: [
-      'Everything in Pro',
-      'Up to 20 connected accounts',
-      'Team collaboration (coming soon)',
-      'Approval workflows (coming soon)',
-      'Analytics dashboard (coming soon)',
-      'Priority support',
-    ],
-  },
-  {
-    name: 'Enterprise',
-    price: 'Custom',
-    cadence: '',
-    tagline: 'For large organizations',
-    cta: 'Contact sales',
-    to: '/contact',
-    highlight: false,
-    features: [
-      'Everything in Business',
-      'Unlimited accounts & seats',
-      'Dedicated onboarding',
-      'Custom integrations',
-      'SSO & advanced security',
-      'SLA & dedicated support',
-    ],
-  },
-]
-
-// Feature comparison matrix. Values: true / false / string.
-const COMPARISON = [
-  { label: 'AI generations', free: '30 / mo', pro: 'Unlimited', business: 'Unlimited', enterprise: 'Unlimited' },
-  { label: 'AI Planner (7 / 15 / 30-day)', free: '7-day', pro: true, business: true, enterprise: true },
-  { label: 'Connected accounts', free: '1', pro: '5', business: '20', enterprise: 'Unlimited' },
-  { label: 'AI captions & hashtags', free: true, pro: true, business: true, enterprise: true },
-  { label: 'AI images & carousels', free: false, pro: true, business: true, enterprise: true },
-  { label: 'Smart scheduler & calendar', free: 'Basic', pro: true, business: true, enterprise: true },
-  { label: 'Business profile personalization', free: false, pro: true, business: true, enterprise: true },
-  { label: 'Team collaboration', free: false, pro: false, business: 'Coming soon', enterprise: 'Coming soon' },
-  { label: 'Analytics dashboard', free: false, pro: false, business: 'Coming soon', enterprise: 'Coming soon' },
-  { label: 'SSO & advanced security', free: false, pro: false, business: false, enterprise: true },
-  { label: 'Support', free: 'Community', pro: 'Priority', business: 'Priority', enterprise: 'Dedicated' },
-]
+// ---------------------------------------------------------------------------
+// Plans, limits and features all come from config/pricing.js so this page and
+// the homepage's preview cannot drift apart.
+//
+// Three claims that used to live here have been removed rather than reworded,
+// because the product does not support them: a PCI-compliant payment provider
+// (there is no payment processing), a definition of what "counts as" a metered
+// generation (nothing meters them), and a footnote admitting the prices were
+// placeholders. What replaces them is below, in the FAQ, stated plainly.
+// ---------------------------------------------------------------------------
 
 const FAQ = [
-  { q: 'Can I start without a credit card?', a: 'Yes. The Free plan is genuinely free and needs no card. Upgrade only when you\'re ready for more generations, accounts, or team features.' },
-  { q: 'Can I change plans later?', a: 'Anytime. Upgrade or downgrade from your settings — changes take effect immediately, and downgrades apply at the end of your billing period.' },
-  { q: 'What counts as an AI generation?', a: 'Each post, image, carousel, or caption you generate counts as one generation. Paid plans include unlimited generations.' },
-  { q: 'Do you offer plans for agencies?', a: 'Yes. The Business plan is built for teams managing multiple brands, and Enterprise adds unlimited seats, security, and dedicated support.' },
-  { q: 'Is my payment information secure?', a: 'Payments are processed by a PCI-compliant provider. We never store your full card details on our servers.' },
+  {
+    q: 'Can I start without a credit card?',
+    a: 'Yes. Creating an account puts you on the Free plan, and no card is asked for at any point in signing up.',
+  },
+  {
+    q: 'How do I move onto a paid plan?',
+    a: 'Get in touch. Upgrading is not self-serve yet — there is no checkout inside the product — so paid plans are arranged with us directly. Start on Free in the meantime; nothing you create is locked to a plan.',
+  },
+  {
+    q: 'Are the usage limits enforced today?',
+    a: 'No. The generation counts and account limits above describe the plan structure, not a meter running inside the application. We would rather say that here than have you discover it later.',
+  },
+  {
+    q: 'What is not included on any plan?',
+    a: 'Analytics and team collaboration. Neither is built yet, on any plan, which is why they are marked as in development rather than as a Business feature.',
+  },
+  {
+    q: 'Do you work with agencies?',
+    a: 'Yes. The Business plan is aimed at teams handling several brands, and Enterprise covers larger deployments with dedicated onboarding. Both start with a conversation — use the contact form and tell us roughly how many accounts and people are involved.',
+  },
 ]
 
-function Cell({ value }) {
-  if (value === true) return <span className="text-accent">✓</span>
+function Cell({ value, soon }) {
+  if (value === true) return <Icon name="check" size={18} className="mx-auto text-accent" />
   if (value === false) return <span className="text-muted">—</span>
-  return <span className="text-body">{value}</span>
+  return (
+    <span className={soon ? 'text-xs font-medium text-muted' : 'text-body'}>{value}</span>
+  )
 }
 
 export default function Pricing() {
@@ -109,111 +52,142 @@ export default function Pricing() {
       <Seo />
       <PageHero
         eyebrow="Pricing"
-        title="Pricing that grows with you"
-        subtitle="Start free and upgrade when you're ready. No hidden fees, cancel anytime."
+        title="Start free, and talk to us when you outgrow it"
+        subtitle="Every plan begins by creating an account. Paid plans are arranged directly with us — there is no checkout in the product yet."
       />
 
-      {/* Plan cards */}
-      <section className="pb-8">
-        <Container>
-          <div className="grid items-start gap-6 md:grid-cols-2 lg:grid-cols-4">
-            {PLANS.map((plan) => (
-              <div
-                key={plan.name}
-                className={`card relative flex flex-col p-7 ${
-                  plan.highlight
-                    ? 'border-2 border-accent ring-4 ring-accent-soft lg:-translate-y-2'
-                    : ''
+      {/* ---- Plan cards -------------------------------------------------- */}
+      <Section>
+        <div className="grid items-stretch gap-6 lg:grid-cols-3">
+          {PLANS.map((plan) => (
+            <div
+              key={plan.id}
+              className={`card relative flex flex-col p-7 ${
+                plan.highlight ? 'border-accent shadow-[0_18px_40px_-28px_rgba(22,40,31,0.5)]' : ''
+              }`}
+            >
+              {plan.highlight && (
+                <span className="absolute -top-3 left-7 rounded-full bg-accent px-3 py-1 text-[11px] font-bold uppercase tracking-wide text-accent-contrast">
+                  Most popular
+                </span>
+              )}
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-muted">
+                {plan.name}
+              </h2>
+              <div className="mt-3 flex items-baseline gap-1.5">
+                <span className="text-4xl font-bold tracking-tight">{plan.price}</span>
+                <span className="text-muted">{plan.cadence}</span>
+              </div>
+              <p className="mt-2 text-sm text-muted">{plan.tagline}</p>
+
+              <Link
+                to={plan.to}
+                className={`btn mt-7 w-full py-2.5 ${
+                  plan.highlight ? 'btn-primary' : 'btn-secondary'
                 }`}
               >
-                {plan.highlight && (
-                  <span className="absolute -top-3.5 left-1/2 -translate-x-1/2 rounded-full bg-accent px-4 py-1.5 text-xs font-bold uppercase tracking-wide text-accent-contrast">
-                    Most Popular
-                  </span>
-                )}
-                <div className={`text-sm font-semibold ${plan.highlight ? 'text-accent' : 'text-muted'}`}>
-                  {plan.name}
-                </div>
-                <div className="mt-2 flex items-baseline gap-1">
-                  <span className="text-4xl font-black">{plan.price}</span>
-                  <span className="text-muted">{plan.cadence}</span>
-                </div>
-                <p className="mt-1 text-sm text-muted">{plan.tagline}</p>
-                <Link
-                  to={plan.to}
-                  className={`btn mt-6 w-full ${plan.highlight ? 'btn-primary' : 'btn-secondary'}`}
-                >
-                  {plan.cta}
-                </Link>
-                <ul className="mt-6 space-y-3 text-sm">
-                  {plan.features.map((f) => (
-                    <li key={f} className="flex items-start gap-2">
-                      <span className="mt-0.5 text-accent">✓</span>
-                      <span className="text-body">{f}</span>
+                {plan.cta}
+              </Link>
+
+              <ul className="mt-7 space-y-3 border-t border-line pt-6 text-sm">
+                {plan.features.map((f) => {
+                  const soon = f.includes('(in development)')
+                  return (
+                    <li key={f} className="flex gap-2.5">
+                      <Icon
+                        name={soon ? 'clock' : 'check'}
+                        size={17}
+                        className={`mt-0.5 shrink-0 ${soon ? 'text-muted' : 'text-accent'}`}
+                      />
+                      <span className={soon ? 'text-muted' : 'text-body'}>{f}</span>
                     </li>
-                  ))}
-                </ul>
-              </div>
-            ))}
-          </div>
-          <p className="mt-4 text-center text-xs text-muted">
-            Prices shown are placeholders and billed monthly. Annual billing coming soon.
-          </p>
-        </Container>
-      </section>
+                  )
+                })}
+              </ul>
+            </div>
+          ))}
+        </div>
 
-      {/* Comparison table */}
-      <section className="py-12">
-        <Container>
-          <h2 className="mb-6 text-center text-2xl font-bold md:text-3xl">Compare plans</h2>
-          <div className="card overflow-x-auto">
-            <table className="w-full min-w-[640px] text-left text-sm">
-              <thead>
-                <tr className="border-b border-line">
-                  <th className="p-4 font-semibold">Features</th>
-                  <th className="p-4 text-center font-semibold">Free</th>
-                  <th className="p-4 text-center font-semibold">Pro</th>
-                  <th className="p-4 text-center font-semibold">Business</th>
-                  <th className="p-4 text-center font-semibold">Enterprise</th>
-                </tr>
-              </thead>
-              <tbody>
-                {COMPARISON.map((row) => (
-                  <tr key={row.label} className="border-b border-line last:border-0">
-                    <td className="p-4 text-body">{row.label}</td>
-                    <td className="p-4 text-center"><Cell value={row.free} /></td>
-                    <td className="p-4 text-center"><Cell value={row.pro} /></td>
-                    <td className="p-4 text-center"><Cell value={row.business} /></td>
-                    <td className="p-4 text-center"><Cell value={row.enterprise} /></td>
-                  </tr>
+        {/* Enterprise sits apart: it is agreed in a conversation, not compared
+            line by line against a monthly price. */}
+        <div className="mt-6 rounded-2xl border border-line bg-surface p-7 md:p-9">
+          <div className="grid gap-8 md:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)] md:items-center">
+            <div>
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-muted">
+                {ENTERPRISE.name}
+              </h2>
+              <div className="mt-2 text-3xl font-bold tracking-tight">{ENTERPRISE.price}</div>
+              <p className="mt-2 text-muted">{ENTERPRISE.tagline}</p>
+              <Link to={ENTERPRISE.to} className="btn btn-secondary mt-6 px-6 py-2.5">
+                {ENTERPRISE.cta}
+              </Link>
+            </div>
+            <ul className="grid gap-3 text-sm sm:grid-cols-2">
+              {ENTERPRISE.features.map((f) => (
+                <li key={f} className="flex gap-2.5">
+                  <Icon name="check" size={17} className="mt-0.5 shrink-0 text-accent" />
+                  <span className="text-body">{f}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      </Section>
+
+      {/* ---- Comparison -------------------------------------------------- */}
+      <Section tone="surface">
+        <SectionHead title="Compare plans" />
+        <div className="mt-8 overflow-x-auto rounded-xl border border-line bg-surface">
+          <table className="w-full min-w-[720px] border-collapse text-left text-sm">
+            <thead>
+              {/* Sticky header and first column so plan names and feature names
+                  stay readable while the table is scrolled sideways on a phone. */}
+              <tr className="border-b border-line">
+                <th className="sticky left-0 z-10 bg-surface p-4 font-semibold">Feature</th>
+                {['Free', 'Pro', 'Business', 'Enterprise'].map((name) => (
+                  <th key={name} className="p-4 text-center font-semibold">
+                    {name}
+                  </th>
                 ))}
-              </tbody>
-            </table>
-          </div>
-        </Container>
-      </section>
+              </tr>
+            </thead>
+            <tbody>
+              {COMPARISON.map((row) => (
+                <tr key={row.label} className="border-b border-line last:border-0">
+                  <td className="sticky left-0 z-10 bg-surface p-4 text-body">
+                    {row.label}
+                  </td>
+                  <td className="p-4 text-center"><Cell value={row.free} soon={row.soon} /></td>
+                  <td className="p-4 text-center"><Cell value={row.pro} soon={row.soon} /></td>
+                  <td className="p-4 text-center"><Cell value={row.business} soon={row.soon} /></td>
+                  <td className="p-4 text-center"><Cell value={row.enterprise} soon={row.soon} /></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <p className="mt-4 flex items-start gap-2 text-sm text-muted">
+          <Icon name="alert" size={17} className="mt-0.5 shrink-0" />
+          Rows marked “In development” are not available on any plan yet.
+        </p>
+      </Section>
 
-      {/* FAQ */}
-      <section className="py-12">
-        <Container className="max-w-3xl">
-          <h2 className="mb-8 text-center text-2xl font-bold md:text-3xl">Pricing FAQs</h2>
-          <div className="space-y-3">
+      {/* ---- FAQ --------------------------------------------------------- */}
+      <Section>
+        <div className="grid gap-10 lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)] lg:gap-16">
+          <SectionHead eyebrow="Pricing FAQ" title="Before you pick a plan" />
+          <div>
             {FAQ.map((item) => (
-              <details key={item.q} className="card group p-5 [&_summary::-webkit-details-marker]:hidden">
-                <summary className="flex cursor-pointer list-none items-center justify-between gap-4 font-semibold">
-                  {item.q}
-                  <span className="text-accent transition group-open:rotate-45">+</span>
-                </summary>
-                <p className="mt-3 text-sm text-muted">{item.a}</p>
-              </details>
+              <FaqItem key={item.q} q={item.q} a={item.a} />
             ))}
           </div>
-        </Container>
-      </section>
+        </div>
+      </Section>
 
-      <CTASection
-        title="Ready to upgrade your content workflow?"
-        subtitle="Start on Free today — move up the moment you need more."
+      <CtaPanel
+        title="Start on Free today"
+        subtitle="Create an account, connect a network, and publish your first post."
+        secondary={{ to: '/contact', label: 'Talk to us' }}
       />
     </>
   )

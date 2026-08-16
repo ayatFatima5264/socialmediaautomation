@@ -1,8 +1,14 @@
 import { Link } from 'react-router-dom'
+import Icon from '../../components/marketing/Icon.jsx'
 
 // Small, shared building blocks so every marketing page stays consistent and
 // modular. These intentionally reuse the app's existing design-system classes
 // (card / btn / app-bg) rather than introducing a parallel styling system.
+//
+// Two of these — Container and CTASection — are also used by the blog and the
+// legal pages. Those pages are deliberately out of scope for the marketing
+// redesign, so both keep their original behaviour and appearance; the
+// redesigned pages use Section / CtaPanel below instead.
 
 // Constrained, centered page container.
 export function Container({ className = '', children }) {
@@ -12,27 +18,153 @@ export function Container({ className = '', children }) {
 }
 
 // Standard hero used at the top of secondary pages.
-export function PageHero({ eyebrow, title, subtitle }) {
+//
+// Left-aligned rather than centred: every secondary page opened with the same
+// centred wall of black type, which is the layout that made the site read as a
+// template. Centring is now reserved for the homepage hero alone, so it means
+// something when it appears.
+export function PageHero({ eyebrow, title, subtitle, children }) {
   return (
-    <section className="pt-20 pb-12 text-center md:pt-28">
+    <section className="border-b border-line bg-surface pb-12 pt-16 md:pb-16 md:pt-24">
       <Container>
         {eyebrow && (
-          <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-accent-line bg-accent-soft px-3.5 py-1 text-xs font-semibold uppercase tracking-wide text-accent">
+          <p className="mb-4 text-xs font-semibold uppercase tracking-[0.14em] text-accent">
             {eyebrow}
-          </div>
+          </p>
         )}
-        <h1 className="mx-auto max-w-3xl text-4xl font-black leading-[1.1] tracking-tight md:text-6xl">
+        <h1 className="max-w-3xl text-balance text-4xl font-bold leading-[1.08] tracking-tight md:text-5xl">
           {title}
         </h1>
         {subtitle && (
-          <p className="mx-auto mt-5 max-w-2xl text-lg text-muted md:text-xl">
+          <p className="mt-5 max-w-2xl text-lg leading-relaxed text-muted">
             {subtitle}
           </p>
         )}
+        {children && <div className="mt-8">{children}</div>}
       </Container>
     </section>
   )
 }
+
+// A page section with a consistent vertical rhythm. `tone="surface"` alternates
+// the background so a long page has a readable cadence without gradients.
+export function Section({ tone = 'page', className = '', children, ...rest }) {
+  return (
+    <section
+      className={`py-16 md:py-24 ${
+        tone === 'surface' ? 'border-y border-line bg-surface' : ''
+      } ${className}`}
+      {...rest}
+    >
+      <Container>{children}</Container>
+    </section>
+  )
+}
+
+// Section heading. Left-aligned by default; `align="center"` for the few places
+// a centred heading genuinely helps (FAQ, final CTA).
+export function SectionHead({ eyebrow, title, subtitle, align = 'left', className = '' }) {
+  const centred = align === 'center'
+  return (
+    <div className={`${centred ? 'mx-auto text-center' : ''} max-w-2xl ${className}`}>
+      {eyebrow && (
+        <p className="mb-3 text-xs font-semibold uppercase tracking-[0.14em] text-accent">
+          {eyebrow}
+        </p>
+      )}
+      <h2 className="text-balance text-3xl font-bold leading-tight tracking-tight md:text-4xl">
+        {title}
+      </h2>
+      {subtitle && (
+        <p className={`mt-4 text-lg leading-relaxed text-muted ${centred ? 'mx-auto' : ''}`}>
+          {subtitle}
+        </p>
+      )}
+    </div>
+  )
+}
+
+// Prose + screenshot, side by side. `reverse` puts the screenshot on the left,
+// which is what gives the homepage its alternating rhythm.
+export function Split({ reverse = false, children, media }) {
+  return (
+    <div className="grid items-center gap-10 lg:grid-cols-2 lg:gap-14">
+      <div className={reverse ? 'lg:order-2' : ''}>{children}</div>
+      <div className={reverse ? 'lg:order-1' : ''}>{media}</div>
+    </div>
+  )
+}
+
+// A tight list of specifics under a Split's prose. Deliberately not cards.
+export function PointList({ items, className = '' }) {
+  return (
+    <ul className={`mt-6 space-y-3 ${className}`}>
+      {items.map((item) => (
+        <li key={item} className="flex gap-3 text-[15px] leading-relaxed">
+          <Icon name="check" size={18} className="mt-0.5 shrink-0 text-accent" />
+          <span className="text-body">{item}</span>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+// Closing call to action for the redesigned pages.
+//
+// The old CTASection (kept below, still used by the blog) was a full-bleed
+// solid-accent slab repeated identically at the bottom of all five pages. This
+// is a bordered panel instead: the accent lives in the button, where it marks
+// the one action worth taking, rather than shouting across the whole width.
+export function CtaPanel({
+  title = 'Create your first post today',
+  subtitle = 'Free plan, no credit card. Connect an account whenever you are ready to publish.',
+  primary = { to: '/register', label: 'Start free' },
+  secondary = { to: '/features', label: 'See how it works' },
+}) {
+  return (
+    <Section>
+      <div className="rounded-2xl border border-line bg-surface px-6 py-12 text-center md:px-14 md:py-16">
+        <h2 className="mx-auto max-w-2xl text-balance text-3xl font-bold tracking-tight md:text-4xl">
+          {title}
+        </h2>
+        {subtitle && (
+          <p className="mx-auto mt-4 max-w-xl text-lg text-muted">{subtitle}</p>
+        )}
+        <div className="mt-8 flex flex-wrap justify-center gap-3">
+          <Link to={primary.to} className="btn btn-primary px-6 py-2.5 text-base">
+            {primary.label}
+          </Link>
+          {secondary && (
+            <Link to={secondary.to} className="btn btn-secondary px-6 py-2.5 text-base">
+              {secondary.label}
+            </Link>
+          )}
+        </div>
+      </div>
+    </Section>
+  )
+}
+
+// Disclosure row used by the FAQ blocks.
+export function FaqItem({ q, a }) {
+  return (
+    <details className="group border-b border-line py-5 [&_summary::-webkit-details-marker]:hidden">
+      <summary className="flex cursor-pointer list-none items-start justify-between gap-6 text-left text-[17px] font-semibold">
+        {q}
+        <Icon
+          name="plus"
+          size={20}
+          className="mt-0.5 shrink-0 text-accent transition-transform duration-150 group-open:rotate-45"
+        />
+      </summary>
+      <div className="mt-3 max-w-3xl text-[15px] leading-relaxed text-muted">{a}</div>
+    </details>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Kept as-is for the blog, which is out of scope for the redesign.
+// ---------------------------------------------------------------------------
 
 // Reusable "convert now" band shown near the bottom of most pages — a bold,
 // full accent block for maximum conversion pull.
@@ -67,26 +199,5 @@ export function CTASection({
         </div>
       </Container>
     </section>
-  )
-}
-
-// A titled feature/benefit card with an accent-highlighted icon and hover lift.
-// An optional `tag` renders a small accent pill (e.g. "New") beside the title.
-export function FeatureCard({ icon, title, children, tag }) {
-  return (
-    <div className="card p-6 transition duration-150 hover:-translate-y-0.5 hover:border-accent">
-      <div className="mb-4 grid h-12 w-12 place-items-center rounded-xl border border-accent-line bg-accent-soft text-2xl">
-        {icon}
-      </div>
-      <div className="flex flex-wrap items-center gap-2">
-        <h3 className="text-lg font-bold">{title}</h3>
-        {tag && (
-          <span className="rounded-full bg-accent px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-accent-contrast">
-            {tag}
-          </span>
-        )}
-      </div>
-      <p className="mt-2 text-sm text-muted">{children}</p>
-    </div>
   )
 }

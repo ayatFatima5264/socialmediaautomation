@@ -37,14 +37,22 @@ export const SITE = {
   // Social sharing image (Open Graph / Twitter). Lives in /public.
   ogImage: `${SITE_URL}/og-image.png`,
   twitter: '@autosocialai',
-  supportEmail: 'hello@autosocial.ai',
+  supportEmail: 'autosocialai5264@gmail.com',
+  // Displayed on the contact page and used for the tel: link. Stored exactly as
+  // provided — no country code is assumed, so international callers see the
+  // number as the business gives it out.
+  supportPhone: '03274606443',
   locale: 'en_US',
-  // Social profiles (placeholder URLs until the real handles are live).
+  // Own social profiles.
+  //
+  // Empty on purpose. These were placeholder handles that the footer linked to
+  // as though they were live, so every icon was a dead end. The footer renders
+  // an icon only for a profile with a URL here — fill one in and it appears.
   socials: {
-    facebook: 'https://facebook.com/autosocialai',
-    instagram: 'https://instagram.com/autosocialai',
-    linkedin: 'https://linkedin.com/company/autosocialai',
-    x: 'https://x.com/autosocialai',
+    facebook: '',
+    instagram: '',
+    linkedin: '',
+    x: '',
   },
 }
 
@@ -60,33 +68,28 @@ export const MARKETING_NAV = [
   { to: '/contact', label: 'Contact' },
 ]
 
-// Footer columns. External/coming-soon links carry flags so the footer can
-// render them differently without special-casing.
+// Footer columns.
+//
+// Every entry here goes somewhere that exists. The footer used to carry four
+// links to `#` — Careers, Help Center, Documentation and API — each wearing a
+// "Coming Soon" badge. A permanent dead link is worse than an absent one: it
+// advertises a resource the visitor then cannot find. They are gone, along with
+// the badge mechanism that existed only to dress them up.
 export const FOOTER_COLUMNS = [
   {
     title: 'Product',
     links: [
-      { to: '/features', label: 'AI Planner', badge: 'New' },
       { to: '/features', label: 'Features' },
       { to: '/pricing', label: 'Pricing' },
-      { to: '/about', label: 'Roadmap' },
+      { to: '/register', label: 'Start free' },
     ],
   },
   {
     title: 'Company',
     links: [
       { to: '/about', label: 'About' },
-      { to: '/contact', label: 'Contact' },
-      { href: '#', label: 'Careers', badge: 'Coming Soon' },
-    ],
-  },
-  {
-    title: 'Resources',
-    links: [
       { to: '/blog', label: 'Blog' },
-      { href: '#', label: 'Help Center', badge: 'Coming Soon' },
-      { href: '#', label: 'Documentation', badge: 'Coming Soon' },
-      { href: '#', label: 'API', badge: 'Coming Soon' },
+      { to: '/contact', label: 'Contact' },
     ],
   },
   {

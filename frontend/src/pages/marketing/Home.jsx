@@ -1,7 +1,19 @@
 import { Link } from 'react-router-dom'
-import { Container, CTASection, FeatureCard } from './_ui.jsx'
+import {
+  Container,
+  CtaPanel,
+  FaqItem,
+  PointList,
+  Section,
+  SectionHead,
+  Split,
+} from './_ui.jsx'
 import Seo from '../../components/Seo.jsx'
-import { PLATFORMS } from '../../lib/constants'
+import Icon from '../../components/marketing/Icon.jsx'
+import ProductFrame from '../../components/marketing/ProductFrame.jsx'
+import PlatformIcon from '../../components/PlatformIcon.jsx'
+import { PLATFORMS, PLATFORM_KEYS } from '../../lib/constants'
+import { PLANS } from '../../config/pricing'
 import { SITE } from '../../config/site'
 
 // Structured data — helps search engines understand the brand + product.
@@ -26,62 +38,97 @@ const JSON_LD = {
   ],
 }
 
-const FEATURES = [
-  { icon: '🤖', title: 'AI Planner', tag: 'New', body: 'Generate and auto-schedule a full 7, 15, or 30-day content plan across all six platforms — captions, content types, and posting times done for you.' },
-  { icon: '✍️', title: 'AI Post Generator', body: 'Describe an idea and get ready-to-publish posts tailored to each platform — hooks, body, and call to action included.' },
-  { icon: '🎨', title: 'AI Image & Carousels', body: 'Turn a topic into scroll-stopping visuals and multi-slide carousels, sized correctly for every network.' },
-  { icon: '#️⃣', title: 'Captions & Hashtags', body: 'Get platform-aware captions and relevant hashtag sets that match your topic and audience — no guessing.' },
-  { icon: '🗓️', title: 'Smart Scheduler', body: 'Plan a week or a month on a visual calendar and let AutoSocial publish at the times your audience is active.' },
-  { icon: '📤', title: 'Multi-Platform Publishing', body: 'Connect your accounts once and push finished content everywhere from a single screen.' },
-  { icon: '🎯', title: 'Brand Personalization', body: 'Your business profile shapes every draft, so the output already sounds like you before you edit a word.' },
+// Every claim below is checked against a screen that exists in the app. Nothing
+// here describes analytics, team workflows or billing, none of which are built.
+
+const STEPS = [
+  {
+    icon: 'link',
+    title: 'Connect',
+    body: 'Link each network once. Status and token health stay visible on one screen.',
+    shot: { src: '/product/social-accounts.webp', w: 1600, h: 1003, alt: 'The Social Accounts screen with five networks connected' },
+  },
+  {
+    icon: 'pencil',
+    title: 'Create',
+    body: 'Write it yourself or start from an idea, a link or a file, then edit the draft.',
+    shot: { src: '/product/ai-generator.webp', w: 1600, h: 960, alt: 'The AI Generator showing a draft per platform' },
+  },
+  {
+    icon: 'calendar',
+    title: 'Plan',
+    body: 'Put posts on the calendar, or let the planner lay out a whole fortnight.',
+    shot: { src: '/product/scheduler.webp', w: 1600, h: 1003, alt: 'The Scheduler month calendar with scheduled posts' },
+  },
+  {
+    icon: 'send',
+    title: 'Publish',
+    body: 'Publish now or leave it scheduled. Everything that went out stays in Post History.',
+    shot: { src: '/product/post-history.webp', w: 1600, h: 1003, alt: 'The Post History table showing published and scheduled posts' },
+  },
 ]
 
-// AI Planner spotlight data.
-const PLANNER_HIGHLIGHTS = [
-  'One-click AI content generation',
-  '7-day, 15-day & 30-day plans',
-  'Captions tailored to each platform',
-  'Promotional, educational & engagement mix',
-  'Automatic post scheduling',
-  'Edit, regenerate or delete before publishing',
-]
-
-const PLANNER_WORKFLOW = [
-  { icon: '💬', title: 'Describe your business', body: 'Tell AI your industry, audience, and goals — or reuse the business profile you set during onboarding.' },
-  { icon: '📅', title: 'Choose 7, 15 or 30 days', body: 'Pick how far ahead you want to plan and AI maps out the whole content calendar for you.' },
-  { icon: '🤖', title: 'AI generates & schedules', body: 'Platform-tailored captions across content types — created, organized, and auto-scheduled across all six platforms.' },
-  { icon: '✏️', title: 'Review & publish', body: 'Edit, regenerate, or remove any post before it goes live. You stay in full control of the calendar.' },
-]
-
-const WHY = [
-  { icon: '⏱️', title: 'Hours back every week', body: 'What used to take an afternoon of writing and designing now takes a few minutes — from idea to scheduled post.' },
-  { icon: '🎯', title: 'Always on-brand', body: 'Your voice, audience, and goals are built into every generation, so content stays consistent across platforms.' },
-  { icon: '🧩', title: 'One tool, not six', body: 'Writing, design, scheduling, and publishing live in one dashboard. No more juggling tabs and subscriptions.' },
-  { icon: '🚀', title: 'No design skills needed', body: 'Generate images, carousels, and captions that look professionally made — without opening a design app.' },
-]
-
-const CAPABILITIES = [
-  'Write posts, threads, and long-form captions',
-  'Generate original images and carousels',
-  'Suggest hashtags that fit your niche',
-  'Rewrite, shorten, or restyle any draft',
-  'Adapt one idea to every platform at once',
-  'Import a link or document and turn it into posts',
-]
-
-const TESTIMONIALS = [
-  { quote: 'We went from posting twice a week to daily on four platforms. AutoSocial does the heavy lifting and everything still sounds like us.', name: 'Sara Malik', role: 'Founder, Loomly Studio', initial: 'S' },
-  { quote: 'As an agency, the scheduler and per-platform generation save us hours per client. Onboarding new accounts takes minutes.', name: 'David Chen', role: 'Creative Director, NorthPeak', initial: 'D' },
-  { quote: 'I run recruitment marketing solo. This is like having a content team — captions, images, and a calendar I actually keep up with.', name: 'Amara Okoye', role: 'Talent Marketing Lead', initial: 'A' },
+const REASONS = [
+  {
+    icon: 'library',
+    title: 'One workspace',
+    body: 'Caption, image, preview, calendar and the connection to each network are the same screen — not four subscriptions and a downloads folder.',
+  },
+  {
+    icon: 'pencil',
+    title: 'Less retyping',
+    body: 'One idea becomes a draft for every network you selected, each already inside that network\'s character limit.',
+  },
+  {
+    icon: 'palette',
+    title: 'Consistent branding',
+    body: 'Your business profile and Brand Kit are applied to every generation, so drafts arrive sounding and looking like you.',
+  },
+  {
+    icon: 'calendar',
+    title: 'Easier planning',
+    body: 'See the month rather than the next post. Nothing is scheduled until you have read it and approved it.',
+  },
+  {
+    icon: 'send',
+    title: 'Publishing in one place',
+    body: 'Six networks from one screen, with per-platform previews and warnings before anything goes out.',
+  },
 ]
 
 const FAQ = [
-  { q: 'What is the AI Planner?', a: 'AI Planner generates and schedules a complete social media content plan from a single request. Choose a 7, 15, or 30-day duration and AI creates platform-tailored posts across content types, organizes them into a calendar, and automatically schedules them across all six connected platforms. You can review, edit, regenerate, or delete any post before it publishes.' },
-  { q: 'Do I need any design or copywriting experience?', a: 'No. Describe what you want and AutoSocial AI drafts the copy and generates the visuals for you. You stay in control — review, tweak, and approve before anything goes out.' },
-  { q: 'Which platforms can I publish to?', a: 'Instagram, Facebook, LinkedIn, X, Threads, and Pinterest. Connect your accounts once and publish to any of them from a single screen.' },
-  { q: 'Will the content actually sound like my brand?', a: 'Yes. During onboarding you set your industry, audience, brand voice, and goals. Every generation is guided by that profile, so drafts start on-brand instead of generic.' },
-  { q: 'Can I schedule posts in advance?', a: 'Absolutely. Plan a week or a month on the calendar, set your times, and AutoSocial publishes automatically. You can edit or reschedule anytime.' },
-  { q: 'Is there a free plan?', a: 'Yes — you can start for free, no credit card required. Upgrade to Pro or Business when you need more generations, accounts, or team features.' },
+  {
+    q: 'Which platforms can I publish to?',
+    a: 'Instagram, Facebook, LinkedIn, X, Threads and Pinterest. You connect one account per network, and you can publish to any combination of them from a single screen.',
+  },
+  {
+    q: 'What do I need to connect an Instagram account?',
+    a: 'Instagram publishing goes through the Meta Graph API, so your Instagram account needs to be a Professional account (Business or Creator) linked to a Facebook Page you manage. The Social Accounts screen walks you through it if a connection fails.',
+  },
+  {
+    q: 'Will the writing sound like my brand?',
+    a: 'You fill in a business profile once — what you do, who you are talking to, how you sound, what you are trying to achieve. Every generation is written with that context, so drafts start closer to publishable. You can still edit every word.',
+  },
+  {
+    q: 'Can I edit anything before it publishes?',
+    a: 'Yes, and nothing publishes on its own. Generated drafts are fully editable, and posts created by the Content Planner sit in a review step until you approve them.',
+  },
+  {
+    q: 'Can I see how a post will look on each network?',
+    a: 'The composer shows a live preview per platform as you type, along with a character counter set to the tightest limit among the networks you selected, and warnings when something will not work on a given network.',
+  },
+  {
+    q: 'Where do the images come from?',
+    a: 'Three places: AI image generation, the built-in media library of curated stock photography, or your own uploads. Images can be edited on a layer canvas, and your Brand Kit can be applied over them.',
+  },
+  {
+    q: 'Is there a free plan?',
+    a: 'Yes. You can create an account and start without a card.',
+  },
+  {
+    q: 'What is not built yet?',
+    a: 'Analytics and team collaboration. There is no performance reporting inside AutoSocial AI today, and no shared workspaces, roles or approval routing between teammates. Both are in development, and we would rather say so here than let you find out after signing up.',
+  },
 ]
 
 export default function Home() {
@@ -89,415 +136,407 @@ export default function Home() {
     <>
       <Seo jsonLd={JSON_LD} />
 
-      {/* Hero */}
-      <section className="pt-20 pb-12 text-center md:pt-28">
+      {/* ---- Hero ------------------------------------------------------- */}
+      <section className="border-b border-line bg-surface pb-16 pt-16 md:pb-20 md:pt-24">
         <Container>
-          <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-accent-line bg-accent-soft px-3.5 py-1 text-xs font-semibold uppercase tracking-wide text-accent">
-            ✦ New · AI Content Planner
-          </div>
-          <h1 className="mx-auto max-w-4xl text-4xl font-black leading-[1.08] tracking-tight md:text-6xl">
-            Generate and schedule{' '}
-            <span className="text-accent">30 days of social media content</span>{' '}
-            with AI
-          </h1>
-          <p className="mx-auto mt-6 max-w-2xl text-lg text-muted md:text-xl">
-            Create an entire week, 15 days, or a full month of content in minutes.
-            AutoSocial AI generates engaging posts, organizes them into a content
-            calendar, and automatically schedules them across six social platforms —
-            all from a single dashboard.
-          </p>
-          <div className="mt-9 flex flex-wrap justify-center gap-3">
-            <Link to="/register" className="btn btn-primary px-7 py-3 text-base">
-              Start for free
-            </Link>
-            <Link to="/features" className="btn btn-secondary px-7 py-3 text-base">
-              See how it works
-            </Link>
-          </div>
-          <p className="mt-4 text-xs text-muted">
-            No credit card required · Free plan available
-          </p>
-
-          {/* Product preview — decorative, fully fluid */}
-          <div className="mx-auto mt-14 max-w-4xl">
-            <div className="overflow-hidden rounded-2xl border-2 border-accent-line bg-surface text-left shadow-[0_1px_2px_rgba(22,40,31,0.06)]">
-              <div className="flex items-center gap-2 border-b border-line bg-inset px-4 py-3">
-                <span className="h-3 w-3 rounded-full bg-accent" />
-                <span className="h-3 w-3 rounded-full border border-line" />
-                <span className="h-3 w-3 rounded-full border border-line" />
-                <span className="ml-3 text-xs font-medium text-muted">AutoSocial AI · New post</span>
-              </div>
-              <div className="grid gap-4 p-5 sm:grid-cols-3">
-                <div className="space-y-3 sm:col-span-2">
-                  <div className="h-3 w-1/3 rounded-full bg-accent" />
-                  <div className="h-2.5 w-full rounded-full bg-inset" />
-                  <div className="h-2.5 w-11/12 rounded-full bg-inset" />
-                  <div className="h-2.5 w-4/5 rounded-full bg-inset" />
-                  <div className="flex flex-wrap gap-2 pt-1">
-                    {['#marketing', '#ai', '#socialmedia'].map((t) => (
-                      <span key={t} className="badge bg-accent-soft text-accent">{t}</span>
-                    ))}
-                  </div>
-                </div>
-                <div className="grid place-items-center rounded-xl border border-accent-line bg-accent-soft p-6 text-3xl">
-                  🎨
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Supported platforms */}
-          <div className="mt-14">
-            <p className="text-xs font-semibold uppercase tracking-wide text-muted">
-              Publish everywhere you post
+          <div className="mx-auto max-w-3xl text-center">
+            <h1 className="text-balance text-4xl font-bold leading-[1.06] tracking-tight md:text-6xl">
+              Create, plan and publish your social content from one place
+            </h1>
+            <p className="mx-auto mt-6 max-w-2xl text-lg leading-relaxed text-muted md:text-xl">
+              AutoSocial AI is a workspace for social media. Write the post or
+              have AI draft it, generate or choose the image, see exactly how it
+              will look on each network, then put it on the calendar and publish.
             </p>
-            <div className="mt-4 flex flex-wrap items-center justify-center gap-3">
-              {Object.entries(PLATFORMS).map(([key, p]) => (
-                <span
-                  key={key}
-                  className="badge border border-line bg-inset px-3 py-1"
-                >
-                  <span
-                    className="grid h-5 w-5 place-items-center rounded-full text-[10px] font-bold text-white"
-                    style={{ background: p.color }}
-                  >
-                    {p.initial}
-                  </span>
-                  {p.label}
-                </span>
+
+            <div className="mt-8 flex flex-wrap justify-center gap-3">
+              <Link to="/register" className="btn btn-primary px-7 py-3 text-base">
+                Start free
+              </Link>
+              <Link to="/features" className="btn btn-secondary px-7 py-3 text-base">
+                See how it works
+              </Link>
+            </div>
+            <p className="mt-4 text-sm text-muted">
+              Free plan available. No credit card required.
+            </p>
+
+            <ul className="mt-8 flex flex-wrap items-center justify-center gap-x-5 gap-y-3">
+              {PLATFORM_KEYS.map((key) => (
+                <li key={key} className="flex items-center gap-2 text-sm text-muted">
+                  <PlatformIcon platform={key} size={22} />
+                  {PLATFORMS[key].label}
+                </li>
               ))}
-            </div>
+            </ul>
+          </div>
+
+          {/* The product itself, as the largest thing on the page. */}
+          <div className="mt-14">
+            <ProductFrame
+              priority
+              src="/product/create-post.webp"
+              width={1600}
+              height={960}
+              mobileSrc="/product/m-create-post.webp"
+              mobileWidth={860}
+              mobileHeight={1720}
+              label="autosocial.ai/create"
+              alt="The Create Post screen: platform selection, a written caption with an attached image, and a live Instagram preview of the finished post beside it"
+            />
           </div>
         </Container>
       </section>
 
-      {/* Trusted by */}
-      <section className="border-y border-line bg-surface py-8">
-        <Container>
-          <p className="text-center text-sm text-muted">
-            Built for marketers, agencies, recruiters, startups, and creators —
-            trusted by fast-moving teams to stay visible every day.
+      {/* ---- Problem ---------------------------------------------------- */}
+      <Section>
+        <div className="grid gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:gap-16">
+          <SectionHead
+            eyebrow="The problem"
+            title="Most social posts pass through four tools before they go live"
+          />
+          <div className="max-w-xl space-y-5 text-lg leading-relaxed text-muted">
+            <p>
+              A doc for the caption. A design app for the image. A downloads
+              folder for the assets. A scheduler that wants all of it again,
+              formatted its way. Every handoff is somewhere the work can stall —
+              which is why the posts you planned on Monday are still unpublished
+              on Friday.
+            </p>
+            <p className="text-body">
+              AutoSocial AI keeps those steps together: the writing, the image,
+              the preview, the calendar, and the connection to each network.
+            </p>
+          </div>
+        </div>
+      </Section>
+
+      {/* ---- Create ----------------------------------------------------- */}
+      <Section tone="surface">
+        <Split
+          media={
+            <ProductFrame
+              src="/product/ai-generator.webp"
+              width={1600}
+              height={960}
+              label="autosocial.ai/generate"
+              alt="The AI Generator with an idea typed on the left and finished Instagram and Facebook drafts on the right, each with its own character count and hashtags"
+            />
+          }
+        >
+          <SectionHead
+            eyebrow="Create"
+            title="Start from an idea — or a link, a document, or a post you have already written"
+            subtitle="Describe what you want and get a draft written for each network you selected. Adjust the tone, translate it, shorten it, or write the whole thing yourself."
+          />
+          <PointList
+            items={[
+              'Sources: a prompt, a blog or product URL, pasted text, a PDF, DOCX or TXT file, an image, or an existing post to rewrite',
+              'AI Assist rewrites, shortens, expands, changes tone, or translates into eight languages',
+              'A character counter tracks the tightest limit among the platforms you picked',
+            ]}
+          />
+        </Split>
+      </Section>
+
+      {/* ---- Brand ------------------------------------------------------ */}
+      <Section>
+        <Split
+          reverse
+          media={
+            <ProductFrame
+              src="/product/brand-kit.webp"
+              width={1600}
+              height={1003}
+              label="autosocial.ai/business-profile"
+              alt="The Brand Kit section of the business profile: logo upload, three brand colours, contact details, and a live preview of how the branding is laid over an image"
+            />
+          }
+        >
+          <SectionHead
+            eyebrow="Brand"
+            title="Set your brand once. Every draft starts there"
+            subtitle="Your business profile — what you do, who you are talking to, how you sound, what you are trying to achieve — is applied to every generation, so drafts arrive closer to publishable."
+          />
+          <PointList
+            items={[
+              'Industry, description, audience, brand voice and goals feed every generation',
+              'Brand Kit holds your logo, colours and contact details',
+              'Branding is laid over generated images as layers you can still move and edit',
+            ]}
+          />
+        </Split>
+      </Section>
+
+      {/* ---- Plan ------------------------------------------------------- */}
+      <Section tone="surface">
+        <Split
+          media={
+            <ProductFrame
+              src="/product/content-planner.webp"
+              width={1600}
+              height={960}
+              label="autosocial.ai/planner"
+              alt="The Content Planner review step: posts grouped by day, each with its platform, content type, a pending badge, a scheduled time and edit, regenerate and delete actions"
+            />
+          }
+        >
+          <SectionHead
+            eyebrow="Plan"
+            title="See the whole fortnight, not just the next post"
+            subtitle="Choose how far ahead to plan and how often to post. AutoSocial AI proposes a theme and a topic for each day, writes the posts, and lays them out on a calendar."
+          />
+          <PointList
+            items={[
+              'Plan 7, 14 or 30 days, at a posting frequency you choose',
+              'Every post can be edited, regenerated or removed before it is scheduled',
+              'Nothing publishes until you approve it',
+            ]}
+          />
+        </Split>
+
+        {/* The calendar is the other half of planning, and it earns its own
+            full-width row rather than being stacked under the prose. */}
+        <div className="mt-14">
+          <ProductFrame
+            src="/product/scheduler.webp"
+            width={1600}
+            height={1003}
+            mobileSrc="/product/m-scheduler.webp"
+            mobileWidth={860}
+            mobileHeight={1720}
+            label="autosocial.ai/scheduler"
+            alt="The Scheduler: a month calendar with scheduled posts on their days beside a pending queue with publish and cancel actions"
+            caption="Everything queued sits on one calendar, with a pending list you can publish early or cancel from."
+          />
+        </div>
+      </Section>
+
+      {/* ---- Connect ---------------------------------------------------- */}
+      <Section>
+        <Split
+          reverse
+          media={
+            <ProductFrame
+              src="/product/social-accounts.webp"
+              width={1600}
+              height={1003}
+              label="autosocial.ai/accounts"
+              alt="The Social Accounts screen showing five of six networks connected, with per-account status, last sync times and reconnect actions"
+            />
+          }
+        >
+          <SectionHead
+            eyebrow="Connect"
+            title="Connect each account once"
+            subtitle="Six networks, one connection each, all on one screen with their current status. When a token expires you refresh it from the same card — you do not find out because a post failed."
+          />
+          <PointList
+            items={[
+              'Instagram, Facebook, LinkedIn, X, Threads and Pinterest',
+              'Per-account status: connected, token expired, syncing or error',
+              'Pinterest posts to a board you choose; Instagram needs a Professional account linked to a Page',
+            ]}
+          />
+        </Split>
+      </Section>
+
+      {/* ---- Media ------------------------------------------------------ */}
+      <Section tone="surface">
+        <SectionHead
+          eyebrow="Media"
+          title="Your images and a stock library, in one search box"
+          subtitle="Everything you have uploaded plus a curated stock set, filtered by category, tag and shape, and droppable straight onto the canvas."
+        />
+        <div className="mt-10">
+          <ProductFrame
+            src="/product/media-library.webp"
+            width={1600}
+            height={1003}
+            label="autosocial.ai/ads/media-library"
+            alt="The Media Library: All, My Library and Stock tabs above a search box, category filter chips, and a grid of stock photographs"
+          />
+        </div>
+      </Section>
+
+      {/* ---- Ads Studio ------------------------------------------------- */}
+      <Section>
+        <Split
+          media={
+            <ProductFrame
+              src="/product/ads-studio.webp"
+              width={1600}
+              height={960}
+              label="autosocial.ai/ads"
+              alt="A campaign inside AI Ads Studio, listing the creative tools it can run: product ads, banner generator, carousel ads, four video tools, ad copy, headlines and CTAs"
+            />
+          }
+        >
+          <SectionHead
+            eyebrow="Ads Studio"
+            title="Ad creative lives in the same workspace"
+            subtitle="Brief a campaign once — what you are advertising, to whom, on which platforms — and every tool inside it works from that brief instead of asking again."
+          />
+          <PointList
+            items={[
+              'Product ads, banner sets, carousel ads and website promotion creative',
+              'Video tools: image to video, text to video, product showcase and slideshow',
+              'Copy tools: ad copy, headlines, calls to action and A/B variants',
+              'Everything a tool generates is saved into the campaign automatically',
+            ]}
+          />
+          <p className="mt-6 text-sm text-muted">
+            Ad performance reporting is not part of AutoSocial AI — campaigns are
+            where the creative is made, not where results are measured.
           </p>
-          <div className="mt-5 flex flex-wrap items-center justify-center gap-x-10 gap-y-3 text-sm font-semibold text-muted">
-            <span>NorthPeak</span>
-            <span>Loomly Studio</span>
-            <span>BrightHire</span>
-            <span>Onda Labs</span>
-            <span>Fieldwork</span>
-            <span>Ketchup&nbsp;Media</span>
-          </div>
-        </Container>
-      </section>
+        </Split>
+      </Section>
 
-      {/* ★ AI Planner spotlight (flagship feature) */}
-      <section className="py-16">
-        <Container>
-          <div className="grid items-center gap-10 lg:grid-cols-2">
-            <div>
-              <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-accent-line bg-accent-soft px-3.5 py-1 text-xs font-semibold uppercase tracking-wide text-accent">
-                🤖 AI Planner
+      {/* ---- How it works ----------------------------------------------- */}
+      <Section tone="surface">
+        <SectionHead
+          eyebrow="How it works"
+          title="Four steps, and you have seen all of them already"
+          subtitle="No illustrations here — each step is the screen you will actually use."
+        />
+        <ol className="mt-12 grid gap-10 md:grid-cols-2 lg:grid-cols-4 lg:gap-6">
+          {STEPS.map((step, i) => (
+            <li key={step.title}>
+              <div className="mb-4 flex items-center gap-3">
+                <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-accent-line bg-accent-soft text-sm font-bold text-accent">
+                  {i + 1}
+                </span>
+                <h3 className="flex items-center gap-2 text-lg font-bold">
+                  <Icon name={step.icon} size={18} className="text-accent" />
+                  {step.title}
+                </h3>
               </div>
-              <h2 className="text-3xl font-black tracking-tight md:text-5xl">
-                Plan an entire month of content in minutes
-              </h2>
-              <p className="mt-4 text-lg text-muted">
-                Stop creating posts one at a time. Tell AI what your business is
-                about, choose a 7, 15, or 30-day schedule, and AutoSocial AI
-                generates the content, organizes it into a calendar, and
-                automatically schedules every post across all six connected
-                platforms.
-              </p>
-              <ul className="mt-6 grid gap-3 sm:grid-cols-2">
-                {PLANNER_HIGHLIGHTS.map((h) => (
-                  <li key={h} className="flex items-start gap-2 text-sm">
-                    <span className="mt-0.5 text-accent">✓</span>
-                    <span className="text-body">{h}</span>
-                  </li>
-                ))}
-              </ul>
-              <div className="mt-8 flex flex-wrap gap-3">
-                <Link to="/register" className="btn btn-primary px-6 py-2.5 text-base">
-                  Try AI Planner free
-                </Link>
-                <Link to="/features" className="btn btn-secondary px-6 py-2.5 text-base">
-                  See how it works
-                </Link>
-              </div>
+              <ProductFrame
+                src={step.shot.src}
+                width={step.shot.w}
+                height={step.shot.h}
+                alt={step.shot.alt}
+              />
+              <p className="mt-4 text-[15px] leading-relaxed text-muted">{step.body}</p>
+            </li>
+          ))}
+        </ol>
+      </Section>
+
+      {/* ---- Product tour ----------------------------------------------- */}
+      <Section>
+        <SectionHead
+          eyebrow="Product tour"
+          title="A closer look at the workspace"
+        />
+        <div className="mt-10 grid gap-8 lg:grid-cols-2">
+          <ProductFrame
+            className="lg:col-span-2"
+            src="/product/dashboard.webp"
+            width={1600}
+            height={621}
+            mobileSrc="/product/m-dashboard.webp"
+            mobileWidth={860}
+            mobileHeight={1720}
+            label="autosocial.ai/dashboard"
+            alt="The Dashboard: counts of total, scheduled, published and failed posts above an upcoming schedule list and recent activity"
+            caption="Dashboard — what is queued, what went out, and what failed."
+          />
+          <ProductFrame
+            src="/product/planner-setup.webp"
+            width={1600}
+            height={960}
+            label="autosocial.ai/planner"
+            alt="The Content Planner setup step: planning period, posting frequency, platform selection and content goals, with a plan summary beside it"
+            caption="Content Planner — set the period, cadence, platforms and goals before AI proposes anything."
+          />
+          <ProductFrame
+            src="/product/ai-generator-sources.webp"
+            width={1600}
+            height={960}
+            label="autosocial.ai/generate"
+            alt="The AI Generator input panel: a create-from source selector, tone, platform toggles, content types and an image template"
+            caption="AI Generator — start from a prompt, a URL, a document, an image, or a post you already published."
+          />
+        </div>
+      </Section>
+
+      {/* ---- Why -------------------------------------------------------- */}
+      <Section tone="surface">
+        <SectionHead
+          eyebrow="Why AutoSocial AI"
+          title="What actually changes about your week"
+        />
+        <div className="mt-12 grid gap-x-10 gap-y-10 md:grid-cols-2 lg:grid-cols-3">
+          {REASONS.map((r) => (
+            <div key={r.title}>
+              <Icon name={r.icon} size={22} className="text-accent" />
+              <h3 className="mt-3 text-lg font-bold">{r.title}</h3>
+              <p className="mt-2 text-[15px] leading-relaxed text-muted">{r.body}</p>
             </div>
-            <PlannerVisual />
-          </div>
-        </Container>
-      </section>
+          ))}
+        </div>
+      </Section>
 
-      {/* How AI Planner works */}
-      <section className="py-16">
-        <Container>
-          <SectionHeading
-            title="From idea to a full content calendar — in four steps"
-            subtitle="AI Planner does the planning, writing, and scheduling for you — you stay in control of every post."
-          />
-          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
-            {PLANNER_WORKFLOW.map((s, i) => (
-              <div key={s.title} className="card p-6">
-                <div className="mb-4 flex items-center gap-3">
-                  <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-accent text-sm font-bold text-accent-contrast">
-                    {i + 1}
-                  </span>
-                  <span className="text-2xl">{s.icon}</span>
-                </div>
-                <h3 className="font-bold">{s.title}</h3>
-                <p className="mt-2 text-sm text-muted">{s.body}</p>
+      {/* ---- Pricing preview -------------------------------------------- */}
+      <Section>
+        <SectionHead
+          eyebrow="Pricing"
+          title="Start free, move up when you need more"
+          subtitle="Every plan starts by creating an account."
+        />
+        <div className="mt-10 grid gap-5 md:grid-cols-3">
+          {PLANS.map((plan) => (
+            <div
+              key={plan.id}
+              className={`card flex flex-col p-6 ${plan.highlight ? 'border-accent' : ''}`}
+            >
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-semibold text-muted">{plan.name}</span>
+                {plan.highlight && (
+                  <span className="badge badge-accent">Most popular</span>
+                )}
               </div>
-            ))}
-          </div>
-        </Container>
-      </section>
-
-      {/* Features overview */}
-      <section className="py-16">
-        <Container>
-          <SectionHeading
-            title="Everything you need to post consistently"
-            subtitle="From the first idea to the published post, AutoSocial AI handles the parts that usually slow you down."
-          />
-          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-            {FEATURES.map((f) => (
-              <FeatureCard key={f.title} icon={f.icon} title={f.title} tag={f.tag}>
-                {f.body}
-              </FeatureCard>
-            ))}
-          </div>
-          <div className="mt-8 text-center">
-            <Link to="/features" className="btn btn-ghost">
-              Explore all features →
-            </Link>
-          </div>
-        </Container>
-      </section>
-
-      {/* Why choose */}
-      <section className="py-16">
-        <Container>
-          <SectionHeading
-            title="Why teams choose AutoSocial AI"
-            subtitle="Less busywork, more consistency — without hiring a full content team."
-          />
-          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
-            {WHY.map((w) => (
-              <div
-                key={w.title}
-                className="card p-6 transition duration-150 hover:-translate-y-0.5 hover:border-accent"
-              >
-                <div className="mb-4 grid h-12 w-12 place-items-center rounded-xl border border-accent-line bg-accent-soft text-2xl">
-                  {w.icon}
-                </div>
-                <h3 className="font-bold">{w.title}</h3>
-                <p className="mt-2 text-sm text-muted">{w.body}</p>
+              <div className="mt-3 flex items-baseline gap-1">
+                <span className="text-3xl font-bold tracking-tight">{plan.price}</span>
+                <span className="text-sm text-muted">{plan.cadence}</span>
               </div>
-            ))}
-          </div>
-        </Container>
-      </section>
-
-      {/* AI capabilities + onboarding */}
-      <section className="py-16">
-        <Container>
-          <div className="grid items-center gap-10 lg:grid-cols-2">
-            <div>
-              <h2 className="text-3xl font-bold md:text-4xl">One prompt, content for every platform</h2>
-              <p className="mt-3 text-muted">
-                Give AutoSocial AI a topic and it produces a full set of posts,
-                visuals, and hashtags — each adapted to the platform it's meant for.
-                Edit anything, or accept the draft and schedule it.
-              </p>
-              <ul className="mt-6 space-y-3">
-                {CAPABILITIES.map((c) => (
-                  <li key={c} className="flex items-start gap-2 text-sm">
-                    <span className="mt-0.5 text-accent">✓</span>
-                    <span className="text-body">{c}</span>
+              <p className="mt-1 text-sm text-muted">{plan.tagline}</p>
+              <ul className="mt-5 flex-1 space-y-2.5 text-sm">
+                {plan.features.slice(0, 4).map((f) => (
+                  <li key={f} className="flex gap-2.5">
+                    <Icon name="check" size={16} className="mt-0.5 shrink-0 text-accent" />
+                    <span className="text-body">{f}</span>
                   </li>
                 ))}
               </ul>
             </div>
-            <div className="card p-8">
-              <div className="text-sm font-semibold text-accent">
-                Personalized onboarding
-              </div>
-              <h3 className="mt-2 text-2xl font-bold">Content that sounds like you from day one</h3>
-              <p className="mt-3 text-sm text-muted">
-                A short setup captures your business name, industry, audience, brand
-                voice, and goals. AutoSocial AI uses that profile on every
-                generation — so you spend time refining, not rewriting from scratch.
-              </p>
-              <div className="mt-6 grid grid-cols-2 gap-3 text-sm">
-                {['Your industry', 'Your audience', 'Your brand voice', 'Your goals'].map((t) => (
-                  <div
-                    key={t}
-                    className="rounded-xl border border-line bg-inset px-3 py-2 font-medium"
-                  >
-                    {t}
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </Container>
-      </section>
+          ))}
+        </div>
+        <div className="mt-8">
+          <Link to="/pricing" className="inline-flex items-center gap-2 font-semibold link-accent">
+            Compare all plans
+            <Icon name="arrowRight" size={18} />
+          </Link>
+        </div>
+      </Section>
 
-      {/* Social account management */}
-      <section className="py-16">
-        <Container>
-          <div className="card p-8 md:p-12">
-            <div className="grid items-center gap-8 md:grid-cols-2">
-              <div>
-                <h2 className="text-3xl font-bold md:text-4xl">Manage every account in one place</h2>
-                <p className="mt-3 text-muted">
-                  Connect your social accounts once and manage them all from a
-                  single dashboard. See connection status at a glance, refresh
-                  access, and publish without logging in and out of each network.
-                </p>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {Object.entries(PLATFORMS).map(([key, p]) => (
-                  <span
-                    key={key}
-                    className="badge border border-line bg-inset px-3 py-1.5"
-                  >
-                    <span
-                      className="grid h-5 w-5 place-items-center rounded-full text-[10px] font-bold text-white"
-                      style={{ background: p.color }}
-                    >
-                      {p.initial}
-                    </span>
-                    {p.label}
-                  </span>
-                ))}
-              </div>
-            </div>
-          </div>
-        </Container>
-      </section>
-
-      {/* Testimonials */}
-      <section className="py-16">
-        <Container>
-          <SectionHeading
-            title="Loved by the people who post every day"
-            subtitle="Teams use AutoSocial AI to stay consistent, save time, and keep their brand voice."
+      {/* ---- FAQ -------------------------------------------------------- */}
+      <Section tone="surface">
+        <div className="grid gap-10 lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)] lg:gap-16">
+          <SectionHead
+            eyebrow="FAQ"
+            title="Questions worth asking before you sign up"
           />
-          <div className="grid gap-5 md:grid-cols-3">
-            {TESTIMONIALS.map((t) => (
-              <figure key={t.name} className="card flex flex-col p-6">
-                <div className="mb-3 text-amber-400">★★★★★</div>
-                <blockquote className="flex-1 text-sm text-body">
-                  "{t.quote}"
-                </blockquote>
-                <figcaption className="mt-5 flex items-center gap-3">
-                  <span className="grid h-9 w-9 place-items-center rounded-full bg-accent text-sm font-bold text-accent-contrast">
-                    {t.initial}
-                  </span>
-                  <span>
-                    <span className="block text-sm font-semibold">{t.name}</span>
-                    <span className="block text-xs text-muted">{t.role}</span>
-                  </span>
-                </figcaption>
-              </figure>
-            ))}
-          </div>
-        </Container>
-      </section>
-
-      {/* FAQ */}
-      <section className="py-16">
-        <Container className="max-w-3xl">
-          <SectionHeading
-            title="Frequently asked questions"
-            subtitle="Everything you need to know before you start."
-          />
-          <div className="space-y-3">
+          <div>
             {FAQ.map((item) => (
               <FaqItem key={item.q} q={item.q} a={item.a} />
             ))}
           </div>
-        </Container>
-      </section>
+        </div>
+      </Section>
 
-      <CTASection
-        title="Start creating with AutoSocial AI today"
-        subtitle="Create, design, schedule, and publish — all from one dashboard. Free to start."
-      />
+      <CtaPanel />
     </>
-  )
-}
-
-// Decorative content-calendar illustration for the AI Planner spotlight.
-// Purely presentational; fully fluid and theme-aware.
-function PlannerVisual() {
-  const DURATIONS = ['7 days', '15 days', '30 days']
-  // Days that carry a scheduled post in the mock calendar.
-  const scheduled = new Set([0, 1, 2, 3, 4, 7, 8, 9, 11, 14, 15, 16, 18, 21, 22, 23, 25, 27])
-  return (
-    <div className="rounded-2xl border-2 border-accent-line bg-surface p-5 shadow-[0_1px_2px_rgba(22,40,31,0.06)]">
-      <div className="mb-4 flex flex-wrap items-center gap-2">
-        <span className="text-xs font-semibold text-muted">Plan for</span>
-        {DURATIONS.map((d, i) => (
-          <span
-            key={d}
-            className={`rounded-full px-3 py-1 text-xs font-semibold ${
-              i === 2 ? 'bg-accent text-accent-contrast' : 'border border-line text-muted'
-            }`}
-          >
-            {d}
-          </span>
-        ))}
-      </div>
-      <div className="mb-2 grid grid-cols-7 gap-1.5 text-center text-[10px] font-medium text-muted">
-        {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((d, i) => (
-          <span key={i}>{d}</span>
-        ))}
-      </div>
-      <div className="grid grid-cols-7 gap-1.5">
-        {Array.from({ length: 28 }).map((_, i) => {
-          const has = scheduled.has(i)
-          return (
-            <div
-              key={i}
-              className={`grid aspect-square place-items-center rounded-md border ${
-                has ? 'border-accent-line bg-accent-soft' : 'border-line bg-inset'
-              }`}
-            >
-              {has && <span className="h-1.5 w-1.5 rounded-full bg-accent" />}
-            </div>
-          )
-        })}
-      </div>
-      <div className="mt-4 flex items-center justify-between rounded-xl bg-inset px-3 py-2 text-xs">
-        <span className="text-muted">📅 {scheduled.size} posts scheduled</span>
-        <span className="font-semibold text-accent">across 6 platforms</span>
-      </div>
-    </div>
-  )
-}
-
-function SectionHeading({ title, subtitle }) {
-  return (
-    <div className="mb-10 text-center">
-      <h2 className="text-3xl font-bold md:text-4xl">{title}</h2>
-      {subtitle && (
-        <p className="mx-auto mt-3 max-w-2xl text-muted">{subtitle}</p>
-      )}
-    </div>
-  )
-}
-
-function FaqItem({ q, a }) {
-  return (
-    <details className="card group p-5 [&_summary::-webkit-details-marker]:hidden">
-      <summary className="flex cursor-pointer list-none items-center justify-between gap-4 font-semibold">
-        {q}
-        <span className="text-accent transition group-open:rotate-45">+</span>
-      </summary>
-      <p className="mt-3 text-sm text-muted">{a}</p>
-    </details>
   )
 }
