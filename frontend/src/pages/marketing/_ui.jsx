@@ -23,16 +23,22 @@ export function Container({ className = '', children }) {
 // centred wall of black type, which is the layout that made the site read as a
 // template. Centring is now reserved for the homepage hero alone, so it means
 // something when it appears.
-export function PageHero({ eyebrow, title, subtitle, children }) {
+// No eyebrow label. Every page passed one that simply repeated its own name —
+// "Contact" above "Talk to us" — which the active nav item and the heading
+// already say. It cost a line of type and ~36px of vertical space at the very
+// top of the page, pushing the actual heading below the fold on short screens.
+//
+// The top padding is deliberately smaller than the bottom rhythm elsewhere: this
+// section sits directly beneath the header, so it inherits that separation and
+// does not need to restate it.
+export function PageHero({ title, subtitle, children }) {
   return (
-    <section className="border-b border-line bg-surface pb-12 pt-16 md:pb-16 md:pt-24">
+    <section className="border-b border-line bg-surface pb-10 pt-10 md:pb-14 md:pt-16">
       <Container>
-        {eyebrow && (
-          <p className="mb-4 text-xs font-semibold uppercase tracking-[0.14em] text-accent">
-            {eyebrow}
-          </p>
-        )}
-        <h1 className="max-w-3xl text-balance text-4xl font-bold leading-[1.08] tracking-tight md:text-5xl">
+        {/* No max-width: a 768px column broke every heading here onto a second
+            line, which at 48px is most of the visible page before the content
+            starts. The container's own 1104px is the limit instead. */}
+        <h1 className="text-balance text-4xl font-bold leading-[1.08] tracking-tight md:text-5xl">
           {title}
         </h1>
         {subtitle && (

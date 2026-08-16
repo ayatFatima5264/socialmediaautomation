@@ -50,14 +50,14 @@ export default function Pricing() {
   return (
     <>
       <Seo />
-      <PageHero
-        eyebrow="Pricing"
-        title="Start free, and talk to us when you outgrow it"
-        subtitle="Every plan begins by creating an account. Paid plans are arranged directly with us — there is no checkout in the product yet."
-      />
+      {/* Trimmed of "and" so the heading sets on one line at 48px, and of the
+          standfirst below it. Nothing was lost: "Every plan begins by creating
+          an account" is what the three identical CTAs already say, and the
+          no-checkout caveat is answered in full in the FAQ further down. */}
+      <PageHero title="Start free, talk to us when you outgrow it" />
 
       {/* ---- Plan cards -------------------------------------------------- */}
-      <Section>
+      <Section className="pt-8 md:pt-10">
         <div className="grid items-stretch gap-6 lg:grid-cols-3">
           {PLANS.map((plan) => (
             <div

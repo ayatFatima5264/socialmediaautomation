@@ -147,18 +147,16 @@ export default function Blog() {
       <Seo jsonLd={jsonLd} />
 
       {/* Hero */}
-      <section className="pt-20 pb-10 text-center md:pt-28">
+      <section className="pt-10 pb-10 text-center md:pt-16">
         <Container>
-          <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-accent-line bg-accent-soft px-3.5 py-1 text-xs font-semibold uppercase tracking-wide text-accent">
-            The {SITE.name} Blog
-          </div>
-          <h1 className="mx-auto max-w-3xl text-4xl font-black leading-[1.1] tracking-tight md:text-6xl">
+          {/* No "The AutoSocial AI Blog" pill and no standfirst. Both said what
+              the active nav item, the heading and the article grid below already
+              say, and together they pushed the articles — the reason anyone
+              opens this page — most of a screen further down.
+              The heading is wide enough to set on one line. */}
+          <h1 className="mx-auto max-w-4xl text-4xl font-black leading-[1.1] tracking-tight md:text-6xl">
             Social media, without the busywork
           </h1>
-          <p className="mx-auto mt-5 max-w-2xl text-lg text-muted md:text-xl">
-            Practical guides on AI content creation, scheduling, and platform strategy — written
-            for people who have to actually ship the posts.
-          </p>
         </Container>
       </section>
 

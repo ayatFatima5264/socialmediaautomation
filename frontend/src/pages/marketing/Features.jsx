@@ -220,14 +220,17 @@ export default function Features() {
   return (
     <>
       <Seo />
-      <PageHero
-        eyebrow="Features"
-        title="Every screen you will actually use"
-        subtitle="This is the product, shown as it is. Each section below is a real screen from the application, with a screenshot taken from it."
-      />
+      <PageHero title="Every screen you will actually use" />
 
       {FEATURES.map((f, i) => (
-        <Section key={f.id} id={f.id} tone={i % 2 === 0 ? 'page' : 'surface'}>
+        <Section
+          key={f.id}
+          id={f.id}
+          tone={i % 2 === 0 ? 'page' : 'surface'}
+          // Only the first section tucks up under the hero; the rest keep the
+          // standard rhythm, which is what separates one feature from the next.
+          className={i === 0 ? 'pt-8 md:pt-10' : ''}
+        >
           <Split
             reverse={i % 2 === 1}
             media={

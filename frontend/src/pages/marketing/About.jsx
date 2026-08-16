@@ -49,7 +49,6 @@ export default function About() {
     <>
       <Seo />
       <PageHero
-        eyebrow="About"
         title="Why AutoSocial AI exists"
         subtitle="Posting consistently across six networks is not hard because writing is hard. It is hard because the work is scattered across four tools that do not know about each other."
       />

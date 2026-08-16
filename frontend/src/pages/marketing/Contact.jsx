@@ -82,13 +82,13 @@ export default function Contact() {
   return (
     <>
       <Seo />
-      <PageHero
-        eyebrow="Contact"
-        title="Talk to us"
-        subtitle="One inbox, read by the people who build AutoSocial AI. Write in whatever detail you have — there is no ticket form to fill in first."
-      />
+      <PageHero title="Talk to us" />
 
-      <Section>
+      {/* Tighter than the standard section rhythm so the form is reachable
+          without scrolling. "Talk to us" is the whole instruction this page
+          needs; a paragraph explaining that the form is a form only pushed the
+          form itself off the screen. */}
+      <Section className="pt-8 md:pt-10">
         <div className="grid gap-10 lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)] lg:gap-16">
           {/* ---- What to write about ------------------------------------ */}
           <div>

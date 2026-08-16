@@ -24,7 +24,7 @@ const JSON_LD = {
       '@type': 'Organization',
       name: SITE.name,
       url: SITE.url,
-      logo: `${SITE.url}/favicon.svg`,
+      logo: `${SITE.url}/logo.png`,
       description: SITE.description,
     },
     { '@type': 'WebSite', name: SITE.name, url: SITE.url },
@@ -137,42 +137,50 @@ export default function Home() {
       <Seo jsonLd={JSON_LD} />
 
       {/* ---- Hero ------------------------------------------------------- */}
-      <section className="border-b border-line bg-surface pb-16 pt-16 md:pb-20 md:pt-24">
+      {/* Two columns rather than a centred stack: the copy and the product sit
+          side by side, so the screenshot is visible without scrolling instead of
+          waiting below a full screen of type. The columns collapse to one below
+          `lg`, where there is no room for both.
+          Top padding is smaller than the bottom — this section sits directly
+          under the header, which already supplies the separation. */}
+      <section className="border-b border-line bg-surface pb-12 pt-10 md:pb-16 md:pt-14">
         <Container>
-          <div className="mx-auto max-w-3xl text-center">
-            <h1 className="text-balance text-4xl font-bold leading-[1.06] tracking-tight md:text-6xl">
-              Create, plan and publish your social content from one place
-            </h1>
-            <p className="mx-auto mt-6 max-w-2xl text-lg leading-relaxed text-muted md:text-xl">
-              AutoSocial AI is a workspace for social media. Write the post or
-              have AI draft it, generate or choose the image, see exactly how it
-              will look on each network, then put it on the calendar and publish.
-            </p>
+          {/* The screenshot column is the wider of the two: it is the thing the
+              page is actually selling, and the copy beside it is short enough
+              not to need the room. */}
+          <div className="grid items-center gap-10 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:gap-12">
+            {/* ---- Copy ---------------------------------------------------- */}
+            <div>
+              {/* Capped at 48px. At 60px this heading set on four lines in a
+                  column this width, which made the copy taller than the
+                  screenshot next to it and threw the whole row out of balance. */}
+              <h1 className="text-balance text-4xl font-bold leading-[1.06] tracking-tight md:text-5xl">
+                Create, plan &amp; publish{' '}
+                <span className="text-accent">social content</span> from one place
+              </h1>
+              <p className="mt-6 max-w-xl text-lg leading-relaxed text-muted">
+                One workspace for social media: write the post or let AI draft it,
+                generate or choose the image, see exactly how it will look on each
+                network, then schedule it and publish.
+              </p>
 
-            <div className="mt-8 flex flex-wrap justify-center gap-3">
-              <Link to="/register" className="btn btn-primary px-7 py-3 text-base">
-                Start free
-              </Link>
-              <Link to="/features" className="btn btn-secondary px-7 py-3 text-base">
-                See how it works
-              </Link>
+              <div className="mt-8 flex flex-wrap gap-3">
+                <Link to="/register" className="btn btn-primary px-7 py-3 text-base">
+                  Start free
+                </Link>
+                <Link to="/features" className="btn btn-secondary px-7 py-3 text-base">
+                  See how it works
+                </Link>
+              </div>
+
             </div>
-            <p className="mt-4 text-sm text-muted">
-              Free plan available. No credit card required.
-            </p>
 
-            <ul className="mt-8 flex flex-wrap items-center justify-center gap-x-5 gap-y-3">
-              {PLATFORM_KEYS.map((key) => (
-                <li key={key} className="flex items-center gap-2 text-sm text-muted">
-                  <PlatformIcon platform={key} size={22} />
-                  {PLATFORMS[key].label}
-                </li>
-              ))}
-            </ul>
-          </div>
-
-          {/* The product itself, as the largest thing on the page. */}
-          <div className="mt-14">
+            {/* ---- The product itself --------------------------------------
+                The Create Post screen rather than the dashboard: at 1600x960 it
+                is close to the height of the copy beside it, where the
+                dashboard shot is a 1600x621 strip that reads as small however
+                wide the column gets. It is also the screen that shows what the
+                headline claims — writing, the image, and the live preview. */}
             <ProductFrame
               priority
               src="/product/create-post.webp"
@@ -185,6 +193,26 @@ export default function Home() {
               alt="The Create Post screen: platform selection, a written caption with an attached image, and a live Instagram preview of the finished post beside it"
             />
           </div>
+
+          {/* ---- Networks ------------------------------------------------ */}
+          <ul className="mt-12 flex flex-wrap items-center justify-center gap-y-3 border-t border-line pt-8 sm:divide-x sm:divide-line">
+            {PLATFORM_KEYS.map((key) => (
+              <li
+                key={key}
+                className="flex items-center gap-2 px-4 text-sm text-muted sm:px-6"
+              >
+                <PlatformIcon platform={key} size={22} />
+                {PLATFORMS[key].label}
+              </li>
+            ))}
+          </ul>
+
+          <p className="mt-6 flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-center text-sm text-muted">
+            <Icon name="shield" size={16} className="text-accent" />
+            Free plan available <span aria-hidden="true">•</span> No credit card
+            required <span aria-hidden="true">•</span> Built for creators and
+            businesses
+          </p>
         </Container>
       </section>
 
