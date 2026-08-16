@@ -194,7 +194,7 @@ export default function seoPlugin() {
             '@id': `${siteUrl}/#organization`,
             name: BRAND.name,
             url: siteUrl,
-            logo: `${siteUrl}/favicon.svg`,
+            logo: `${siteUrl}/logo.png`,
             description: BRAND.defaultDescription,
           },
           {
@@ -258,7 +258,7 @@ export default function seoPlugin() {
                   '@type': 'Organization',
                   name: BRAND.name,
                   url: siteUrl,
-                  logo: { '@type': 'ImageObject', url: `${siteUrl}/favicon.svg` },
+                  logo: { '@type': 'ImageObject', url: `${siteUrl}/logo.png` },
                 },
               },
               brand: BRAND,

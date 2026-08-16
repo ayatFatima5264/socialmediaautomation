@@ -1,29 +1,29 @@
-// Shared brand mark — the AutoSocial AI network icon: three connected nodes
-// (top in mint) on an emerald rounded-square badge. Single source of truth used
-// by the app sidebar, auth screen, marketing header/footer, and loader. Change
-// the logo here and it updates everywhere. `size` is the square edge in px.
+// Shared brand mark — the AutoSocial AI network icon: three connected nodes on
+// an emerald rounded-square badge. Single source of truth used by the app
+// sidebar, auth screen, marketing header/footer, and loader. Change the file it
+// points at and it updates everywhere. `size` is the square edge in px.
+//
+// The mark is the real brand asset (/public/logo.png) rather than a hand-drawn
+// SVG copy of it, so there is one file to change when the logo changes and no
+// second version to drift out of step. It is served from /public — the same
+// file the favicon and apple-touch-icon use — so a page showing the logo and
+// the browser tab beside it can never disagree.
+//
+// `width`/`height` are set as attributes as well as styles so the element
+// reserves its space before the image loads and nothing shifts around it.
 export default function Logo({ size = 36, className = '' }) {
   return (
-    <svg
+    <img
+      src="/logo.png"
       width={size}
       height={size}
-      viewBox="0 0 200 200"
-      xmlns="http://www.w3.org/2000/svg"
-      role="img"
-      aria-label="AutoSocial AI"
+      alt="AutoSocial AI"
       className={className}
-    >
-      <title>AutoSocial AI</title>
-      <rect width="200" height="200" rx="46" fill="#0E7A5A" />
-      {/* Network recentred to the badge centre (100,100). */}
-      <g transform="translate(-10 -5)">
-        <line x1="110" y1="60" x2="64" y2="150" stroke="#EAFBF3" strokeWidth="8" strokeLinecap="round" />
-        <line x1="110" y1="60" x2="156" y2="150" stroke="#EAFBF3" strokeWidth="8" strokeLinecap="round" />
-        <line x1="64" y1="150" x2="156" y2="150" stroke="#EAFBF3" strokeWidth="8" strokeLinecap="round" />
-        <circle cx="110" cy="60" r="18" fill="#6EE7B7" />
-        <circle cx="64" cy="150" r="16" fill="#EAFBF3" />
-        <circle cx="156" cy="150" r="16" fill="#EAFBF3" />
-      </g>
-    </svg>
+      style={{ width: size, height: size }}
+      // The mark is decorative wherever it sits next to the wordmark, but it is
+      // the only branding on the loader and the auth screen, so it keeps a real
+      // alt rather than being hidden from screen readers.
+      decoding="async"
+    />
   )
 }
