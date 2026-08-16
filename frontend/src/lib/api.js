@@ -32,7 +32,12 @@ function extractDetail(data, fallback) {
   if (!d) return fallback
   if (typeof d === 'string') return d
   if (Array.isArray(d)) {
-    return d.map((e) => e.msg || JSON.stringify(e)).join('; ')
+    // Pydantic prefixes messages raised by a custom validator with
+    // "Value error, ". That prefix is meaningful in a server log and noise in
+    // front of a sentence written for the person filling in the form.
+    return d
+      .map((e) => (e.msg || JSON.stringify(e)).replace(/^Value error,\s*/i, ''))
+      .join('; ')
   }
   return fallback
 }
@@ -177,8 +182,9 @@ export const api = {
       body: { pending_id: pendingId, account_id: accountId },
     }),
 
-  // marketing contact form (public). Backend endpoint POST /api/contact is
-  // not implemented yet — gated behind VITE_CONTACT_API in the Contact page.
+  // Marketing contact form (public). The endpoint stores the message before it
+  // attempts to email anyone, so a 200 means the message is safe even if mail
+  // delivery later fails. 429 means the per-IP rate limit was hit.
   contact: (body) => request('/api/contact', { method: 'POST', body, auth: false }),
 
   // AI Content Planner

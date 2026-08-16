@@ -94,3 +94,42 @@ def send_password_reset(to: str, reset_link: str) -> bool:
         # Dev fallback: make the link discoverable in the server logs.
         logger.info("Password reset link for %s: %s", to, reset_link)
     return sent
+
+
+def contact_recipient() -> str | None:
+    """Mailbox that public contact-form messages are forwarded to."""
+    return settings.contact_to_email or settings.smtp_from or settings.smtp_user
+
+
+def send_contact_notification(*, name: str, email: str, message: str) -> bool:
+    """Forward a contact-form submission to the team's mailbox.
+
+    Best-effort by design: the message is already stored in the database before
+    this runs, so returning False costs a notification, never the message. The
+    submitter's address is set as Reply-To in spirit by putting it in the body —
+    send_email() keeps the envelope simple, and a support inbox needs the
+    address readable more than it needs a header.
+    """
+    to = contact_recipient()
+    if not to:
+        logger.warning(
+            "No contact recipient configured — message from %s stored only", email
+        )
+        return False
+
+    subject = f"Contact form: {name}"
+    text = (
+        f"From: {name} <{email}>\n\n"
+        f"{message}\n\n"
+        "— Sent from the AutoSocial AI contact form."
+    )
+    html = f"""\
+<div style="font-family:system-ui,Segoe UI,Arial,sans-serif;max-width:560px;margin:auto">
+  <h2 style="margin:0 0 4px">New contact-form message</h2>
+  <p style="color:#475569;margin:0 0 20px">
+    From <strong>{name}</strong> &lt;<a href="mailto:{email}">{email}</a>&gt;
+  </p>
+  <div style="white-space:pre-wrap;border-left:3px solid #15803d;padding:4px 0 4px 16px;
+              color:#16281f">{message}</div>
+</div>"""
+    return send_email(to, subject, text, html)

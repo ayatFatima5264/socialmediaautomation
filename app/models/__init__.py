@@ -2,6 +2,7 @@
 from app.models.ad_campaign import AdCampaign
 from app.models.business_profile import BusinessProfile
 from app.models.campaign_asset import CampaignAsset
+from app.models.contact_message import ContactMessage
 from app.models.content_plan import ContentPlan, PlannerSettings
 from app.models.media_asset import MediaAsset
 from app.models.pending_connection import PendingConnection
@@ -20,4 +21,5 @@ __all__ = [
     "BusinessProfile",
     "ContentPlan",
     "PlannerSettings",
+    "ContactMessage",
 ]

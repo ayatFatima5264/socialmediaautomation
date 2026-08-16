@@ -48,6 +48,29 @@ services:
       # --- Scheduler --------------------------------------------------------
       - key: SCHEDULER_POLL_SECONDS
         value: "30"
+      # --- Outbound email (password reset + contact form) -------------------
+      # Gmail needs an APP PASSWORD, not the account password: Google Account →
+      # Security → 2-Step Verification → App passwords. Paste the 16-character
+      # value into SMTP_PASSWORD in the Render dashboard.
+      #
+      # With these unset the app still runs: password-reset links are written to
+      # the logs, and contact-form messages are stored in the contact_messages
+      # table. Nothing is lost — nobody is notified.
+      - key: SMTP_HOST
+        value: smtp.gmail.com
+      - key: SMTP_PORT
+        value: "587"
+      - key: SMTP_USER
+        value: autosocialai5264@gmail.com
+      - key: SMTP_PASSWORD
+        sync: false
+      # The From header. Gmail rewrites this to the authenticated account, so
+      # keep it the same address or mail is rejected.
+      - key: SMTP_FROM
+        value: AutoSocial AI <autosocialai5264@gmail.com>
+      # Where contact-form submissions are forwarded.
+      - key: CONTACT_TO_EMAIL
+        value: autosocialai5264@gmail.com
       # --- Public URLs (set to your real domains) ---------------------------
       - key: BACKEND_URL          # e.g. https://api.yourdomain.com
         sync: false

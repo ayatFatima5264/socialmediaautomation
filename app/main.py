@@ -19,6 +19,7 @@ from app.routes import (
     ads,
     auth,
     business_profile,
+    contact,
     instagram,
     media,
     oauth,
@@ -74,6 +75,7 @@ app.include_router(media.router)
 app.include_router(business_profile.router)
 app.include_router(planner.router)
 app.include_router(ads.router)
+app.include_router(contact.router)
 
 
 @app.get("/")
