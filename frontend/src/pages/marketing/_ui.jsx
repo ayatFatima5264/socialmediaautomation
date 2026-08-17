@@ -92,11 +92,15 @@ export function SectionHead({ eyebrow, title, subtitle, align = 'left', classNam
 
 // Prose + screenshot, side by side. `reverse` puts the screenshot on the left,
 // which is what gives the homepage its alternating rhythm.
+// `min-w-0` on both columns: a grid item's automatic minimum size is its
+// min-content width, so a wide child — a screenshot that pans sideways on a
+// phone, a long unbroken URL — would otherwise widen the whole column past the
+// screen instead of scrolling or wrapping inside it.
 export function Split({ reverse = false, children, media }) {
   return (
     <div className="grid items-center gap-10 lg:grid-cols-2 lg:gap-14">
-      <div className={reverse ? 'lg:order-2' : ''}>{children}</div>
-      <div className={reverse ? 'lg:order-1' : ''}>{media}</div>
+      <div className={`min-w-0 ${reverse ? 'lg:order-2' : ''}`}>{children}</div>
+      <div className={`min-w-0 ${reverse ? 'lg:order-1' : ''}`}>{media}</div>
     </div>
   )
 }

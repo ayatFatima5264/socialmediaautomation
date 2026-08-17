@@ -186,7 +186,12 @@ export default function Accounts() {
 
       {noneConnected && <EmptyState />}
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      {/* grid-cols-1 rather than a bare `grid`: the implicit mobile track is
+          `auto`, so it sizes to the cards' min-content and a long handle or a
+          wide button row pushed each card past the edge of a 320px screen.
+          Tailwind's grid-cols-1 is minmax(0,1fr), which holds the track to the
+          screen and lets the card's own truncation do its job. */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {loading
           ? PLATFORM_KEYS.map((p) => <CardSkeleton key={p} />)
           : PLATFORM_KEYS.map((p) => (

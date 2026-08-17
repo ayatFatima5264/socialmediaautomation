@@ -68,7 +68,13 @@ export default function Dashboard() {
         ))}
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-2">
+      {/* grid-cols-1, not a bare `grid`: without an explicit track the single
+          mobile column is `auto`, which sizes to its content's max-content
+          width — and the post titles below are `truncate`, i.e. nowrap, so
+          their max-content is the entire untruncated caption. That stretched
+          both cards to ~5000px on a phone and pushed their contents off the
+          right edge. Tailwind's grid-cols-1 is minmax(0,1fr), which caps it. */}
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         {/* Upcoming */}
         <div className="card p-4">
           <div className="mb-4 flex items-center justify-between">

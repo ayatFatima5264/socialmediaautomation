@@ -46,6 +46,14 @@ function Cell({ value, soon }) {
   )
 }
 
+// The four columns of the comparison, in table order. Derived from the same
+// config as the cards above so a renamed plan or a changed price cannot appear
+// one way in the cards and another in the comparison.
+const COLUMNS = [
+  ...PLANS.map((p) => ({ key: p.id, name: p.name, price: p.price, highlight: p.highlight })),
+  { key: 'enterprise', name: ENTERPRISE.name, price: ENTERPRISE.price },
+]
+
 export default function Pricing() {
   return (
     <>
@@ -137,16 +145,54 @@ export default function Pricing() {
       {/* ---- Comparison -------------------------------------------------- */}
       <Section tone="surface">
         <SectionHead title="Compare plans" />
-        <div className="mt-8 overflow-x-auto rounded-xl border border-line bg-surface">
-          <table className="w-full min-w-[720px] border-collapse text-left text-sm">
+        {/* ---- Phones: one card per plan --------------------------------
+            A five-column table cannot be made to work under ~700px. It used to
+            be a sideways-scrolling table with a sticky feature column, and on a
+            390px phone that column ate 340px of the screen: you saw a sliver of
+            one plan at a time, and the plan names — the header row — had
+            scrolled off the top by then, so the value you could see belonged to
+            a column you could no longer identify.
+            Grouping by plan instead of by feature removes the second axis, so
+            nothing scrolls sideways and every value is labelled twice: by the
+            plan in the card header and by the feature on its own row. */}
+        <div className="mt-8 space-y-4 md:hidden">
+          {COLUMNS.map((col) => (
+            <div
+              key={col.key}
+              className={`card overflow-hidden ${col.highlight ? 'border-accent' : ''}`}
+            >
+              <div className="flex items-baseline justify-between gap-3 border-b border-line bg-inset px-4 py-3">
+                <h3 className="text-sm font-bold uppercase tracking-wide">{col.name}</h3>
+                <span className="text-sm font-semibold text-muted">{col.price}</span>
+              </div>
+              <dl className="divide-y divide-line">
+                {COMPARISON.map((row) => (
+                  <div
+                    key={row.label}
+                    className="flex items-center justify-between gap-4 px-4 py-3 text-sm"
+                  >
+                    <dt className="min-w-0 text-muted">{row.label}</dt>
+                    <dd className="shrink-0 text-right font-medium">
+                      <Cell value={row[col.key]} soon={row.soon} />
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
+          ))}
+        </div>
+
+        {/* ---- Tablet and up: the real matrix --------------------------- */}
+        <div className="mt-8 hidden overflow-x-auto rounded-xl border border-line bg-surface md:block">
+          <table className="w-full min-w-[680px] border-collapse text-left text-sm">
             <thead>
-              {/* Sticky header and first column so plan names and feature names
-                  stay readable while the table is scrolled sideways on a phone. */}
+              {/* The first column stays put if the table is ever wider than its
+                  container — a narrow tablet, or a desktop window dragged in. */}
               <tr className="border-b border-line">
                 <th className="sticky left-0 z-10 bg-surface p-4 font-semibold">Feature</th>
-                {['Free', 'Pro', 'Business', 'Enterprise'].map((name) => (
-                  <th key={name} className="p-4 text-center font-semibold">
-                    {name}
+                {COLUMNS.map((col) => (
+                  <th key={col.key} className="p-4 text-center font-semibold">
+                    {col.name}
                   </th>
                 ))}
               </tr>
@@ -157,10 +203,11 @@ export default function Pricing() {
                   <td className="sticky left-0 z-10 bg-surface p-4 text-body">
                     {row.label}
                   </td>
-                  <td className="p-4 text-center"><Cell value={row.free} soon={row.soon} /></td>
-                  <td className="p-4 text-center"><Cell value={row.pro} soon={row.soon} /></td>
-                  <td className="p-4 text-center"><Cell value={row.business} soon={row.soon} /></td>
-                  <td className="p-4 text-center"><Cell value={row.enterprise} soon={row.soon} /></td>
+                  {COLUMNS.map((col) => (
+                    <td key={col.key} className="p-4 text-center">
+                      <Cell value={row[col.key]} soon={row.soon} />
+                    </td>
+                  ))}
                 </tr>
               ))}
             </tbody>

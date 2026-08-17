@@ -287,12 +287,29 @@ export default function Markdown({ source }) {
             )
           case 'table':
             return (
+              // The 32rem floor starts at `sm`. On a phone it forced a
+              // three-column comparison table into a sideways scroll for the
+              // sake of cells that read perfectly well wrapped over two lines.
+              // Phones get `table-fixed` and tighter cell padding: with the
+              // automatic layout, the widest phrase in each column set that
+              // column's width, and three of those together ran past the screen
+              // however narrow the article column was. Fixed layout splits the
+              // width evenly and lets the phrases wrap instead. From `sm` up
+              // there is room to size columns to their content again.
               <div key={key} className="overflow-x-auto">
-                <table className="w-full min-w-[32rem] border-collapse text-left text-sm">
+                <table className="w-full table-fixed border-collapse text-left text-sm sm:table-auto sm:min-w-[32rem]">
                   <thead>
                     <tr className="border-b-2 border-line">
+                      {/* The first column carries the row labels and is the
+                          one that reads worst when broken mid-word, so under
+                          `sm` it takes a larger share of the fixed layout. */}
                       {b.head.map((h, j) => (
-                        <th key={j} className="px-3 py-2.5 font-bold text-body">
+                        <th
+                          key={j}
+                          className={`break-words px-2 py-2.5 font-bold text-body sm:px-3 ${
+                            j === 0 ? 'w-2/5 sm:w-auto' : ''
+                          }`}
+                        >
                           {renderInline(h, `${key}-h${j}`)}
                         </th>
                       ))}
@@ -302,7 +319,10 @@ export default function Markdown({ source }) {
                     {b.rows.map((row, j) => (
                       <tr key={j} className="border-b border-line last:border-0">
                         {row.map((cell, k) => (
-                          <td key={k} className="px-3 py-2.5 align-top text-muted">
+                          <td
+                            key={k}
+                            className="break-words px-2 py-2.5 align-top text-muted sm:px-3"
+                          >
                             {renderInline(cell, `${key}-${j}-${k}`)}
                           </td>
                         ))}

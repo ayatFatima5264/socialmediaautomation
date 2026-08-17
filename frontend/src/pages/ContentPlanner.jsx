@@ -287,10 +287,17 @@ function Hub({ plans, settings, onQuick, onAdvanced, onOpenPlan, onDeletePlan })
         ) : (
           <div className="space-y-2">
             {plans.map((p) => (
-              <div key={p.id} className="card flex items-center gap-3 p-4">
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="truncate font-semibold">{p.name}</span>
+              // The row wraps below `sm`. On one line, the plan name shared a
+              // 390px screen with a status badge and two buttons and was
+              // truncated to "7-Da…" — the one part of the row that identifies
+              // which plan you are about to open or delete.
+              <div
+                key={p.id}
+                className="card flex flex-wrap items-center gap-x-3 gap-y-2 p-4 sm:flex-nowrap"
+              >
+                <div className="min-w-0 w-full sm:w-auto sm:flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="min-w-0 truncate font-semibold">{p.name}</span>
                     <PlanStatusBadge status={p.status} />
                   </div>
                   <div className="mt-0.5 text-xs text-muted">

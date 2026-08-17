@@ -12,6 +12,14 @@
 //
 // `mobileSrc` is a separately-captured portrait screenshot, not a scaled-down
 // desktop one: a 1500px-wide screen shrunk into a 360px column is unreadable.
+//
+// MOBILE FALLBACK — for the shots that have no `mobileSrc`. They used to be
+// rendered at the column's full width and nothing more, which on a 390px phone
+// meant a 1600px screenshot at 356px: 4.5 source pixels per CSS pixel, so every
+// label inside the product turned to grey mush and the shot read as a broken
+// crop rather than a screen. Below `md` those images instead keep a floor of
+// 680px and the frame pans sideways, which is 2.4 source pixels per CSS pixel —
+// the same density as the hand-captured portrait shots, i.e. actually legible.
 // ---------------------------------------------------------------------------
 
 export default function ProductFrame({
@@ -27,6 +35,10 @@ export default function ProductFrame({
   priority = false,
   className = '',
 }) {
+  // No portrait capture for this screen, so the desktop one has to stay
+  // readable on a phone by panning instead of shrinking.
+  const pans = !mobileSrc
+
   const img = (
     <img
       src={src}
@@ -38,12 +50,15 @@ export default function ProductFrame({
       // or be decoded off the critical path.
       fetchPriority={priority ? 'high' : undefined}
       decoding={priority ? 'sync' : 'async'}
-      className="block h-auto w-full"
+      className={`block h-auto w-full ${pans ? 'min-w-[680px] md:min-w-0' : ''}`}
     />
   )
 
   return (
-    <figure className={`m-0 ${className}`}>
+    // min-w-0: the panning image below has a 680px min-content width, and a
+    // grid or flex item defaults to `min-width: auto` — without this the frame
+    // would stretch its own column to 680px instead of scrolling inside it.
+    <figure className={`m-0 min-w-0 ${className}`}>
       <div className="overflow-hidden rounded-xl border border-line bg-surface shadow-[0_1px_2px_rgba(22,40,31,0.06),0_18px_40px_-24px_rgba(22,40,31,0.35)]">
         {/* Browser chrome. Decorative, so it is hidden from assistive tech —
             the alt text on the image below carries the meaning. */}
@@ -74,12 +89,19 @@ export default function ProductFrame({
             {img}
           </picture>
         ) : (
-          img
+          <div className="overflow-x-auto md:overflow-x-visible">{img}</div>
         )}
       </div>
 
-      {caption && (
-        <figcaption className="mt-3 text-sm text-muted">{caption}</figcaption>
+      {(caption || pans) && (
+        <figcaption className="mt-3 text-sm text-muted">
+          {pans && (
+            <span className="mr-1.5 md:hidden" aria-hidden="true">
+              Swipe across the screenshot to see the rest.
+            </span>
+          )}
+          {caption}
+        </figcaption>
       )}
     </figure>
   )

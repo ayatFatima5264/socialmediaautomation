@@ -117,13 +117,20 @@ export default function Scheduler() {
                       <div className="px-1 text-xs text-muted">{d}</div>
                       <div className="mt-0.5 space-y-0.5">
                         {dayPosts.slice(0, 3).map((p) => (
+                          // The caption is hidden below `sm`. Seven day
+                          // columns on a 390px screen leave about 9px inside
+                          // this chip once the icon and padding are taken out,
+                          // so the text rendered as a sliver of a single
+                          // letter — it looked like a glitch and said nothing.
+                          // The icon alone marks the day, and the Pending list
+                          // underneath carries the caption, time and actions.
                           <div
                             key={p.id}
                             title={p.content}
-                            className="flex items-center gap-1 truncate rounded bg-amber-500/15 px-1 py-0.5 text-[10px] text-amber-300"
+                            className="flex items-center justify-center gap-1 truncate rounded bg-amber-500/15 px-1 py-0.5 text-[10px] text-amber-300 sm:justify-start"
                           >
                             <PlatformIcon platform={p.platform} size={12} />
-                            <span className="truncate">{p.content}</span>
+                            <span className="hidden truncate sm:inline">{p.content}</span>
                           </div>
                         ))}
                         {dayPosts.length > 3 && (

@@ -8,7 +8,10 @@ import CookieConsent from './CookieConsent.jsx'
 
 function Brand() {
   return (
-    <Link to="/" className="flex items-center gap-2">
+    // shrink-0: the header is a flex row, and without it the brand is the item
+    // that gives way when the nav runs out of room — the wordmark was being
+    // clipped mid-word at tablet widths.
+    <Link to="/" className="flex shrink-0 items-center gap-2">
       <Logo size={36} />
       <span className="text-lg font-bold">{SITE.name}</span>
     </Link>
@@ -120,8 +123,12 @@ export default function PublicLayout() {
           {/* Desktop nav. The app's sidebar pill (`nav-link-active`) reads as a
               selected row in a list, which is right inside the product and
               wrong on a marketing header — here the current page is marked with
-              an underline instead. */}
-          <nav className="ml-6 hidden items-center gap-1 md:flex">
+              an underline instead.
+              It appears at `lg`, not `md`: six nav items plus Login and Sign Up
+              plus the wordmark need more than a 768px row, and at that width
+              the whole header was compressed to the point of clipping the brand.
+              Tablets keep the drawer, which fits them comfortably. */}
+          <nav className="ml-6 hidden items-center gap-1 lg:flex">
             {MARKETING_NAV.map((item) => (
               <NavLink
                 key={item.to}
@@ -141,13 +148,14 @@ export default function PublicLayout() {
           </nav>
 
           <div className="ml-auto flex items-center gap-2">
-            <div className="hidden items-center gap-2 md:flex">
+            <div className="hidden items-center gap-2 lg:flex">
               <AuthArea />
             </div>
             <button
               onClick={() => setMenuOpen((o) => !o)}
-              className="btn btn-ghost btn-sm md:hidden"
+              className="btn btn-ghost btn-sm lg:hidden"
               aria-label="Toggle menu"
+              aria-expanded={menuOpen}
             >
               ☰
             </button>
@@ -156,7 +164,7 @@ export default function PublicLayout() {
 
         {/* Mobile menu */}
         {menuOpen && (
-          <div className="border-t border-line px-4 py-3 md:hidden">
+          <div className="border-t border-line px-4 py-3 lg:hidden">
             <nav className="flex flex-col gap-1">
               {MARKETING_NAV.map((item) => (
                 <NavLink

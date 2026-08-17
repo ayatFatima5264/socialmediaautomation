@@ -69,9 +69,17 @@ body {
   text-rendering: optimizeLegibility;
 }
 
-/* No page can scroll sideways — the shell is fully fluid. */
-html,
-body {
+/* No page can scroll sideways — the shell is fully fluid.
+ *
+ * Only on <html>, deliberately. `overflow-x` on an element makes it a scroll
+ * container, and <body> is already `height: 100%` for the app shell below — so
+ * setting it on both turned <body> into a nested scroller holding the whole
+ * marketing site. The page still scrolled, but the DOCUMENT never did:
+ * `window.scrollY` stayed 0 forever and `window.scrollTo()` was a no-op, which
+ * is why moving between blog articles kept you at the old scroll position.
+ * With it on <html> alone, sideways scroll is still clamped and the document
+ * is the scroller again. */
+html {
   overflow-x: hidden;
 }
 
