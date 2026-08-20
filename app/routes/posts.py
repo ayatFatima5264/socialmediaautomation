@@ -2,7 +2,10 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import random
+import tempfile
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 
@@ -10,9 +13,10 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.core.deps import get_current_user_optional
+from app.core.deps import get_current_user, get_current_user_optional
 from app.database import get_db
 from app.models.user import User
+from app.routes.media import store_media_bytes
 from app.services import business_profile_service
 from app.schemas.post import (
     GeneratePostRequest,
@@ -20,6 +24,7 @@ from app.schemas.post import (
     Platform,
     Tone,
 )
+from app.services.video_service import VideoGenerationError, generate_image_video
 from app.services.ai_service import (
     assist_text,
     build_visual_prompt,
@@ -95,6 +100,95 @@ class GenerateImageResponse(BaseModel):
     verified: bool = False
     # Ordered alternate sources the client can fall back to if `image_url` fails.
     fallbacks: list[str] = []
+
+
+class GenerateVideoRequest(BaseModel):
+    image_url: str = Field(
+        ...,
+        min_length=5,
+        description="Public image URL to convert into a video.",
+    )
+    duration: float = Field(
+        default=5.0,
+        gt=0,
+        le=60,
+        description="Video duration in seconds.",
+    )
+    width: int = Field(
+        default=1080,
+        ge=256,
+        le=1920,
+    )
+    height: int = Field(
+        default=1920,
+        ge=256,
+        le=1920,
+    )
+    zoom: float = Field(
+        default=1.08,
+        ge=1.0,
+        le=1.5,
+        description="Maximum zoom level.",
+    )
+
+
+class GenerateVideoResponse(BaseModel):
+    # A public /api/media URL, like an uploaded image — never a server path.
+    # A platform publishes a video by fetching a URL from its own servers.
+    video_url: str
+    duration: float
+    width: int
+    height: int
+
+
+@router.post("/generate-video", response_model=GenerateVideoResponse)
+async def generate_video_endpoint(
+    req: GenerateVideoRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> GenerateVideoResponse:
+    """Convert a public image URL into a vertical MP4 video.
+
+    Sign-in required, unlike the other generators: rendering costs minutes of
+    real CPU, and the URL is fetched by our server, so this is not something to
+    leave open to anonymous callers.
+    """
+    # An explicit path, so this route owns the file and can guarantee it goes
+    # away once the bytes are safely in the database.
+    fd, temp_path = tempfile.mkstemp(suffix=".mp4", prefix="autosocial_reel_")
+    os.close(fd)
+    video_path = Path(temp_path)
+
+    try:
+        await generate_image_video(
+            req.image_url,
+            duration=req.duration,
+            width=req.width,
+            height=req.height,
+            zoom=req.zoom,
+            output_path=str(video_path),
+        )
+        stored = store_media_bytes(
+            db=db,
+            user_id=user.id,
+            data=video_path.read_bytes(),
+            content_type="video/mp4",
+            filename="reel.mp4",
+        )
+    except VideoGenerationError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=str(exc),
+        ) from exc
+    finally:
+        video_path.unlink(missing_ok=True)
+
+    return GenerateVideoResponse(
+        video_url=stored.url,
+        duration=req.duration,
+        width=req.width,
+        height=req.height,
+    )
 
 
 @router.post("/generate-image", response_model=GenerateImageResponse)

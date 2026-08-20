@@ -5,6 +5,12 @@ pydantic-settings>=2.0
 httpx>=0.27
 pypdf>=4.0                  # extract text from uploaded PDFs ("Create From")
 
+# Image → video ("Reel") rendering
+Pillow>=11.0                # crop/resize every frame
+numpy>=2.0                  # the frame format MoviePy 2.x expects
+moviepy>=2.2,<3             # 2.x API: VideoClip(frame_function=...)
+imageio-ffmpeg>=0.6         # ships the ffmpeg binary MoviePy shells out to
+
 # Database
 SQLAlchemy>=2.0
 psycopg[binary]>=3.2        # PostgreSQL driver (production)

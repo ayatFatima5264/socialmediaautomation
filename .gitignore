@@ -12,6 +12,9 @@ __pycache__/
 *.egg-info/
 .pytest_cache/
 
+# ---- Rendered video output (scripts/make_test_reel.py) ----
+*.mp4
+
 # ---- Local database ----
 *.db
 social_saas.db

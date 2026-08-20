@@ -7,8 +7,10 @@ The read route has no auth by design: Pinterest, Instagram and Facebook publish
 an image by fetching the URL from their own servers, with no credentials of
 ours. An unguessable token is therefore the boundary — see models/media_asset.
 
-Only images are accepted, and only up to MAX_UPLOAD_BYTES, so this can't become
-a general-purpose file host.
+Browser uploads are images only, up to MAX_UPLOAD_BYTES. Server-generated media
+(a rendered Reel) also goes through here via `store_media_bytes`, which allows
+video/mp4 and a larger cap — but still a fixed list and a hard limit, so this
+can't become a general-purpose file host either.
 """
 from __future__ import annotations
 
@@ -41,6 +43,14 @@ ALLOWED_TYPES = {
     "image/gif": "gif",
 }
 
+# Server-generated media is bigger than a photo — a 60-second 1080x1920 Reel
+# runs to tens of megabytes — but it still has to fit in a database row and in
+# what a platform is willing to fetch.
+MAX_GENERATED_BYTES = 50 * 1024 * 1024
+
+# Generated media isn't image-only: a Reel is an MP4.
+GENERATED_TYPES = set(ALLOWED_TYPES) | {"video/mp4"}
+
 
 class UploadedMedia(BaseModel):
     """The public handle for an uploaded image."""
@@ -55,6 +65,76 @@ def public_url(token: str) -> str:
     """Absolute URL a platform's servers can fetch. Absolute, not relative:
     Pinterest fetches this from its own infrastructure, not from the browser."""
     return f"{settings.backend_url}/api/media/{token}"
+
+
+def store_media_bytes(
+    *,
+    db: Session,
+    user_id: int,
+    data: bytes,
+    content_type: str,
+    filename: str | None = None,
+) -> UploadedMedia:
+    """
+    Store generated media bytes in the database and return a public URL.
+
+    Used by server-generated assets such as AI-generated Reel videos, which
+    arrive as bytes rather than as an upload. Video is allowed here and the
+    size cap is higher, but both are still enforced — see the module docstring.
+
+    Raises HTTPException: every caller is a route, and the limits below are
+    exactly what that route should be reporting back.
+    """
+
+    if not data:
+        raise HTTPException(
+            status_code=422,
+            detail="Media data is empty.",
+        )
+
+    if content_type not in GENERATED_TYPES:
+        raise HTTPException(
+            status_code=415,
+            detail=f"{content_type or 'Unknown'} media cannot be stored.",
+        )
+
+    if len(data) > MAX_GENERATED_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=(
+                f"Generated media is too large "
+                f"({len(data) // (1024 * 1024)} MB). The limit is "
+                f"{MAX_GENERATED_BYTES // (1024 * 1024)} MB."
+            ),
+        )
+
+    asset = MediaAsset(
+        user_id=user_id,
+        token=secrets.token_urlsafe(32),
+        content_type=content_type,
+        filename=filename,
+        size_bytes=len(data),
+        data=data,
+    )
+
+    db.add(asset)
+    db.commit()
+    db.refresh(asset)
+
+    logger.info(
+        "Stored generated media %s (%s, %d bytes) for user %s",
+        asset.token[:8],
+        content_type,
+        asset.size_bytes,
+        user_id,
+    )
+
+    return UploadedMedia(
+        url=public_url(asset.token),
+        token=asset.token,
+        content_type=asset.content_type,
+        size_bytes=asset.size_bytes,
+    )
 
 
 @router.post("", response_model=UploadedMedia, status_code=201)
