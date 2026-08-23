@@ -46,8 +46,6 @@ def update_profile(
 ) -> BusinessProfileRead:
     profile = svc.upsert_profile(db, user.id, data)
     return BusinessProfileRead.model_validate(profile)
-
-
 @router.post("/onboarding/complete", response_model=dict)
 def complete_onboarding(
     db: Session = Depends(get_db),
@@ -58,4 +56,3 @@ def complete_onboarding(
         user.onboarding_completed = True
         db.commit()
     return {"success": True, "onboarding_completed": True}
-

@@ -27,6 +27,16 @@ from app.routes import (
     posts,
     schedule,
     social,
+    video,
+    video_ai,
+    video_editor,
+    video_exports,
+    video_media,
+    video_music,
+    video_repurpose,
+    video_subtitles,
+    video_thumbnails,
+    video_voice,
 )
 from app.services.publisher.registry import _REAL_PLATFORMS
 from app.services.scheduler import scheduler_loop
@@ -76,6 +86,21 @@ app.include_router(business_profile.router)
 app.include_router(planner.router)
 app.include_router(ads.router)
 app.include_router(contact.router)
+app.include_router(video.router)
+# Registered separately from `video.router`: this one is public by design (a
+# social platform fetches an asset with none of our credentials), and keeping
+# it on its own router stops a future auth dependency being added to the whole
+# Video Studio group and silently breaking publishing.
+app.include_router(video.storage_router)
+app.include_router(video_voice.router)
+app.include_router(video_subtitles.router)
+app.include_router(video_ai.router)
+app.include_router(video_editor.router)
+app.include_router(video_exports.router)
+app.include_router(video_media.router)
+app.include_router(video_music.router)
+app.include_router(video_thumbnails.router)
+app.include_router(video_repurpose.router)
 
 
 @app.get("/")

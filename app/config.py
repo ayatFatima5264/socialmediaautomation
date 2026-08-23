@@ -95,6 +95,86 @@ class Settings(BaseSettings):
     # The ORM models are DB-agnostic; only this URL changes between the two.
     database_url: str = "sqlite:///./social_saas.db"
 
+    # ---- Object storage (Cloudflare R2) ----------------------------------
+    # Where Video Studio keeps the bytes it produces: uploads, voice-overs,
+    # rendered videos, thumbnails. NOT the database and NOT the container's
+    # disk — Render wipes the disk on every deploy, and a rendered MP4 is two
+    # orders of magnitude larger than the images `media_assets` was sized for.
+    #
+    # The whole layer sits behind app/services/storage, so this switch is the
+    # only thing that knows which bucket vendor is in use:
+    #   "auto"     — R2 when its credentials are set, else the database
+    #   "r2"       — Cloudflare R2 (production); errors if unconfigured
+    #   "database" — bytes in Postgres. Development only; see the module docs.
+    storage_backend: str = "auto"
+
+    # From the R2 dashboard: Account ID, then an API token with Object
+    # Read & Write on the bucket. The endpoint is derived from the account id
+    # unless overridden (custom domains, S3-compatible stand-ins like MinIO).
+    r2_account_id: str | None = None
+    r2_access_key_id: str | None = None
+    r2_secret_access_key: str | None = None
+    r2_bucket: str | None = None
+    r2_endpoint: str | None = None
+    # Set when the bucket is served on a public domain (r2.dev or a custom
+    # one). Unset means the bucket stays private and reads are presigned.
+    r2_public_base_url: str | None = None
+    # Lifetime of a presigned GET, in seconds. Only used for a private bucket.
+    storage_signed_url_ttl: int = 3600
+
+    # ---- Video Studio: MVP compute limits --------------------------------
+    # Render Free is one small shared CPU. These caps are what keep a single
+    # long render from starving every other request in the process; raise them
+    # when rendering moves to a dedicated worker.
+    video_max_duration_seconds: int = 180
+    video_max_resolution_height: int = 1080
+    video_max_upload_mb: int = 200
+    video_max_concurrent_renders: int = 1
+
+    # ---- Video Studio: text-to-speech ------------------------------------
+    # "edge" is free and needs no key, and is the only option here that speaks
+    # Urdu. Keyed providers are used when selected explicitly.
+    #   edge | groq | custom
+    tts_provider: str = "edge"
+    tts_fallback_providers: list[str] = []
+    # Groq's TTS models (English / Arabic only, so not a fallback for Urdu).
+    groq_tts_model: str = "playai-tts"
+    # Hard ceiling on one synthesis request, in characters.
+    tts_max_characters: int = 5000
+
+    # ---- Video Studio: custom / self-hosted TTS ---------------------------
+    # Any server exposing OpenAI's POST /audio/speech, which is what the
+    # self-hostable open-source engines already speak — openedai-speech (Piper,
+    # Coqui XTTS), Kokoro-FastAPI, LocalAI. Setting these runs Voice Studio with
+    # no external service at all:
+    #
+    #   TTS_PROVIDER=custom
+    #   CUSTOM_TTS_BASE_URL=http://localhost:8080/v1
+    #   CUSTOM_TTS_VOICES=alloy:female:en-US,piper_asad:male:ur-PK
+    #
+    # There is no voice-catalogue route in that API, so the voices have to be
+    # named here: "id:gender:locale", comma-separated. Gender and locale are
+    # optional and default to neutral / en-US.
+    custom_tts_base_url: str | None = None
+    custom_tts_api_key: str | None = None
+    custom_tts_model: str = "tts-1"
+    custom_tts_voices: str | None = None
+    # wav | mp3 | opus | aac | flac. WAV by default because every local engine
+    # can produce it without an MP3 encoder, which a slim container may lack.
+    custom_tts_format: str = "wav"
+
+    # ---- Video Studio: transcription -------------------------------------
+    # Whisper on Groq, using the same GROQ_API_KEY as text generation.
+    #   groq | openai
+    transcription_provider: str = "groq"
+    groq_transcription_model: str = "whisper-large-v3-turbo"
+    transcription_base_url: str | None = None
+    transcription_api_key: str | None = None
+    transcription_model: str = "whisper-1"
+    # Groq's audio endpoint caps uploads; keep ours below it.
+    transcription_max_upload_mb: int = 24
+    transcription_request_timeout: float = 180.0
+
     # ---- Auth / JWT ------------------------------------------------------
     # CHANGE THIS in production (e.g. `openssl rand -hex 32`).
     jwt_secret: str = "dev-secret-change-me"

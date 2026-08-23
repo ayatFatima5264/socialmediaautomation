@@ -26,7 +26,7 @@ from app.schemas.social_account import (
     PlatformSummary,
     SocialAccountRead,
 )
-from app.services.social_accounts import oauth_state, pending
+from app.services.social_accounts import avatar, oauth_state, pending
 from app.services.social_accounts.base import (
     OAuthError,
     OAuthProvider,
@@ -204,6 +204,7 @@ async def complete_callback(db: Session, slug: str, code: str, state: str) -> Ca
 
     if len(accounts) == 1:
         repo = SocialAccountRepository(db)
+        await _cache_avatar(db, user, provider.platform, accounts[0])
         _upsert(repo, user, provider.platform, tokens=tokens, profile=accounts[0])
         logger.info(
             "Connected %s account @%s (user %s)",
@@ -245,7 +246,7 @@ def get_pending(db: Session, user: User, pending_id: str) -> PendingConnectionRe
     )
 
 
-def select_account(
+async def select_account(
     db: Session, user: User, pending_id: str, account_id: str
 ) -> SocialAccount:
     """Finish a multi-account connect: store the chosen candidate only."""
@@ -261,6 +262,7 @@ def select_account(
 
     platform = Platform(row.platform)
     repo = SocialAccountRepository(db)
+    await _cache_avatar(db, user, platform, chosen)
     account = _upsert(repo, user, platform, tokens=pending.tokens_of(row), profile=chosen)
     pending.delete(db, row)
     logger.info(
@@ -365,25 +367,47 @@ async def refresh_account(db: Session, user: User, platform: Platform) -> Social
             f"{platform.value.capitalize()} is not configured — cannot refresh.", 503
         )
 
-    if not account.refresh_token and not provider.refresh_uses_access_token:
-        raise ConnectError(
-            f"{platform.value.capitalize()} has no refresh token — reconnect it.", 400
-        )
+    tokens = OAuthTokens(
+        access_token=account.access_token, refresh_token=account.refresh_token
+    )
 
-    try:
-        # Instagram/Threads renew the long-lived access token itself.
-        token_arg = (
-            account.access_token
-            if provider.refresh_uses_access_token
-            else account.refresh_token
-        )
-        tokens = await provider.refresh(token_arg)
-    except (OAuthError, NotImplementedError) as exc:
+    # Renew the token only where the platform actually offers it. Meta's
+    # Facebook and Instagram issue a long-lived token with nothing to exchange
+    # it for; Sync used to refuse outright for them, which meant their profile —
+    # and their expiring avatar URL — could never be brought up to date.
+    renewed = False
+    if account.refresh_token or provider.refresh_uses_access_token:
+        try:
+            # Instagram/Threads renew the long-lived access token itself.
+            token_arg = (
+                account.access_token
+                if provider.refresh_uses_access_token
+                else account.refresh_token
+            )
+            tokens = await provider.refresh(token_arg)
+        except (OAuthError, NotImplementedError) as exc:
+            account.status = AccountStatus.error.value
+            repo.save(account)
+            raise ConnectError(f"Refresh failed: {exc}", 400) from exc
+        _apply_tokens(account, tokens)
+        renewed = True
+
+    # Whatever happened to the token, a sync re-reads the profile: display names
+    # change, and platform avatar URLs are signed and expire, so this is the
+    # moment to take a fresh copy of the picture.
+    read_profile = await _resync_profile(db, user, account, provider, tokens)
+
+    # With no token to renew, reading the profile *is* the health check. If that
+    # call was rejected the stored token is dead, and reporting "synced" would
+    # hide the one thing the user needs to act on.
+    if not renewed and not read_profile:
         account.status = AccountStatus.error.value
         repo.save(account)
-        raise ConnectError(f"Refresh failed: {exc}", 400) from exc
+        raise ConnectError(
+            f"{platform.value.capitalize()} rejected the stored token — reconnect it.",
+            400,
+        )
 
-    _apply_tokens(account, tokens)
     account.status = AccountStatus.connected.value
     account.last_synced_at = utcnow()
     return repo.save(account)
@@ -403,6 +427,70 @@ def disconnect(db: Session, user: User, platform: Platform) -> None:
 # --------------------------------------------------------------------------
 # Internals
 # --------------------------------------------------------------------------
+async def _cache_avatar(
+    db: Session, user: User, platform: Platform, profile: ProfileInfo
+) -> None:
+    """Swap the provider's avatar URL for a copy we host, in place on `profile`.
+
+    Platform avatar links are signed and expire — see services/social_accounts/
+    avatar.py. Doing this before `_upsert` means the row never stores a URL that
+    will 404 in a fortnight.
+    """
+    existing = SocialAccountRepository(db).get(user.id, platform)
+    profile.profile_picture = await avatar.cache_avatar(
+        db,
+        user_id=user.id,
+        url=profile.profile_picture,
+        previous=existing.profile_picture if existing else None,
+    )
+
+
+async def _resync_profile(
+    db: Session,
+    user: User,
+    account: SocialAccount,
+    provider: OAuthProvider,
+    tokens: OAuthTokens,
+) -> bool:
+    """Re-read the connected profile and copy anything that has drifted.
+
+    Returns True when the platform answered, whether or not anything changed —
+    the caller uses that as a liveness signal for the stored token.
+
+    Matched by `account_id`, never by position: one login can expose several
+    accounts (Instagram Business accounts across Pages), and taking the first
+    one would quietly rename the card to a different account. If the connected
+    account isn't in the list we leave the stored profile alone.
+    """
+    try:
+        candidates = await provider.list_accounts(tokens)
+    except (OAuthError, NotImplementedError) as exc:
+        logger.warning(
+            "Could not re-read the %s profile for user %s: %s",
+            account.platform, user.id, exc,
+        )
+        return False
+
+    fresh = next((c for c in candidates if c.account_id == account.account_id), None)
+    if fresh is None:
+        logger.info(
+            "%s account %s was not in the re-read profile list — leaving it as is",
+            account.platform, account.account_id,
+        )
+        return True
+
+    if fresh.username:
+        account.username = fresh.username
+    if fresh.display_name:
+        account.display_name = fresh.display_name
+    picture = await avatar.cache_avatar(
+        db, user_id=user.id, url=fresh.profile_picture, previous=account.profile_picture
+    )
+    if picture:
+        account.profile_picture = picture
+    return True
+
+
 def _upsert(
     repo: SocialAccountRepository,
     user: User,

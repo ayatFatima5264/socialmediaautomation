@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext.jsx'
 import { useToast } from '../context/ToastContext.jsx'
 import Logo from '../components/Logo.jsx'
 import Seo from '../components/Seo.jsx'
+import Spinner from '../components/Spinner.jsx'
 
 export default function Login() {
   const { user, login } = useAuth()
@@ -46,7 +47,8 @@ export default function Login() {
         <PasswordField value={password} onChange={(e) => setPassword(e.target.value)}
           placeholder="••••••••" autoComplete="current-password" />
       </div>
-      <button className="btn btn-primary w-full" disabled={busy}>
+      <button className="btn btn-primary w-full" disabled={busy} aria-busy={busy}>
+        {busy && <Spinner />}
         {busy ? 'Signing in…' : 'Sign in'}
       </button>
     </form>

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api, ApiError } from '../lib/api'
+import Spinner from '../components/Spinner.jsx'
 import { AuthShell } from './Login.jsx'
 
 export default function ForgotPassword() {
@@ -45,7 +46,8 @@ export default function ForgotPassword() {
               <input className="input" type="email" required value={email}
                 onChange={(e) => setEmail(e.target.value)} placeholder="you@company.com" />
             </div>
-            <button className="btn btn-primary w-full" disabled={busy}>
+            <button className="btn btn-primary w-full" disabled={busy} aria-busy={busy}>
+              {busy && <Spinner />}
               {busy ? 'Sending…' : 'Send reset link'}
             </button>
           </form>

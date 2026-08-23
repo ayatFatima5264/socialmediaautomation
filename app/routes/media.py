@@ -205,6 +205,9 @@ def get_media(token: str, db: Session = Depends(get_db)) -> Response:
             # The token addresses immutable bytes, so it can be cached hard —
             # which also keeps a platform's repeated fetches cheap.
             "Cache-Control": "public, max-age=31536000, immutable",
+            # Cached for a year and fetched both with and without an Origin —
+            # see ranged_response for why that needs Vary.
+            "Vary": "Origin",
             "Content-Length": str(asset.size_bytes),
         },
     )

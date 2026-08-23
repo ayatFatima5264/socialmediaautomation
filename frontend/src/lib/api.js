@@ -79,6 +79,43 @@ async function request(path, { method = 'GET', body, form, formData, auth = true
   return data
 }
 
+// A request that returns binary rather than JSON.
+//
+// Separate from `request` because the two differ in every step after the fetch:
+// there is no JSON to parse, the error body still IS JSON, and the caller wants
+// a Blob. Folding a `raw: true` flag into `request` would make the happy path
+// of every other call read around a branch it never takes.
+async function requestBlob(path, { method = 'GET', body, headers = {} } = {}) {
+  const opts = { method, headers: { ...headers } }
+
+  // A POST that returns a blob still has a JSON request body. Dropping it here
+  // sent the thumbnail preview as an empty POST, which the server rejected.
+  if (body !== undefined) {
+    opts.body = JSON.stringify(body)
+    opts.headers['Content-Type'] = 'application/json'
+  }
+
+  const token = getToken()
+  if (token) opts.headers['Authorization'] = `Bearer ${token}`
+
+  let res
+  try {
+    res = await fetch(`${API_BASE}${path}`, opts)
+  } catch {
+    throw new ApiError('Network error — could not reach the API server.', 0, null)
+  }
+
+  if (!res.ok) {
+    if (res.status === 401) setToken(null)
+    // The failure body is still JSON even though the success body is not, so
+    // the user gets the server's sentence rather than "500".
+    const data = await res.json().catch(() => null)
+    throw new ApiError(extractDetail(data, res.statusText), res.status, data)
+  }
+
+  return res.blob()
+}
+
 export const api = {
   // auth
   register: (body) => request('/auth/register', { method: 'POST', body, auth: false }),
@@ -270,6 +307,440 @@ export const api = {
   deleteCampaignAsset: (id, assetId) =>
     request(`/api/ads/campaigns/${id}/assets/${assetId}`, { method: 'DELETE' }),
   listRecentAssets: (limit = 12) => request(`/api/ads/assets?limit=${limit}`),
+
+  // ---- Video Studio -------------------------------------------------------
+  // What this deployment can actually do — presets, limits, whether storage is
+  // persistent, whether ffmpeg is present. The UI reads this rather than
+  // assuming, so a tool is never offered on a deployment that cannot run it.
+  videoCapabilities: () => request('/api/video/capabilities'),
+  // Returns { templates, categories } — one request, so the tab row and the
+  // grid cannot be rendered from two different snapshots of the library.
+  videoTemplates: (params = {}) => {
+    const qs = new URLSearchParams()
+    if (params.category) qs.set('category', params.category)
+    if (params.platform) qs.set('platform', params.platform)
+    if (params.search) qs.set('search', params.search)
+    if (params.ownedOnly) qs.set('owned_only', 'true')
+    const suffix = qs.toString()
+    return request(`/api/video/templates${suffix ? `?${suffix}` : ''}`)
+  },
+  // One template with its scene skeleton and caption style — what "Preview"
+  // shows, because that is what the choice actually turns on.
+  videoTemplate: (key) => request(`/api/video/templates/${key}`),
+  saveVideoTemplate: (body) =>
+    request('/api/video/templates', { method: 'POST', body }),
+  deleteVideoTemplate: (key) =>
+    request(`/api/video/templates/${key}`, { method: 'DELETE' }),
+
+  // Search, filter and paging happen in SQL — the query string carries them
+  // rather than the client filtering a full download it would outgrow.
+  listVideoProjects: (params = {}) => {
+    const qs = new URLSearchParams()
+    if (params.search) qs.set('search', params.search)
+    if (params.platform) qs.set('platform', params.platform)
+    if (params.status) qs.set('status', params.status)
+    if (params.limit) qs.set('limit', params.limit)
+    if (params.offset) qs.set('offset', params.offset)
+    const suffix = qs.toString()
+    return request(`/api/video/projects${suffix ? `?${suffix}` : ''}`)
+  },
+  getVideoProject: (id) => request(`/api/video/projects/${id}`),
+  createVideoProject: (body) =>
+    request('/api/video/projects', { method: 'POST', body }),
+  // `expected_revision` makes a save a compare-and-set: the server answers 409
+  // if the project changed in another tab since this one loaded it. Callers
+  // must handle that rather than retrying blindly.
+  updateVideoProject: (id, body) =>
+    request(`/api/video/projects/${id}`, { method: 'PATCH', body }),
+  renameVideoProject: (id, name) =>
+    request(`/api/video/projects/${id}/rename`, { method: 'POST', body: { name } }),
+  duplicateVideoProject: (id) =>
+    request(`/api/video/projects/${id}/duplicate`, { method: 'POST' }),
+  deleteVideoProject: (id) =>
+    request(`/api/video/projects/${id}`, { method: 'DELETE' }),
+
+  // ---- Voice Studio -------------------------------------------------------
+  // Works with no project: nothing here takes a project id except `attach`,
+  // which is the explicit "Add to Project" action.
+  voiceCatalogue: () => request('/api/video/voice/catalogue'),
+  // Speaks the first ~240 characters and stores NOTHING — the audio comes back
+  // base64 in the JSON. A preview the user rejects must not leave a file in
+  // their library.
+  previewVoice: (body) => request('/api/video/voice/preview', { method: 'POST', body }),
+  generateVoice: (body) => request('/api/video/voice/generate', { method: 'POST', body }),
+  listVoiceTakes: (params = {}) => {
+    const qs = new URLSearchParams()
+    if (params.projectId) qs.set('project_id', params.projectId)
+    if (params.limit) qs.set('limit', params.limit)
+    const suffix = qs.toString()
+    return request(`/api/video/voice/takes${suffix ? `?${suffix}` : ''}`)
+  },
+  // Splits a script into the paragraph blocks that can be regenerated one at a
+  // time. Server-side so the studio and the backend agree on where a section
+  // starts — two implementations of "what is a paragraph" would put takes out
+  // of step with the text they came from.
+  voiceSegments: (text) =>
+    request('/api/video/voice/segments', { method: 'POST', body: { text } }),
+  attachVoiceTake: (assetId, projectId) =>
+    request(`/api/video/voice/${assetId}/attach?project_id=${projectId}`, {
+      method: 'POST',
+    }),
+  deleteVoiceTake: (assetId) =>
+    request(`/api/video/voice/${assetId}`, { method: 'DELETE' }),
+  // Returns a Blob, not JSON. The download route needs the bearer token, so a
+  // plain <a href> cannot fetch it — the caller turns this into an object URL
+  // and clicks it. See `downloadBlob` in lib/video/download.js.
+  downloadVoiceTake: (assetId, format = 'mp3') =>
+    requestBlob(`/api/video/voice/${assetId}/download?format=${format}`),
+
+  // ---- Subtitle Studio ----------------------------------------------------
+  // Independent of projects: only `attachSubtitles` takes a project id.
+  //
+  // Every edit sends the whole track and gets the whole track back. That is
+  // deliberate — a split or a merge renumbers every cue after it, so a per-cue
+  // patch API would be describing a track the client no longer has.
+  subtitleStyles: () => request('/api/video/subtitles/styles'),
+  subtitleFormats: () => request('/api/video/subtitles/formats'),
+
+  transcribeMedia: (file, options = {}) => {
+    const fd = new FormData()
+    fd.append('file', file)
+    if (options.language) fd.append('language', options.language)
+    if (options.translateToEnglish) fd.append('translate_to_english', 'true')
+    if (options.styleKey) fd.append('style_key', options.styleKey)
+    if (options.storeSource === false) fd.append('store_source', 'false')
+    return request('/api/video/subtitles/transcribe', { method: 'POST', formData: fd })
+  },
+  subtitlesFromScript: (body) =>
+    request('/api/video/subtitles/from-script', { method: 'POST', body }),
+  importSubtitleFile: (file) => {
+    const fd = new FormData()
+    fd.append('file', file)
+    return request('/api/video/subtitles/import', { method: 'POST', formData: fd })
+  },
+
+  normalizeCues: (cues) =>
+    request('/api/video/subtitles/normalize', { method: 'POST', body: { cues } }),
+  updateCue: (cues, index, patch) =>
+    request('/api/video/subtitles/edit/update', { method: 'POST', body: { cues, index, ...patch } }),
+  insertCue: (cues, body = {}) =>
+    request('/api/video/subtitles/edit/insert', { method: 'POST', body: { cues, ...body } }),
+  deleteCue: (cues, index) =>
+    request('/api/video/subtitles/edit/delete', { method: 'POST', body: { cues, index } }),
+  splitCue: (cues, index, at = {}) =>
+    request('/api/video/subtitles/edit/split', { method: 'POST', body: { cues, index, ...at } }),
+  mergeCues: (cues, indices) =>
+    request('/api/video/subtitles/edit/merge', { method: 'POST', body: { cues, indices } }),
+  shiftCues: (cues, offsetSeconds) =>
+    request('/api/video/subtitles/edit/shift', {
+      method: 'POST',
+      body: { cues, offset_seconds: offsetSeconds },
+    }),
+  searchReplaceCues: (cues, body) =>
+    request('/api/video/subtitles/edit/search-replace', { method: 'POST', body: { cues, ...body } }),
+
+  exportSubtitles: (body) =>
+    request('/api/video/subtitles/export', { method: 'POST', body }),
+  listSubtitleFiles: (params = {}) => {
+    const qs = new URLSearchParams()
+    if (params.projectId) qs.set('project_id', params.projectId)
+    const suffix = qs.toString()
+    return request(`/api/video/subtitles/files${suffix ? `?${suffix}` : ''}`)
+  },
+  // Returns a Blob — the download route needs the bearer token, so a plain
+  // <a href> cannot fetch it.
+  downloadSubtitleFile: (assetId, format = 'srt') =>
+    requestBlob(`/api/video/subtitles/files/${assetId}/download?format=${format}`),
+  deleteSubtitleFile: (assetId) =>
+    request(`/api/video/subtitles/files/${assetId}`, { method: 'DELETE' }),
+
+  attachSubtitles: (body) =>
+    request('/api/video/subtitles/attach', { method: 'POST', body }),
+  listSubtitleTracks: (projectId) =>
+    request(`/api/video/subtitles/tracks?project_id=${projectId}`),
+
+  listVideoAssets: (params = {}) => {
+    const qs = new URLSearchParams()
+    if (params.kind) qs.set('kind', params.kind)
+    if (params.projectId) qs.set('project_id', params.projectId)
+    if (params.limit) qs.set('limit', params.limit)
+    const suffix = qs.toString()
+    return request(`/api/video/assets${suffix ? `?${suffix}` : ''}`)
+  },
+  deleteVideoAsset: (id) =>
+    request(`/api/video/assets/${id}`, { method: 'DELETE' }),
+
+  // ---- Export, formats and publishing -------------------------------------
+  // The manifest is cheap metadata — it says what is downloadable and, when
+  // something is not, the next action to take. Files are only produced when
+  // one is actually asked for.
+  exportManifest: (projectId) =>
+    request(`/api/video/projects/${projectId}/exports`),
+  downloadExport: (projectId, kind) =>
+    requestBlob(`/api/video/projects/${projectId}/exports/${kind}`),
+
+  // Converting creates a new project; the original is never modified.
+  projectFormats: (projectId) =>
+    request(`/api/video/projects/${projectId}/formats`),
+  convertProject: (projectId, body) =>
+    request(`/api/video/projects/${projectId}/convert`, { method: 'POST', body }),
+
+  // Publishing *prepares* — it creates a draft post and returns where to
+  // review it. Nothing here reaches a platform.
+  publishTargets: (projectId) =>
+    request(`/api/video/projects/${projectId}/publish/targets`),
+  prepareVideoPost: (projectId, body) =>
+    request(`/api/video/projects/${projectId}/publish`, { method: 'POST', body }),
+
+  // ---- Thumbnail Studio ---------------------------------------------------
+  // `previewThumbnail` and `downloadThumbnail` hit the same renderer on the
+  // server, so what is on screen is the file. Preview returns a Blob and
+  // stores nothing.
+  thumbnailOptions: () => request('/api/video/thumbnails/options'),
+  thumbnailDesign: (body) =>
+    request('/api/video/thumbnails/design', { method: 'POST', body }),
+  // Generates a picture and stores it as a real asset, then returns it — the
+  // studio sets it as the background, which keeps every other control the user
+  // has already set.
+  generateThumbnailBackground: (prompt, format = 'youtube') =>
+    request('/api/video/thumbnails/background', {
+      method: 'POST',
+      body: { prompt, format },
+    }),
+  thumbnailVariations: (design, count = 4) =>
+    request('/api/video/thumbnails/variations', {
+      method: 'POST',
+      body: { design, count },
+    }),
+  previewThumbnail: (design, { scale = 1, format = 'png' } = {}) =>
+    requestBlob('/api/video/thumbnails/preview', {
+      method: 'POST',
+      body: { design, scale, format },
+    }),
+  saveThumbnail: (body) =>
+    request('/api/video/thumbnails', { method: 'POST', body }),
+  listThumbnails: (params = {}) => {
+    const qs = new URLSearchParams()
+    if (params.projectId) qs.set('project_id', params.projectId)
+    const suffix = qs.toString()
+    return request(`/api/video/thumbnails${suffix ? `?${suffix}` : ''}`)
+  },
+  attachThumbnail: (id, projectId) =>
+    request(`/api/video/thumbnails/${id}/attach?project_id=${projectId}`, {
+      method: 'POST',
+    }),
+  downloadThumbnail: (id, format = 'png') =>
+    requestBlob(`/api/video/thumbnails/${id}/download?format=${format}`),
+  deleteThumbnail: (id) =>
+    request(`/api/video/thumbnails/${id}`, { method: 'DELETE' }),
+
+  // ---- Smart Repurpose ----------------------------------------------------
+  // Three steps, and the middle one is a human: analyse proposes, the user
+  // edits, and only then does `createShorts` make projects. Nothing here
+  // renders and nothing here publishes.
+  repurposeTargets: () => request('/api/video/repurpose/targets'),
+  analyzeForRepurpose: (assetId, body = {}) =>
+    request('/api/video/repurpose/analyze', {
+      method: 'POST',
+      body: { asset_id: assetId, ...body },
+    }),
+  createShorts: (body) =>
+    request('/api/video/repurpose/shorts', { method: 'POST', body }),
+
+  // ---- AI video creation --------------------------------------------------
+  // The pipeline is one call per stage, and the expensive stages are one call
+  // per *scene*. That is not chattiness for its own sake: generating eight
+  // images inside one request is a request that times out, and "5 of 8
+  // visuals" is a truthful progress report where a spinner is not.
+  aiVideoOptions: () => request('/api/video/ai/options'),
+  // A script with no project attached, so the user can read it before
+  // committing to anything.
+  writeVideoScript: (brief) =>
+    request('/api/video/ai/script', { method: 'POST', body: brief }),
+  // Creates the real project, its script and its storyboard. Stops there.
+  createAIVideoProject: (brief) =>
+    request('/api/video/ai/projects', { method: 'POST', body: brief }),
+
+  getVideoScript: (projectId) => request(`/api/video/projects/${projectId}/script`),
+  saveVideoScript: (projectId, script, expectedRevision) =>
+    request(`/api/video/projects/${projectId}/script`, {
+      method: 'PUT',
+      body: { script, expected_revision: expectedRevision ?? null },
+    }),
+  regenerateVideoScript: (projectId, brief) =>
+    request(`/api/video/projects/${projectId}/script/regenerate`, {
+      method: 'POST',
+      body: brief ?? null,
+    }),
+  // Rewrites one part of a script and returns the whole updated document.
+  // Projectless, like writeVideoScript: whether the result gets saved onto a
+  // project is the caller's business, so Script Studio and the AI flow share it.
+  rewriteScriptSection: (script, section, pointId = '', brief = null) =>
+    request('/api/video/ai/script/section', {
+      method: 'POST',
+      body: { script, section, point_id: pointId || '', brief },
+    }),
+
+  getStoryboard: (projectId) => request(`/api/video/projects/${projectId}/scenes`),
+  generateScenes: (projectId, body = {}) =>
+    request(`/api/video/projects/${projectId}/scenes/generate`, { method: 'POST', body }),
+  updateScene: (projectId, sceneId, patch) =>
+    request(`/api/video/projects/${projectId}/scenes/${sceneId}`, {
+      method: 'PATCH',
+      body: patch,
+    }),
+  reorderScenes: (projectId, sceneIds) =>
+    request(`/api/video/projects/${projectId}/scenes/reorder`, {
+      method: 'POST',
+      body: { scene_ids: sceneIds },
+    }),
+  deleteScene: (projectId, sceneId) =>
+    request(`/api/video/projects/${projectId}/scenes/${sceneId}`, { method: 'DELETE' }),
+
+  generateSceneVisual: (projectId, sceneId, body = {}) =>
+    request(`/api/video/projects/${projectId}/scenes/${sceneId}/visual`, {
+      method: 'POST',
+      body,
+    }),
+  generateSceneVoice: (projectId, sceneId, body = {}) =>
+    request(`/api/video/projects/${projectId}/scenes/${sceneId}/voice`, {
+      method: 'POST',
+      body,
+    }),
+  buildAISubtitles: (projectId, body = {}) =>
+    request(`/api/video/projects/${projectId}/ai/subtitles`, { method: 'POST', body }),
+  // The last step: scenes become the project's timeline, and the editor opens
+  // it like any other.
+  buildAITimeline: (projectId, body = {}) =>
+    request(`/api/video/projects/${projectId}/ai/build`, { method: 'POST', body }),
+
+  // ---- Timeline editor ----------------------------------------------------
+  // The editor sends *operations*, not results. `timelineOp` posts one edit
+  // and gets the whole new document back, so there is one implementation of
+  // the trim/split/overlap rules and it is the one the renderer reads. A
+  // client that computed its own result would be a second rule engine, and the
+  // two would disagree the first time either changed.
+  getTimeline: (projectId) => request(`/api/video/projects/${projectId}/timeline`),
+  // Full replacement — autosave, undo and redo. Undo is a document swap rather
+  // than an inverse operation: a stack of documents cannot drift.
+  saveTimeline: (projectId, body) =>
+    request(`/api/video/projects/${projectId}/timeline`, { method: 'PUT', body }),
+  timelineOp: (projectId, body) =>
+    request(`/api/video/projects/${projectId}/timeline/op`, { method: 'POST', body }),
+
+  // ---- Rendering ----------------------------------------------------------
+  // 202 and a job id; everything after that is polling `getRender`.
+  startRender: (projectId, body = {}) =>
+    request(`/api/video/projects/${projectId}/render`, { method: 'POST', body }),
+  listRenders: (projectId) => request(`/api/video/projects/${projectId}/renders`),
+  getRender: (renderId) => request(`/api/video/renders/${renderId}`),
+  cancelRender: (renderId) =>
+    request(`/api/video/renders/${renderId}/cancel`, { method: 'POST' }),
+  // A new attempt, not a reopened one — it snapshots the timeline as it is
+  // now, which is what makes "fix the missing clip, then retry" work.
+  retryRender: (renderId) =>
+    request(`/api/video/renders/${renderId}/retry`, { method: 'POST' }),
+  downloadRender: (renderId) =>
+    requestBlob(`/api/video/renders/${renderId}/download`),
+
+  // ---- Media Library ------------------------------------------------------
+  // The library screen and every picker dialog go through these. `filter` is a
+  // tab key ("images", "videos"), not a storage kind — the mapping is the
+  // server's, so regrouping the tabs does not need a frontend release.
+  mediaLibrary: (params = {}) => {
+    const qs = new URLSearchParams()
+    if (params.filter && params.filter !== 'all') qs.set('filter', params.filter)
+    if (params.search) qs.set('search', params.search)
+    if (params.projectId) qs.set('project_id', params.projectId)
+    if (params.unassigned) qs.set('unassigned', 'true')
+    if (params.sort) qs.set('sort', params.sort)
+    if (params.limit) qs.set('limit', params.limit)
+    if (params.offset) qs.set('offset', params.offset)
+    const suffix = qs.toString()
+    return request(`/api/video/media${suffix ? `?${suffix}` : ''}`)
+  },
+  // Multipart, so `formData` — the browser sets the boundary itself.
+  // De-duplicated server-side: the same file twice returns the first row.
+  //
+  // Named apart from the composer's `uploadMedia` deliberately: that one puts
+  // an image in `media_assets` so a platform can fetch it by URL, this one
+  // puts a file in Video Studio's object storage. They are different stores
+  // for different jobs, and a shared name here silently sends one feature's
+  // uploads to the other's endpoint.
+  uploadVideoMedia: (file, { kind = 'upload', title, projectId } = {}) => {
+    const fd = new FormData()
+    fd.append('file', file)
+    fd.append('kind', kind)
+    if (title) fd.append('title', title)
+    if (projectId) fd.append('project_id', projectId)
+    return request('/api/video/media/upload', { method: 'POST', formData: fd })
+  },
+  renameMedia: (id, title) =>
+    request(`/api/video/media/${id}`, { method: 'PATCH', body: { title } }),
+  attachMedia: (id, projectId) =>
+    request(`/api/video/media/${id}/attach?project_id=${projectId}`, { method: 'POST' }),
+  detachMedia: (id) =>
+    request(`/api/video/media/${id}/detach`, { method: 'POST' }),
+  // `force` is the user having seen the list of what uses this file and said
+  // yes anyway. Without it the server answers 409 and names them.
+  deleteMedia: (id, { force = false } = {}) =>
+    request(`/api/video/media/${id}${force ? '?force=true' : ''}`, { method: 'DELETE' }),
+
+  listComposerUploads: (params = {}) => {
+    const qs = new URLSearchParams()
+    if (params.search) qs.set('search', params.search)
+    if (params.limit) qs.set('limit', params.limit)
+    if (params.offset) qs.set('offset', params.offset)
+    const suffix = qs.toString()
+    return request(`/api/video/media/uploads${suffix ? `?${suffix}` : ''}`)
+  },
+  importComposerUpload: (mediaId, projectId) =>
+    request('/api/video/media/uploads/import', {
+      method: 'POST',
+      body: { media_id: mediaId, project_id: projectId ?? null },
+    }),
+
+  // ---- Music Library ------------------------------------------------------
+  musicLibrary: (params = {}) => {
+    const qs = new URLSearchParams()
+    if (params.search) qs.set('search', params.search)
+    if (params.mood) qs.set('mood', params.mood)
+    if (params.genre) qs.set('genre', params.genre)
+    if (params.duration) qs.set('duration', params.duration)
+    if (params.source) qs.set('source', params.source)
+    if (params.limit) qs.set('limit', params.limit)
+    if (params.offset) qs.set('offset', params.offset)
+    const suffix = qs.toString()
+    return request(`/api/video/music${suffix ? `?${suffix}` : ''}`)
+  },
+  musicFacets: () => request('/api/video/music/facets'),
+  uploadMusic: (file, fields = {}) => {
+    const fd = new FormData()
+    fd.append('file', file)
+    // Always sent, never defaulted: the server refuses an upload without it,
+    // and a client that quietly supplied `true` would make the statement
+    // meaningless. See TrackUpload in app/schemas/video_music.py.
+    fd.append('confirmed_rights', fields.confirmedRights ? 'true' : 'false')
+    for (const [key, value] of [
+      ['title', fields.title],
+      ['artist', fields.artist],
+      ['mood', fields.mood],
+      ['genre', fields.genre],
+      ['source_url', fields.sourceUrl],
+      ['attribution', fields.attribution],
+    ]) {
+      if (value) fd.append(key, value)
+    }
+    return request('/api/video/music/upload', { method: 'POST', formData: fd })
+  },
+  // 403 when the track's licence does not allow commercial use — the rule is
+  // the server's, and the UI reports what it says rather than deciding.
+  addMusicToProject: (trackId, body) =>
+    request(`/api/video/music/${trackId}/add`, { method: 'POST', body }),
+  deleteMusicTrack: (id) =>
+    request(`/api/video/music/${id}`, { method: 'DELETE' }),
+  projectMusicCredits: (projectId) =>
+    request(`/api/video/music/credits/${projectId}`),
 
   // business profile + onboarding
   getBusinessProfile: () => request('/api/business-profile'),

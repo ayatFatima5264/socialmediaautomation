@@ -60,17 +60,113 @@ def get_db() -> Generator[Session, None, None]:
         db.close()
 
 
+def _create_all_tables() -> list:
+    """The tables `create_all` is allowed to manage.
+
+    Everything that predates Alembic stays on `create_all`, which is how this
+    app has always booted: it creates missing tables and is a no-op afterwards.
+    Ripping that out would risk an existing deploy for no gain.
+
+    Tables added from Video Studio onwards opt OUT by declaring
+    ``__table_args__ = {"info": {"alembic_only": True}}``. They are created by a
+    real migration instead — running both would mean `create_all` silently won
+    the race and the migration then failed on an existing table.
+
+    Read straight off `metadata.tables` rather than off `sorted_tables`.
+    Sorting the WHOLE schema warns about the foreign-key cycles inside Video
+    Studio (a project names its thumbnail asset, an asset names its project)
+    and then gives up on ordering those constraints — for tables this function
+    is about to filter out anyway. `create_all` topologically sorts whatever
+    list it is handed, and the legacy tables it gets have no cycle.
+    """
+    return [
+        table
+        for table in Base.metadata.tables.values()
+        if not table.info.get("alembic_only")
+    ]
+
+
 def init_db() -> None:
-    """Create tables for all imported models. Called on app startup.
+    """Bring the schema up to date. Called on app startup.
 
     Importing app.models here guarantees every model is registered on
-    Base.metadata before create_all runs.
+    Base.metadata before anything reads it.
+
+    Order matters: the legacy tables are created first because the Video Studio
+    migration puts foreign keys on `users`, and `users` is a create_all table.
     """
     import app.models  # noqa: F401  (registers models)
 
-    Base.metadata.create_all(bind=engine)
+    Base.metadata.create_all(bind=engine, tables=_create_all_tables())
     _run_lightweight_migrations()
+    run_migrations()
     encrypt_existing_tokens()
+    _start_video_studio()
+
+
+def _start_video_studio() -> None:
+    """Bring Video Studio's tables to a usable state on boot.
+
+    Two things, both idempotent: synchronise the built-in templates, and fail
+    any render left running by a process that died (a deploy, an out-of-memory
+    kill) so a project cannot sit at 40% forever.
+
+    Wrapped in a try/except for the same reason `run_migrations` is: if the
+    Video Studio tables are missing because a migration did not apply, the rest
+    of the API — publishing, scheduling, the planner — must still come up.
+    """
+    from app.services.video import renders, templates
+
+    try:
+        with SessionLocal() as db:
+            templates.sync_system_templates(db)
+            renders.recover_interrupted(db)
+    except Exception:
+        logger.exception(
+            "Video Studio startup tasks failed. Templates may be missing and "
+            "interrupted renders may still show as running; the rest of the "
+            "API is unaffected."
+        )
+
+
+def run_migrations() -> None:
+    """Run Alembic to head, in-process, on startup.
+
+    The app deploys as a single container with no release phase, so there is no
+    other moment a migration could run. Alembic is safe to call on every boot:
+    it reads `alembic_version`, and a database already at head does nothing.
+
+    A failure here is logged and swallowed rather than raised. A migration that
+    cannot apply is a serious problem, but taking the whole API down with it
+    would also take down publishing, scheduling and every existing feature —
+    for a change that only affects Video Studio. The Video Studio routes
+    surface the missing tables as a clear error instead.
+    """
+    from alembic import command
+    from alembic.config import Config
+
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parent.parent
+    ini = root / "alembic.ini"
+    if not ini.exists():  # pragma: no cover - packaging problem
+        logger.warning("alembic.ini not found at %s; skipping migrations", ini)
+        return
+
+    cfg = Config(str(ini))
+    cfg.set_main_option("script_location", str(root / "migrations"))
+    # The URL is taken from settings, never from the ini file, so migrations
+    # and the app can never point at different databases.
+    cfg.set_main_option("sqlalchemy.url", DATABASE_URL.replace("%", "%%"))
+
+    try:
+        command.upgrade(cfg, "head")
+        logger.info("Database migrations are up to date")
+    except Exception:
+        logger.exception(
+            "Alembic migrations failed. Video Studio tables may be missing; "
+            "the rest of the API is unaffected."
+        )
 
 
 # Columns added to a table after its first release. `create_all` only creates

@@ -6,6 +6,7 @@ import { useToast } from '../context/ToastContext.jsx'
 import PlatformIcon from './PlatformIcon.jsx'
 import PinterestBoardSelect from './PinterestBoardSelect.jsx'
 import AccountStatusBadge from './AccountStatusBadge.jsx'
+import Spinner from './Spinner.jsx'
 
 // Pinterest stores the user's default board on the account, so Pins scheduled
 // without an explicit board still have somewhere to go. Shown only on a healthy
@@ -43,15 +44,27 @@ function DefaultBoard({ account, onSaved }) {
 }
 
 // Connected account's avatar with the platform chip badged on its corner. Falls
-// back to the plain platform chip when there's no profile picture.
+// back to the plain platform chip when there's no profile picture — and also
+// when the one we have won't load, so an avatar the backend couldn't copy shows
+// the platform mark instead of the browser's broken-image icon.
 function AccountAvatar({ platform, account }) {
-  if (account?.profile_picture) {
+  const src = account?.profile_picture
+  const [broken, setBroken] = useState(false)
+  // A reconnect can hand us a different picture; that one deserves its own try.
+  const [triedSrc, setTriedSrc] = useState(src)
+  if (triedSrc !== src) {
+    setTriedSrc(src)
+    setBroken(false)
+  }
+
+  if (src && !broken) {
     return (
       <span className="relative shrink-0">
         <img
-          src={account.profile_picture}
+          src={src}
           alt=""
           className="h-11 w-11 rounded-full object-cover"
+          onError={() => setBroken(true)}
         />
         <span className="absolute -bottom-1 -right-1 rounded-md ring-2 ring-surface">
           <PlatformIcon platform={platform} size={18} />
@@ -60,13 +73,6 @@ function AccountAvatar({ platform, account }) {
     )
   }
   return <PlatformIcon platform={platform} size={44} />
-}
-
-// A tiny inline spinner (no extra deps), used inside buttons while processing.
-function Spinner() {
-  return (
-    <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
-  )
 }
 
 // One platform card. Fixed height across the grid (h-full + flex column with the

@@ -1,3 +1,4 @@
+import { Suspense, lazy } from 'react'
 import { Navigate, Route, Routes } from 'react-router-dom'
 import { useAuth } from './context/AuthContext.jsx'
 import Layout from './components/Layout.jsx'
@@ -22,6 +23,21 @@ import AdToolRoute from './pages/ads/AdToolRoute.jsx'
 import CampaignBuilder from './pages/ads/CampaignBuilder.jsx'
 import CampaignDetail from './pages/ads/CampaignDetail.jsx'
 import CampaignList from './pages/ads/CampaignList.jsx'
+// Video Studio — a self-contained module for producing video. Same structure
+// as AI Ads Studio: a registry drives the cards, the sidebar and the routes,
+// and one dynamic route resolves every tool.
+// Loaded on demand: Video Studio is the largest module in the app, and most
+// visits never open it. Eager-importing it put every editor, studio and
+// FFmpeg-adjacent helper into the entry chunk that the marketing pages and
+// the scheduler also pay for.
+const VideoStudio = lazy(() => import('./pages/video/VideoStudio.jsx'))
+const VideoProjects = lazy(() => import('./pages/video/Projects.jsx'))
+const VideoProjectDetail = lazy(() => import('./pages/video/ProjectDetail.jsx'))
+const CreateVideo = lazy(() => import('./pages/video/CreateVideo.jsx'))
+const VideoToolRoute = lazy(() => import('./pages/video/VideoToolRoute.jsx'))
+const VideoEditor = lazy(() => import('./pages/video/Editor.jsx'))
+const AIVideo = lazy(() => import('./pages/video/AIVideo.jsx'))
+const ExportProject = lazy(() => import('./pages/video/ExportProject.jsx'))
 // Public marketing website — accessible without authentication.
 import PublicLayout from './components/marketing/PublicLayout.jsx'
 import Home from './pages/marketing/Home.jsx'
@@ -59,6 +75,9 @@ function RequireOnboarding({ children }) {
 
 export default function App() {
   return (
+    // The fallback only shows while a lazily-loaded module is in flight,
+    // which in practice is the first navigation into Video Studio.
+    <Suspense fallback={<FullScreenLoader message="Loading…" />}>
     <Routes>
       {/* ---- Public marketing website (no auth required) ---------------- */}
       <Route element={<PublicLayout />}>
@@ -123,10 +142,27 @@ export default function App() {
         <Route path="/ads/campaigns/:id" element={<CampaignDetail />} />
         <Route path="/ads/:slug" element={<AdToolRoute />} />
 
+        {/* ---- Video Studio -------------------------------------------
+            Static segments outrank the dynamic one in React Router's route
+            ranking, so /video/create resolves to the create page and never to
+            the tool placeholder. Tool slugs come from the registry in
+            lib/video/tools.js; one entry there is a routed page here. */}
+        <Route path="/video" element={<VideoStudio />} />
+        <Route path="/video/projects" element={<VideoProjects />} />
+        <Route path="/video/projects/:id" element={<VideoProjectDetail />} />
+        {/* The editor edits one project, so it hangs off the project's own
+            path. /video/editor is the picker that leads here. */}
+        <Route path="/video/projects/:id/edit" element={<VideoEditor />} />
+        <Route path="/video/projects/:id/export" element={<ExportProject />} />
+        <Route path="/video/create" element={<CreateVideo />} />
+        <Route path="/video/ai" element={<AIVideo />} />
+        <Route path="/video/:slug" element={<VideoToolRoute />} />
+
         <Route path="/accounts" element={<Accounts />} />
         <Route path="/settings" element={<Settings />} />
         <Route path="/business-profile" element={<BusinessProfile />} />
       </Route>
     </Routes>
+    </Suspense>
   )
 }

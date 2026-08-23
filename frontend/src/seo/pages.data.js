@@ -13,6 +13,7 @@
 // ---------------------------------------------------------------------------
 
 import { ADS_BASE_PATH, adsRouteTitle, isAdsPath } from '../lib/ads/tools.js'
+import { VIDEO_BASE_PATH, isVideoPath, videoRouteTitle } from '../lib/video/tools.js'
 
 // Brand facts needed at build time. Kept here (rather than in config/site.js)
 // because that module reads import.meta.env and cannot be loaded by Node.
@@ -157,6 +158,7 @@ export const PRIVATE_PAGE_TITLES = {
   '/reset-password': 'Choose a New Password',
   // AI Ads Studio's own pages are titled by adsRouteTitle() below, since its
   // tool routes are generated from a registry and its campaign routes carry ids.
+  // Video Studio does the same through videoRouteTitle(), for the same reason.
 }
 
 /**
@@ -166,7 +168,7 @@ export const PRIVATE_PAGE_TITLES = {
  * /ads/campaigns/42 can never appear in a fixed map.
  */
 export function privatePageTitle(path) {
-  return PRIVATE_PAGE_TITLES[path] ?? adsRouteTitle(path) ?? null
+  return PRIVATE_PAGE_TITLES[path] ?? adsRouteTitle(path) ?? videoRouteTitle(path) ?? null
 }
 
 // Routes behind authentication — excluded from the sitemap and disallowed in
@@ -178,6 +180,9 @@ export const PRIVATE_ROUTES = [
   // One entry covers the whole AI Ads Studio subtree: a robots.txt Disallow is
   // a prefix rule, so "/ads" also disallows /ads/product-ads and every campaign.
   ADS_BASE_PATH,
+  // Likewise one entry for the whole Video Studio subtree — /video also
+  // disallows /video/projects/42 and every tool page.
+  VIDEO_BASE_PATH,
   '/create',
   '/scheduler',
   '/history',
@@ -200,5 +205,5 @@ export const PRIVATE_ROUTES = [
  * like /ads/carousel-ads is still forced noindex.
  */
 export function isPrivatePath(path) {
-  return PRIVATE_ROUTES.includes(path) || isAdsPath(path)
+  return PRIVATE_ROUTES.includes(path) || isAdsPath(path) || isVideoPath(path)
 }

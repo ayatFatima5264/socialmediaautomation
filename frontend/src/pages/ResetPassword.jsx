@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { api, ApiError } from '../lib/api'
 import { useToast } from '../context/ToastContext.jsx'
+import Spinner from '../components/Spinner.jsx'
 import { AuthShell, PasswordField } from './Login.jsx'
 
 export default function ResetPassword() {
@@ -55,7 +56,8 @@ export default function ResetPassword() {
           <PasswordField value={confirm} onChange={(e) => setConfirm(e.target.value)}
             placeholder="Re-enter password" autoComplete="new-password" />
         </div>
-        <button className="btn btn-primary w-full" disabled={busy}>
+        <button className="btn btn-primary w-full" disabled={busy} aria-busy={busy}>
+          {busy && <Spinner />}
           {busy ? 'Resetting…' : 'Reset password'}
         </button>
       </form>

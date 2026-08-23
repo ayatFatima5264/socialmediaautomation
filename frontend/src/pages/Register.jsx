@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link, Navigate, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
 import { useToast } from '../context/ToastContext.jsx'
+import Spinner from '../components/Spinner.jsx'
 import { AuthShell, PasswordField } from './Login.jsx'
 
 export default function Register() {
@@ -51,7 +52,8 @@ export default function Register() {
           <PasswordField value={password} onChange={(e) => setPassword(e.target.value)}
             placeholder="At least 8 characters" autoComplete="new-password" />
         </div>
-        <button className="btn btn-primary w-full" disabled={busy}>
+        <button className="btn btn-primary w-full" disabled={busy} aria-busy={busy}>
+          {busy && <Spinner />}
           {busy ? 'Creating…' : 'Create account'}
         </button>
       </form>

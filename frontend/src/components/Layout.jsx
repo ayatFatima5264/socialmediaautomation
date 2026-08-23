@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
+import { VIDEO_NAV } from '../lib/video/tools.js'
 import Logo from './Logo.jsx'
 import Seo from './Seo.jsx'
 
@@ -11,6 +12,12 @@ const NAV = [
   // No `end`: the item stays active on /ads/product-ads and every other page
   // inside the module, which is what makes it read as a section.
   { to: '/ads', label: 'AI Ads Studio', icon: '◈' },
+  // Video Studio owns nine destinations, which is too many to sit flat in a
+  // sidebar beside eight other top-level items. `children` makes it a section
+  // that expands, and it expands automatically whenever the current route is
+  // inside it — so arriving from a link never leaves the nav looking collapsed
+  // while the page it points at is open.
+  { to: '/video', label: 'Video Studio', icon: '▶', children: VIDEO_NAV },
   { to: '/create', label: 'Create Post', icon: '✍' },
   { to: '/scheduler', label: 'Scheduler', icon: '◷' },
   { to: '/history', label: 'Post History', icon: '≡' },
@@ -30,21 +37,89 @@ function Brand() {
   )
 }
 
-function NavItems({ onNavigate }) {
+// A top-level item that owns a sub-nav. The section is expanded whenever the
+// current route is inside it, and the user can also toggle it by hand — so
+// their choice holds while they work inside the section, and navigating in
+// from elsewhere still reveals where they landed.
+function NavSection({ item, onNavigate }) {
+  const location = useLocation()
+  const inSection =
+    location.pathname === item.to || location.pathname.startsWith(`${item.to}/`)
+  const [open, setOpen] = useState(inSection)
+
+  useEffect(() => {
+    if (inSection) setOpen(true)
+  }, [inSection])
+
   return (
-    <nav className="flex flex-col gap-1">
-      {NAV.map((item) => (
+    <div>
+      <div className={`nav-link gap-0 pr-1 ${inSection ? 'nav-link-active' : ''}`}>
         <NavLink
-          key={item.to}
           to={item.to}
-          end={item.end}
           onClick={onNavigate}
-          className={({ isActive }) => `nav-link ${isActive ? 'nav-link-active' : ''}`}
+          className="flex min-w-0 flex-1 items-center gap-3 text-inherit"
         >
           <span className="w-5 shrink-0 text-center text-base">{item.icon}</span>
           <span className="truncate">{item.label}</span>
         </NavLink>
-      ))}
+        <button
+          type="button"
+          onClick={() => setOpen((o) => !o)}
+          aria-expanded={open}
+          aria-label={`${open ? 'Collapse' : 'Expand'} ${item.label}`}
+          className="grid h-6 w-6 shrink-0 place-items-center rounded-md text-xs transition-transform hover:bg-accent-soft"
+          style={{ transform: open ? 'rotate(90deg)' : 'none' }}
+        >
+          ›
+        </button>
+      </div>
+
+      {open && (
+        // The rail is what says "these belong to the item above" without
+        // indenting so far that the labels lose their left edge.
+        <div className="mt-1 ml-[1.65rem] flex flex-col gap-0.5 border-l border-line pl-2">
+          {item.children.map((child) => (
+            <NavLink
+              key={child.to}
+              to={child.to}
+              end={child.end}
+              onClick={onNavigate}
+              className={({ isActive }) =>
+                `rounded-lg px-3 py-1.5 text-[13px] font-medium transition-colors ${
+                  isActive
+                    ? 'bg-accent-soft text-accent'
+                    : 'text-muted hover:bg-inset hover:text-body'
+                }`
+              }
+            >
+              {child.label}
+            </NavLink>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function NavItems({ onNavigate }) {
+  return (
+    <nav className="flex flex-col gap-1">
+      {NAV.map((item) =>
+        item.children ? (
+          <NavSection key={item.to} item={item} onNavigate={onNavigate} />
+        ) : (
+          <NavLink
+            key={item.to}
+            to={item.to}
+            end={item.end}
+            onClick={onNavigate}
+            className={({ isActive }) => `nav-link ${isActive ? 'nav-link-active' : ''}`}
+          >
+            <span className="w-5 shrink-0 text-center text-base">{item.icon}</span>
+            <span className="truncate">{item.label}</span>
+          </NavLink>
+        ),
+      )}
     </nav>
   )
 }

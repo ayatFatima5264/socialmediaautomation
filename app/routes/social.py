@@ -68,13 +68,13 @@ def pending_candidates(
 
 
 @router.post("/connections/select", response_model=ApiResponse)
-def select_pending(
+async def select_pending(
     data: SelectAccountRequest,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> ApiResponse:
     try:
-        account = service.select_account(db, user, data.pending_id, data.account_id)
+        account = await service.select_account(db, user, data.pending_id, data.account_id)
     except ConnectError as exc:
         raise _handle(exc) from exc
     return ApiResponse(

@@ -45,6 +45,45 @@ services:
         sync: false
       - key: GEMINI_API_KEY
         sync: false
+      # --- Video Studio: object storage (Cloudflare R2) ---------------------
+      # Video Studio's bytes MUST NOT go in Postgres. `r2` rather than `auto`
+      # is deliberate: with `auto` and a missing credential the app quietly
+      # falls back to storing video in the database, and the only sign is a log
+      # line. `r2` fails loudly instead, which is the right failure.
+      - key: STORAGE_BACKEND
+        value: r2
+      # Cloudflare dashboard -> R2 -> Manage API tokens -> Object Read & Write.
+      - key: R2_ACCOUNT_ID
+        sync: false
+      - key: R2_ACCESS_KEY_ID
+        sync: false
+      - key: R2_SECRET_ACCESS_KEY
+        sync: false
+      - key: R2_BUCKET
+        sync: false
+      # Optional: set only if the bucket is served on a public domain. Unset
+      # keeps the bucket private and every read presigned.
+      - key: R2_PUBLIC_BASE_URL
+        sync: false
+      # --- Video Studio: compute limits -------------------------------------
+      # Rendering runs inside this web service. These caps stop one long render
+      # from starving publishing and the scheduler; raise them once rendering
+      # moves to a dedicated worker.
+      - key: VIDEO_MAX_DURATION_SECONDS
+        value: "180"
+      - key: VIDEO_MAX_RESOLUTION_HEIGHT
+        value: "1080"
+      - key: VIDEO_MAX_UPLOAD_MB
+        value: "200"
+      - key: VIDEO_MAX_CONCURRENT_RENDERS
+        value: "1"
+      # --- Video Studio: voice + subtitles ----------------------------------
+      # edge-tts is free, keyless, and the only option that speaks Urdu.
+      # Transcription reuses GROQ_API_KEY above.
+      - key: TTS_PROVIDER
+        value: edge
+      - key: TRANSCRIPTION_PROVIDER
+        value: groq
       # --- Scheduler --------------------------------------------------------
       - key: SCHEDULER_POLL_SECONDS
         value: "30"
