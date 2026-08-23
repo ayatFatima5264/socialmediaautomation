@@ -98,15 +98,24 @@ function SceneCard({ scene, index, onUpdate, onDelete, onRegenerateVisual, onPic
               draft.title !== scene.title && commit({ title: draft.title })
             }
           />
+          {scene.settings?.role && (
+            <span className="badge shrink-0 border border-line bg-inset text-xs capitalize text-muted">
+              {scene.settings.role}
+            </span>
+          )}
           <span className="shrink-0 text-xs tabular-nums text-muted">
             {formatDuration(scene.start_seconds)}
           </span>
         </div>
 
+        {/* The template's guidance for this beat is the field's *placeholder*,
+            never its value. That is the whole safety property: a placeholder is
+            not content, so a scene left untouched stays empty and is never
+            narrated, captioned or drawn. */}
         <textarea
           className="input min-h-[64px] resize-y text-sm"
           value={draft.text || ''}
-          placeholder="What is said over this scene"
+          placeholder={scene.settings?.prompt || 'What is said over this scene'}
           onChange={(event) => setDraft({ ...draft, text: event.target.value })}
           onBlur={() => draft.text !== scene.text && commit({ text: draft.text })}
         />
@@ -114,7 +123,11 @@ function SceneCard({ scene, index, onUpdate, onDelete, onRegenerateVisual, onPic
         <input
           className="input text-sm"
           value={draft.visual_prompt || ''}
-          placeholder="What should be on screen"
+          placeholder={
+            scene.settings?.media
+              ? `What should be on screen — the template suggests ${scene.settings.media}`
+              : 'What should be on screen'
+          }
           onChange={(event) => setDraft({ ...draft, visual_prompt: event.target.value })}
           onBlur={() =>
             draft.visual_prompt !== scene.visual_prompt &&
@@ -293,6 +306,9 @@ export default function AIVideo() {
           onSubmit={begin}
           busy={ai.busy}
           submitLabel="Write the script"
+          // This flow ends in a rendered video, so it only offers lengths that
+          // can be rendered. Script Studio has no such ceiling.
+          maxDuration={options?.max_video_seconds || 120}
         />
       )}
 

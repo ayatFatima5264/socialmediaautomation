@@ -6,12 +6,13 @@
 // generated from the registry entry. So shipping a tool is one line in this
 // map — App.jsx never grows, and routing cannot disagree with what is built.
 //
-// Everything with a real page is listed here. The music library is the one
-// tool still absent, and deliberately: adding a stub would make the
-// placeholder stop rendering and put a blank page in its place.
+// Everything with a real page is listed here, and every tool now has one. Keep
+// it that way: adding a stub would stop the placeholder rendering and put a
+// blank page in its place, which reads as broken rather than as not-yet-built.
 // ---------------------------------------------------------------------------
 import EditorPicker from '../EditorPicker.jsx'
 import MediaLibrary from '../MediaLibrary.jsx'
+import MusicLibrary from '../MusicLibrary.jsx'
 import ScriptStudio from '../ScriptStudio.jsx'
 import Repurpose from '../Repurpose.jsx'
 import ThumbnailStudio from '../ThumbnailStudio.jsx'
@@ -25,6 +26,7 @@ const TOOL_PAGES = {
   // somebody arriving from the Overview with nothing open.
   editor: EditorPicker,
   media: MediaLibrary,
+  music: MusicLibrary,
   script: ScriptStudio,
   repurpose: Repurpose,
   templates: Templates,

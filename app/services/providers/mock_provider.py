@@ -51,6 +51,10 @@ class MockProvider(AIProvider):
         feature = str(ctx.get("feature", ""))
         if feature == "video_script":
             return _mock_script(topic, tone, user)
+        if feature == "video_script_outline":
+            return _mock_outline(topic, user)
+        if feature == "video_script_chapters":
+            return _mock_chapters(topic, tone, user)
         if feature == "video_script_section":
             return _mock_section(str(ctx.get("section") or "hook"), topic)
         if feature == "video_visual_prompts":
@@ -118,6 +122,67 @@ def _mock_script(topic: str, tone: str, user_prompt: str) -> str:
             "keywords": [word for word in topic.split()[:4] if word] or [topic],
         }
     )
+
+
+def _mock_outline(topic: str, user_prompt: str) -> str:
+    """A long-form outline, in the shape `scripting.normalize_outline` expects.
+
+    The chapter count is read back out of the prompt for the same reason
+    `_mock_script` reads the point count: a mock that always returned five
+    chapters would make the long-form length arithmetic untestable.
+    """
+    match = re.search(r"exactly (\d+) chapters", user_prompt)
+    count = int(match.group(1)) if match else 5
+
+    return json.dumps(
+        {
+            "title": f"{topic} — the whole picture",
+            "hook": f"Most people get {topic} wrong.",
+            "introduction": f"Here is what actually matters about {topic}.",
+            "chapters": [
+                {
+                    "heading": f"Part {index + 1}",
+                    "summary": f"the part of {topic} that comes {index + 1}st",
+                }
+                for index in range(count)
+            ],
+            "ending": f"That is {topic}, end to end.",
+            "cta": "Follow for more like this.",
+            "keywords": [word for word in topic.split()[:4] if word] or [topic],
+        }
+    )
+
+
+# "3. Compound growth — how it stacks up (about 210 words)" — the ask lines of a
+# chapter prompt, which carry the word count the mock has to actually produce.
+_CHAPTER_ASK_RE = re.compile(r"^\d+\.\s+(.+?)\s+[—–-]\s+.*?\(about (\d+) words\)\s*$", re.M)
+
+
+def _mock_chapters(topic: str, tone: str, user_prompt: str) -> str:
+    """One batch of long-form chapters, at roughly the word counts asked for.
+
+    The lengths matter: the budget arithmetic, the trimming and the scene
+    durations are all downstream of how many words come back, so a mock that
+    returned one sentence per chapter would make a "20 minute" script test as
+    forty seconds.
+    """
+    asks = _CHAPTER_ASK_RE.findall(user_prompt)
+    if not asks:
+        asks = [("Part 1", "120")]
+
+    sentence = (
+        f"This is what there is to say about {topic}, in a {tone} tone, "
+        f"with a concrete detail the viewer can use."
+    )
+    per = max(1, len(sentence.split()))
+
+    chapters = []
+    for heading, words in asks:
+        wanted = max(1, int(words))
+        text = " ".join([sentence] * max(1, round(wanted / per)))
+        chapters.append({"heading": heading, "text": text})
+
+    return json.dumps({"chapters": chapters})
 
 
 def _mock_section(section: str, topic: str) -> str:

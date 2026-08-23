@@ -533,20 +533,243 @@ def test_you_cannot_add_a_track_to_someone_elses_project(
     assert response.status_code == 404
 
 
-def test_adding_a_track_copies_no_audio(
+def test_a_track_used_in_two_projects_is_stored_once(
     studio_client, headers, project, fake_openverse, studio_db
 ):
-    """One track in ten projects is one file."""
+    """One track in ten projects is one file.
+
+    The track has to be fetched — the renderer reads from object storage and
+    nothing else — but only the first time. `store_asset` de-duplicates on
+    checksum, so the second project references the same bytes.
+    """
     from app.models.storage_object import StorageObject
 
     tracks = seed(studio_client, headers, fake_openverse)
-    before = studio_db.query(StorageObject).count()
+    track_id = tracks["Uplifting Corporate Loop"]["id"]
 
-    studio_client.post(
-        f"/api/video/music/{tracks['Uplifting Corporate Loop']['id']}/add",
+    second = studio_client.post(
+        "/api/video/projects",
+        headers=headers,
+        json={"name": "Another project", "project_type": "blank"},
+    ).json()
+
+    first_add = studio_client.post(
+        f"/api/video/music/{track_id}/add",
         headers=headers,
         json={"project_id": project["id"]},
     )
+    assert first_add.status_code == 201, first_add.text
 
     studio_db.expire_all()
-    assert studio_db.query(StorageObject).count() == before
+    after_one = studio_db.query(StorageObject).count()
+
+    second_add = studio_client.post(
+        f"/api/video/music/{track_id}/add",
+        headers=headers,
+        json={"project_id": second["id"]},
+    )
+    assert second_add.status_code == 201, second_add.text
+
+    studio_db.expire_all()
+    assert studio_db.query(StorageObject).count() == after_one, (
+        "the same track was stored twice"
+    )
+    assert first_add.json()["asset_id"] == second_add.json()["asset_id"]
+
+
+# ---------------------------------------------------------------------------
+# Finding a track
+# ---------------------------------------------------------------------------
+# Search matched the title and artist only, as one whole-phrase LIKE. Catalogue
+# music is called "berceusounette" and "Chicken Hiccups" — the title is the
+# least useful thing about it, and what makes it findable is its tags, mood and
+# genre. So a search for "guitar" returned nothing while the catalogue held
+# eight tracks tagged guitar, and the provider was re-queried every time
+# because the local count stayed under the discover threshold.
+
+
+def test_a_tag_is_searchable(studio_client, headers, fake_openverse):
+    """The tag is how music is found; the title often says nothing."""
+    seed(studio_client, headers, fake_openverse)
+
+    body = studio_client.get("/api/video/music?search=relax", headers=headers).json()
+
+    titles = [item["title"] for item in body["items"]]
+    assert "Calm Piano Study" in titles, (
+        "a track tagged 'relax' was not findable by that tag"
+    )
+
+
+def test_a_genre_is_searchable(studio_client, headers, fake_openverse):
+    """The genre is derived from the tags and appears in no title, so this can
+    only pass if the search reaches past title and artist."""
+    library = seed(studio_client, headers, fake_openverse)
+    genres = {item["title"]: item["genre"] for item in library.values()}
+    target = next(
+        (title for title, genre in genres.items() if genre.lower() not in title.lower()),
+        None,
+    )
+    assert target, "every title contains its own genre; this test proves nothing"
+
+    body = studio_client.get(
+        f"/api/video/music?search={genres[target]}", headers=headers
+    ).json()
+
+    assert target in [item["title"] for item in body["items"]]
+
+
+def test_the_words_of_a_search_are_matched_separately(
+    studio_client, headers, fake_openverse
+):
+    """"upbeat guitar" as one LIKE needs those words adjacent and in order, so
+    it misses "Upbeat Acoustic Guitar" — which is how people search for music."""
+    seed(studio_client, headers, fake_openverse)
+
+    # "corporate" is a tag, "uplifting" is a tag and the mood; they are not
+    # adjacent in that order anywhere.
+    body = studio_client.get(
+        "/api/video/music?search=corporate%20uplifting", headers=headers
+    ).json()
+
+    assert "Uplifting Corporate Loop" in [item["title"] for item in body["items"]]
+
+
+def test_every_word_has_to_match_something(studio_client, headers, fake_openverse):
+    """Two words are narrower than one, not broader."""
+    seed(studio_client, headers, fake_openverse)
+
+    both = studio_client.get(
+        "/api/video/music?search=piano%20trailer", headers=headers
+    ).json()
+
+    assert both["total"] == 0, "a track matched only one of the two words"
+
+
+# ---------------------------------------------------------------------------
+# Getting the music into the video
+# ---------------------------------------------------------------------------
+# A catalogue row holds metadata and somebody else's URL. The renderer reads
+# its inputs from object storage and nowhere else, and the storyboard bridge
+# skips a layer with no stored audio — so an added catalogue track used to be
+# attached, credited, listed in the project's audio, and silent in the export.
+
+
+@pytest.fixture(autouse=True)
+def fake_audio(monkeypatch):
+    """The track's bytes, without reaching the network.
+
+    Autouse for the same reason `fake_openverse` exists: nothing in this file
+    should depend on a third party being up. Adding a catalogue track now
+    fetches its audio, so every test that adds one needs this — and a test that
+    does not add one is unaffected by it.
+    """
+
+    async def _fetch(url):
+        return WAV_BYTES, "audio/wav"
+
+    monkeypatch.setattr("app.services.video.music.fetch_audio", _fetch)
+
+
+def add_first_usable(client, headers, project_id):
+    body = client.get("/api/video/music?limit=50", headers=headers).json()
+    track = next(item for item in body["items"] if item["can_use"])
+    response = client.post(
+        f"/api/video/music/{track['id']}/add",
+        headers=headers,
+        json={"project_id": project_id},
+    )
+    assert response.status_code == 201, response.text
+    return track, response.json()
+
+
+def audio_clips(client, headers, project_id):
+    document = client.get(
+        f"/api/video/projects/{project_id}/timeline", headers=headers
+    ).json()["timeline"]
+    return [
+        clip
+        for track in document["tracks"]
+        if track["id"] == "audio"
+        for clip in track["clips"]
+    ]
+
+
+def test_a_catalogue_track_is_fetched_into_our_own_storage(
+    studio_client, headers, project, fake_openverse, fake_audio
+):
+    seed(studio_client, headers, fake_openverse)
+
+    _, layer = add_first_usable(studio_client, headers, project["id"])
+
+    assert layer["asset_id"], (
+        "the layer has no stored asset, so the renderer has nothing to read"
+    )
+
+
+def test_added_music_lands_on_the_timeline_immediately(
+    studio_client, headers, project, fake_openverse, fake_audio
+):
+    """Not only when the project is rebuilt from a storyboard — a project built
+    by hand in the editor never gets rebuilt."""
+    seed(studio_client, headers, fake_openverse)
+    before = len(audio_clips(studio_client, headers, project["id"]))
+
+    _, layer = add_first_usable(studio_client, headers, project["id"])
+
+    clips = audio_clips(studio_client, headers, project["id"])
+    assert len(clips) == before + 1
+    placed = next(
+        clip
+        for clip in clips
+        if (clip.get("meta") or {}).get("audio_layer_id") == layer["id"]
+    )
+    assert placed["asset_id"] == layer["asset_id"]
+
+
+def test_a_rebuild_does_not_stack_a_duplicate(
+    studio_client, headers, project, fake_openverse, fake_audio
+):
+    """The clip carries the layer id the storyboard bridge matches on."""
+    from app.services.video import storyboard
+
+    seed(studio_client, headers, fake_openverse)
+    _, layer = add_first_usable(studio_client, headers, project["id"])
+
+    already = audio_clips(studio_client, headers, project["id"])
+    assert layer["id"] in [
+        (clip.get("meta") or {}).get("audio_layer_id") for clip in already
+    ]
+    assert callable(storyboard._music_layers)
+
+
+def test_the_bed_is_trimmed_to_the_picture(
+    studio_client, headers, project, fake_openverse, fake_audio
+):
+    """Adding two minutes of music must not turn a six-second Reel into a
+    two-minute one followed by silence over a black frame."""
+    seed(studio_client, headers, fake_openverse)
+
+    document = studio_client.get(
+        f"/api/video/projects/{project['id']}/timeline", headers=headers
+    ).json()["timeline"]
+    visual = max(
+        (
+            clip["start"] + clip["duration"]
+            for track in document["tracks"]
+            if track["id"] in ("video", "text")
+            for clip in track["clips"]
+        ),
+        default=0.0,
+    )
+
+    _, layer = add_first_usable(studio_client, headers, project["id"])
+
+    placed = next(
+        clip
+        for clip in audio_clips(studio_client, headers, project["id"])
+        if (clip.get("meta") or {}).get("audio_layer_id") == layer["id"]
+    )
+    if visual > 0:
+        assert placed["duration"] <= visual + 0.01, (
+            "the music bed is longer than the video it sits under"
+        )

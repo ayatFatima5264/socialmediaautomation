@@ -9,6 +9,9 @@ them to a project is a separate decision.
     GET  /api/video/subtitles/formats         what export can write
     POST /api/video/subtitles/transcribe      upload video or audio -> cues
     POST /api/video/subtitles/from-script     a written script -> timed cues
+    POST /api/video/subtitles/from-document   a .txt/.docx/.pdf -> timed cues
+    POST /api/video/subtitles/align           cues + the script they were read
+                                              from -> corrected cues
     POST /api/video/subtitles/import          an existing .srt/.vtt -> cues
     POST /api/video/subtitles/edit/*          update, insert, delete, split,
                                               merge, shift, search-replace
@@ -18,6 +21,17 @@ them to a project is a separate decision.
     GET  /api/video/subtitles/files/{id}/download?format=srt|vtt|txt
     POST /api/video/subtitles/attach          -> a track on a project
     GET  /api/video/subtitles/tracks?project_id=
+
+**Any one input is enough, and more than one is better.** The four inputs above
+are independent: a recording alone, a document alone, a pasted script alone, or
+an existing subtitle file alone each produce a track. What makes the pair worth
+supplying together is that they answer different questions — the audio knows
+when each word was said and which words were actually said; the script knows how
+those words are spelled. `align` is where the two meet, and it is a separate
+call rather than a flag on `transcribe` for two reasons: the studio can report
+"transcribing" and "comparing with your script" as the distinct steps they are,
+and a script can be applied to a track that was *imported* rather than
+transcribed.
 
 **Every edit takes the whole track and returns the whole track.** Deliberately
 not a per-cue patch API: a split or a merge renumbers everything after it, so
@@ -46,6 +60,8 @@ from app.models.user import User
 from app.models.video_asset import VideoAsset
 from app.models.video_subtitle import SUBTITLE_SOURCES, VideoSubtitle
 from app.schemas.video_subtitles import (
+    AlignRequest,
+    AlignResult,
     AttachRequest,
     CueDelete,
     CueInsert,
@@ -53,6 +69,7 @@ from app.schemas.video_subtitles import (
     CueShift,
     CueSplit,
     CueUpdate,
+    DocumentResult,
     EditResult,
     ExportFormat,
     ExportRequest,
@@ -66,7 +83,9 @@ from app.schemas.video_subtitles import (
     TranscribeResult,
 )
 from app.services.storage.base import StorageError
+from app.services.video import alignment as alignment_service
 from app.services.video import assets as asset_service
+from app.services.video import documents as document_service
 from app.services.video import projects as project_service
 from app.services.video import subtitles as engine
 from app.services.video import transcription as transcription_service
@@ -260,6 +279,98 @@ def from_script(
         cues=cues,
         duration_seconds=engine.total_duration(cues),
         estimated=not body.duration_seconds,
+    )
+
+
+@router.post("/from-document", response_model=DocumentResult)
+async def from_document(
+    file: UploadFile = File(...),
+    duration_seconds: float | None = Form(default=None),
+    # The same bounds `ScriptRequest` puts on this field. Unbounded, a wpm of
+    # zero turned a ten-word script into a ten-minute track whose first cue ran
+    # for four minutes — the JSON route refused that and this one did not.
+    words_per_minute: float = Form(default=engine.DEFAULT_WPM, ge=60, le=400),
+    style_key: str | None = Form(default=None),
+    user: User = Depends(get_current_user),
+) -> DocumentResult:
+    """Read a TXT, DOCX or PDF and time its words into cues.
+
+    The same honesty as `/from-script` applies and for the same reason: a
+    document has no audio in it, so unless a target duration is given the
+    timing is a reading-speed estimate and `estimated` says so.
+
+    The extracted `text` comes back alongside the cues because a document is
+    two different inputs depending on what else was supplied. On its own it is
+    a script to be timed. Alongside a recording it is a *reference*, and the
+    caller posts that text to `/align` rather than uploading the file twice.
+
+    Nothing is stored. The bytes are read, turned into text, and dropped.
+    """
+    raw = await file.read()
+
+    try:
+        document = document_service.extract(file.filename or "document", raw)
+    except document_service.DocumentError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    duration = duration_seconds if duration_seconds and duration_seconds > 0 else None
+
+    cues = engine.cues_from_script(
+        document["text"],
+        duration_seconds=duration,
+        wpm=words_per_minute,
+        style=engine.preset(style_key) if style_key else None,
+    )
+    if not cues:
+        raise HTTPException(
+            status_code=422,
+            detail="There is no text in that document to turn into subtitles.",
+        )
+
+    return DocumentResult(
+        cues=cues,
+        duration_seconds=engine.total_duration(cues),
+        estimated=duration is None,
+        text=document["text"],
+        kind=document["kind"],
+        filename=file.filename or "document",
+        word_count=document["word_count"],
+        character_count=document["character_count"],
+        truncated=document["truncated"],
+    )
+
+
+@router.post("/align", response_model=AlignResult)
+def align(body: AlignRequest, user: User = Depends(get_current_user)) -> AlignResult:
+    """Correct a timed track against the script it was read from.
+
+    Takes cues that already have real timings — from a transcription, or from
+    an imported SRT — and the reference wording, and returns the track with the
+    script's spelling applied *only* where the two already agree. Timing is
+    never touched, skipped sentences never appear, and ad-libs are never
+    removed.
+
+    Purely computational: `difflib` over normalised words. No provider is
+    called and nothing is metered, so re-running it after editing the script
+    costs nothing.
+    """
+    cues = _cues(body)
+    if not cues:
+        raise HTTPException(
+            status_code=422, detail="There are no subtitles to align."
+        )
+
+    aligned, report = alignment_service.align(
+        cues,
+        body.script,
+        style=engine.preset(body.style_key) if body.style_key else None,
+    )
+
+    return AlignResult(
+        cues=aligned,
+        duration_seconds=engine.total_duration(aligned),
+        cue_count=len(aligned),
+        alignment=report,
     )
 
 

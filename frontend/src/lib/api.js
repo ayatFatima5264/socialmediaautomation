@@ -116,6 +116,56 @@ async function requestBlob(path, { method = 'GET', body, headers = {} } = {}) {
   return res.blob()
 }
 
+// A multipart POST that reports how much of the file has actually gone up.
+//
+// `fetch` cannot do this — it has no upload-progress event — and for a video
+// upload that matters: the difference between "43% uploaded" and a spinner is
+// the difference between waiting and wondering whether it has hung. XHR is the
+// only API in the browser that reports it, so this one call site uses XHR and
+// everything else stays on `fetch`.
+//
+// `onUploaded` fires when the last byte has been sent, which is the real
+// boundary between "uploading" and "the server is working on it" — the two
+// phases a caller wants to show separately.
+function requestUpload(path, formData, { onProgress, onUploaded } = {}) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
+    xhr.open('POST', `${API_BASE}${path}`)
+
+    const token = getToken()
+    if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`)
+
+    if (onProgress) {
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable) {
+          onProgress(Math.min(100, Math.round((event.loaded / event.total) * 100)))
+        }
+      }
+    }
+    if (onUploaded) xhr.upload.onload = () => onUploaded()
+
+    xhr.onload = () => {
+      let data = null
+      try {
+        data = JSON.parse(xhr.responseText)
+      } catch {
+        data = null
+      }
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve(data)
+        return
+      }
+      if (xhr.status === 401) setToken(null)
+      reject(new ApiError(extractDetail(data, xhr.statusText || 'Upload failed.'), xhr.status, data))
+    }
+    xhr.onerror = () =>
+      reject(new ApiError('Network error — could not reach the API server.', 0, null))
+    xhr.onabort = () => reject(new ApiError('The upload was cancelled.', 0, null))
+
+    xhr.send(formData)
+  })
+}
+
 export const api = {
   // auth
   register: (body) => request('/auth/register', { method: 'POST', body, auth: false }),
@@ -409,10 +459,35 @@ export const api = {
     if (options.translateToEnglish) fd.append('translate_to_english', 'true')
     if (options.styleKey) fd.append('style_key', options.styleKey)
     if (options.storeSource === false) fd.append('store_source', 'false')
-    return request('/api/video/subtitles/transcribe', { method: 'POST', formData: fd })
+    // Uploaded over XHR rather than fetch so the studio can show real upload
+    // progress on what may be a 200 MB video, and can tell "uploading" apart
+    // from "transcribing".
+    return requestUpload('/api/video/subtitles/transcribe', fd, {
+      onProgress: options.onProgress,
+      onUploaded: options.onUploaded,
+    })
   },
   subtitlesFromScript: (body) =>
     request('/api/video/subtitles/from-script', { method: 'POST', body }),
+
+  // A document is two inputs in one. On its own the `cues` are the answer;
+  // alongside a recording the `text` is, and it goes to `alignSubtitles`.
+  subtitlesFromDocument: (file, options = {}) => {
+    const fd = new FormData()
+    fd.append('file', file)
+    if (options.durationSeconds) fd.append('duration_seconds', String(options.durationSeconds))
+    if (options.wordsPerMinute) fd.append('words_per_minute', String(options.wordsPerMinute))
+    if (options.styleKey) fd.append('style_key', options.styleKey)
+    return request('/api/video/subtitles/from-document', { method: 'POST', formData: fd })
+  },
+
+  // Correct a timed track against the script it was read from. Timing is never
+  // touched; only wording the two already agree on is taken from the script.
+  alignSubtitles: (cues, script, styleKey) =>
+    request('/api/video/subtitles/align', {
+      method: 'POST',
+      body: { cues, script, style_key: styleKey || null },
+    }),
   importSubtitleFile: (file) => {
     const fd = new FormData()
     fd.append('file', file)

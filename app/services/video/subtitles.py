@@ -930,6 +930,11 @@ def search_replace(
 # the range broadcast guidance gives for clear narration — fast enough not to
 # feel padded, slow enough to be readable.
 DEFAULT_WPM = 150.0
+# The range the API accepts, and the clamp under it. 60 wpm is a slow, deliberate
+# read; 400 is faster than anyone narrates. Outside it the arithmetic stops
+# describing speech.
+MIN_WPM = 60.0
+MAX_WPM = 400.0
 
 
 def cues_from_script(
@@ -952,6 +957,12 @@ def cues_from_script(
     Without it the length comes from a reading speed, which is a guess, and the
     UI says so rather than presenting estimated timings as measured ones.
     """
+    # A reading speed outside this range is not a slow or fast narrator, it is
+    # a bad argument: zero divides the script over infinity and produced a
+    # ten-minute track from ten words. Clamped rather than refused, because the
+    # endpoints already validate and this is the floor under them.
+    wpm = min(max(float(wpm or DEFAULT_WPM), MIN_WPM), MAX_WPM)
+
     style = style or preset(DEFAULT_PRESET)
     max_chars = int(style.get("max_chars_per_line", DEFAULT_MAX_CHARS_PER_LINE))
     max_lines = int(style.get("max_lines", DEFAULT_MAX_LINES))

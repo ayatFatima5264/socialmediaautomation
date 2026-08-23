@@ -389,3 +389,182 @@ def test_saving_an_oversized_script_stores_the_bounded_version(ai_client, header
         f"/api/video/projects/{created['project_id']}/script", headers=headers
     ).json()
     assert len(stored["hook"]) == scripting.MAX_SECTION_CHARS
+
+
+# ---------------------------------------------------------------------------
+# What the form says it can do
+# ---------------------------------------------------------------------------
+# `text_available` drives the "no text provider is configured" banner.
+# `bool(settings.ai_provider)` could never be false — AI_PROVIDER has a default
+# — so on a deployment with no key the banner never appeared and the user
+# filled in the whole brief before the generate call failed.
+
+
+def test_the_form_says_generation_is_unavailable_with_no_provider(
+    studio_client, headers, monkeypatch
+):
+    from app.services.providers.base import ProviderConfigError
+
+    def _no_provider(*args, **kwargs):
+        raise ProviderConfigError("No AI provider is configured.")
+
+    monkeypatch.setattr(
+        "app.services.providers.factory.get_provider", _no_provider, raising=False
+    )
+
+    body = studio_client.get("/api/video/ai/options", headers=headers).json()
+
+    assert body["text_available"] is False
+
+
+def test_the_form_says_generation_is_available_with_one(ai_client, headers):
+    """`ai_client` patches a working provider in."""
+    body = ai_client.get("/api/video/ai/options", headers=headers).json()
+
+    assert body["text_available"] is True
+
+
+# ---------------------------------------------------------------------------
+# Long form — a script the length of a talk, not a Reel
+# ---------------------------------------------------------------------------
+# A "20 minute" script that comes back at four minutes is the failure this
+# section exists to catch, and it is not hypothetical: one model call cannot
+# return 4,500 words, so asking for one produces a script that stops early and
+# reports itself as finished. The tests below assert the length that was asked
+# for actually arrives, that it arrives in chapters rather than five monologues,
+# and that a single failed call costs one chapter instead of the whole script.
+
+
+class CountingProvider(MockProvider):
+    """The mock, plus a record of what was asked of it."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.features: list[str] = []
+
+    async def complete(self, **kwargs):
+        self.features.append(str((kwargs.get("context") or {}).get("feature") or ""))
+        return await super().complete(**kwargs)
+
+
+@pytest.fixture()
+def counting(studio_client, monkeypatch):
+    """A client whose provider counts its calls."""
+    provider = CountingProvider()
+    for target in (
+        "app.services.providers.factory.get_provider",
+        "app.services.video.scripting.get_provider",
+    ):
+        monkeypatch.setattr(target, lambda *a, **k: provider, raising=False)
+    return studio_client, provider
+
+
+def test_a_twenty_minute_script_is_twenty_minutes_long(ai_client, headers):
+    """The whole point. A long script that comes back short is the bug."""
+    script = write(ai_client, headers, duration_seconds=1200)
+
+    assert script["estimated_seconds"] > 1000, (
+        f"asked for 20 minutes, got {script['estimated_seconds'] / 60:.1f}"
+    )
+    assert script["fits_budget"] is True
+
+
+def test_length_still_scales_all_the_way_up(ai_client, headers):
+    """Each step up in the dropdown has to produce a longer script."""
+    lengths = [
+        write(ai_client, headers, duration_seconds=seconds)["estimated_seconds"]
+        for seconds in (300, 900, 1800)
+    ]
+
+    assert lengths == sorted(lengths), lengths
+    assert lengths[-1] > lengths[0] * 3
+
+
+def test_a_long_script_is_chapters_not_five_monologues(ai_client, headers):
+    """Five points across half an hour is six minutes of talking per point."""
+    script = write(ai_client, headers, duration_seconds=1800)
+
+    points = script["main_points"]
+    assert len(points) >= 12, f"half an hour cut into only {len(points)} points"
+    assert all(point["heading"] and point["text"] for point in points)
+    # Distinct headings, or the "chapters" are one chapter repeated.
+    assert len({point["heading"] for point in points}) == len(points)
+
+
+def test_a_long_script_is_written_in_passes(counting, headers):
+    """Outline first, then chapters — and a bounded number of calls either way."""
+    client, provider = counting
+    write(client, headers, duration_seconds=1800)
+
+    assert provider.features.count("video_script_outline") == 1
+    chapters = provider.features.count("video_script_chapters")
+    assert chapters > 1, "half an hour was asked for in a single call"
+    assert chapters <= 12, f"{chapters} calls is a request that times out"
+
+
+def test_a_short_script_is_still_one_call(counting, headers):
+    """The extra machinery must not reach the lengths that never needed it."""
+    client, provider = counting
+    write(client, headers, duration_seconds=30)
+
+    assert provider.features == ["video_script"]
+
+
+def test_one_failed_chapter_does_not_lose_the_others(studio_client, headers, monkeypatch):
+    """A rate limit on call four should cost one chapter, not twenty minutes."""
+    from app.services.providers.base import ProviderError
+
+    class FlakyProvider(MockProvider):
+        def __init__(self) -> None:
+            super().__init__()
+            self.batches = 0
+
+        async def complete(self, **kwargs):
+            feature = str((kwargs.get("context") or {}).get("feature") or "")
+            if feature == "video_script_chapters":
+                self.batches += 1
+                if self.batches == 1:
+                    raise ProviderError("rate limited")
+            return await super().complete(**kwargs)
+
+    provider = FlakyProvider()
+    for target in (
+        "app.services.providers.factory.get_provider",
+        "app.services.video.scripting.get_provider",
+    ):
+        monkeypatch.setattr(target, lambda *a, **k: provider, raising=False)
+
+    script = write(studio_client, headers, duration_seconds=1200)
+
+    # Every chapter is still there and still editable — the failed one carries
+    # its outline summary, which is short, not empty.
+    assert len(script["main_points"]) >= 12
+    assert all(point["text"] for point in script["main_points"])
+
+
+def test_a_script_may_be_longer_than_a_video(ai_client, headers):
+    """Writing half an hour is free. Rendering it is not, and says so."""
+    assert (
+        ai_client.post(
+            "/api/video/ai/script", headers=headers, json={**BRIEF, "duration_seconds": 1800}
+        ).status_code
+        == 200
+    )
+
+    refused = ai_client.post(
+        "/api/video/ai/projects", headers=headers, json={**BRIEF, "duration_seconds": 1800}
+    )
+    assert refused.status_code == 422
+
+
+def test_the_form_only_offers_lengths_the_server_accepts(ai_client, headers):
+    """A length in the dropdown the generator refuses is a control that lies."""
+    body = ai_client.get("/api/video/ai/options", headers=headers).json()
+
+    low, high = body["duration_range"]
+    assert body["durations"], "the form has no lengths to offer"
+    assert all(low <= value <= high for value in body["durations"])
+    assert max(body["durations"]) >= 1200, "long form is not reachable from the form"
+    # The form for making a video needs to know where the video pipeline stops.
+    assert 0 < body["project_max_seconds"] <= high
+    assert 0 < body["max_video_seconds"] <= body["project_max_seconds"]

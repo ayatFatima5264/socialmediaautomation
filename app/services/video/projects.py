@@ -306,7 +306,19 @@ def create_project(
                 start_seconds=start,
                 duration_seconds=duration,
                 transition=scene.get("transition") or "cut",
-                settings=deepcopy(scene.get("settings") or {}),
+                # The template's guidance for this beat travels in `settings`,
+                # never in `text`. `text` is what the voice reads, what the
+                # subtitles are built from and what the renderer draws — a
+                # prompt left there would be narrated and published verbatim by
+                # anyone who did not notice it. Nothing renders from `settings`.
+                settings={
+                    **deepcopy(scene.get("settings") or {}),
+                    **{
+                        key: scene[key]
+                        for key in ("role", "prompt", "media", "animation", "layout")
+                        if scene.get(key)
+                    },
+                },
             )
         )
         start += duration

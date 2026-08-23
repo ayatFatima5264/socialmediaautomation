@@ -610,6 +610,79 @@ def test_transcription_can_skip_storing_the_source(client, real_wav, provider):
     assert count == 0
 
 
+def test_a_recording_and_its_script_together_give_audio_timing_and_script_wording(
+    client, real_wav, provider
+):
+    """The combined workflow, end to end over the real routes.
+
+    Upload a real audio file, transcribe it through the real pipeline, then
+    correct the result against the script the speaker was reading from. The
+    thing being asserted is the division of labour: every timestamp comes from
+    the audio, and only the *spelling* comes from the document.
+    """
+    headers = auth(client, email="combined@example.com")
+
+    transcribed = client.post(
+        "/api/video/subtitles/transcribe",
+        headers=headers,
+        files={"file": ("talk.wav", real_wav, "audio/wav")},
+    ).json()
+
+    # The script as it was written: same words, one of which the model would
+    # plausibly mishear, plus a sentence the speaker never got to.
+    script = (
+        "Autumn is here, and so is our new seasonal menu. "
+        "Come in for spiced apple cake and a flat white. "
+        "We are open until six every day this week. "
+        "Bring a friend and the second coffee is on us."
+    )
+
+    aligned = client.post(
+        "/api/video/subtitles/align",
+        headers=headers,
+        json={"cues": transcribed["cues"], "script": script},
+    )
+
+    assert aligned.status_code == 200
+    body = aligned.json()
+    assert body["alignment"]["applied"] is True
+
+    # Timing is the audio's, to the millisecond.
+    assert body["duration_seconds"] == pytest.approx(
+        transcribed["duration_seconds"] and engine.total_duration(transcribed["cues"]),
+        abs=0.001,
+    )
+    assert body["cues"][0]["start"] == transcribed["cues"][0]["start"]
+
+    # The sentence that was never spoken is not in the subtitles, because there
+    # is no audio under it to put it over.
+    text = " ".join(" ".join(cue["text"].split()) for cue in body["cues"])
+    assert "second coffee" not in text
+    assert body["alignment"]["skipped_words"] >= 8
+
+
+def test_a_script_is_optional_and_transcription_alone_still_works(
+    client, real_wav, provider
+):
+    """The rule: at least one input, and everything else is optional.
+
+    A recording with no script must never be refused for not having one, and
+    the cues it produces must be complete on their own.
+    """
+    headers = auth(client, email="alone@example.com")
+
+    response = client.post(
+        "/api/video/subtitles/transcribe",
+        headers=headers,
+        files={"file": ("talk.wav", real_wav, "audio/wav")},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["cues"], "a recording on its own has to produce a track"
+    assert "alignment" not in body, "no script was given, so there is nothing to report"
+
+
 def test_a_provider_failure_is_422_and_a_config_error_is_503(client, real_wav, provider):
     headers = auth(client)
 
@@ -643,6 +716,8 @@ def test_a_provider_failure_is_422_and_a_config_error_is_503(client, real_wav, p
         ("get", "/api/video/subtitles/formats"),
         ("post", "/api/video/subtitles/transcribe"),
         ("post", "/api/video/subtitles/from-script"),
+        ("post", "/api/video/subtitles/from-document"),
+        ("post", "/api/video/subtitles/align"),
         ("post", "/api/video/subtitles/edit/split"),
         ("post", "/api/video/subtitles/export"),
         ("get", "/api/video/subtitles/files"),

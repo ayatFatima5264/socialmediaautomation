@@ -117,6 +117,10 @@ class TemplateDetail(TemplateRead):
     subtitle_style: dict = Field(default_factory=dict)
     layout: dict = Field(default_factory=dict)
     export_settings: dict = Field(default_factory=dict)
+    # Which face the burned-in text uses, and whether the format wants a music
+    # bed. Both are part of what somebody is choosing between.
+    typography: dict = Field(default_factory=dict)
+    music: dict | None = None
 
 
 class TemplateCategory(BaseModel):

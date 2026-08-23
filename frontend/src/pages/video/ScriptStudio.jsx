@@ -113,6 +113,14 @@ export default function ScriptStudio() {
 
   const unavailable = options && options.text_available === false
 
+  // A script can be far longer than the video pipeline will carry — a scene, a
+  // visual and a voice-over per beat is a different cost from a page of text.
+  // Past the ceiling the button is disabled with the reason, rather than
+  // sending a request the server answers with a validation error.
+  const projectCap = Number(options?.project_max_seconds) || 600
+  const scriptSeconds = Number(script?.brief?.duration_seconds) || 0
+  const tooLongForVideo = scriptSeconds > projectCap
+
   return (
     <div className="mx-auto w-full max-w-3xl">
       <VideoPageHeader
@@ -158,13 +166,17 @@ export default function ScriptStudio() {
             onChange={setScript}
             onRewrite={rewriteSection}
             busy={busy || creating}
-            subtitle="Nothing has been saved yet. Copy it, download it, or turn it into a video."
+            subtitle={
+              tooLongForVideo
+                ? 'Nothing has been saved yet. Copy it or download it.'
+                : 'Nothing has been saved yet. Copy it, download it, or turn it into a video.'
+            }
             footer={
               <>
                 <button
                   className="btn btn-primary"
                   onClick={createProject}
-                  disabled={busy || creating}
+                  disabled={busy || creating || tooLongForVideo}
                 >
                   {creating ? <Spinner /> : <VideoIcon name="film" className="h-4 w-4" />}
                   {creating ? 'Creating the project…' : 'Create a video project'}
@@ -182,8 +194,12 @@ export default function ScriptStudio() {
           />
 
           <p className="text-xs text-muted">
-            Creating a project writes this script to it and cuts it into scenes.
-            Your edits are kept — it is not generated again.
+            {tooLongForVideo
+              ? `A script this long cannot be built into a video yet — that stops
+                 at ${Math.round(projectCap / 60)} minutes. The script itself is
+                 yours: edit it, copy it, download it.`
+              : `Creating a project writes this script to it and cuts it into
+                 scenes. Your edits are kept — it is not generated again.`}
           </p>
         </div>
       )}

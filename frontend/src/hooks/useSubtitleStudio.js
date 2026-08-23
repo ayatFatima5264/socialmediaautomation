@@ -16,9 +16,27 @@ import { useToast } from '../context/ToastContext.jsx'
 // previous track onto a stack, so any of them can be taken back — including
 // the destructive ones (merge, search/replace) that a user is most likely to
 // regret.
+//
+// **Inputs are independent.** A recording, a document, a pasted script and an
+// existing subtitle file each produce a track on their own; supplying a script
+// *with* a recording runs one extra step that corrects the wording without
+// touching the timing. Nothing here requires two inputs, and nothing refuses
+// one because another is missing.
 // ---------------------------------------------------------------------------
 
 const MAX_UNDO = 50
+
+// The stages `generate` actually passes through, in order. Each one is a real
+// boundary — a request that has finished, or bytes that have left the machine —
+// rather than a caption on a timer, which is the difference between progress
+// and theatre.
+const STAGE_LABELS = {
+  document: 'Reading your script',
+  upload: 'Uploading',
+  transcribe: 'Transcribing the audio',
+  align: 'Comparing the transcript with your script',
+  cues: 'Preparing subtitles',
+}
 
 export default function useSubtitleStudio() {
   const toast = useToast()
@@ -34,6 +52,10 @@ export default function useSubtitleStudio() {
 
   const [busy, setBusy] = useState(null) // a label, so buttons can show which
   const [error, setError] = useState(null)
+
+  // What the pipeline is doing right now: which stages this run has, which are
+  // finished, and the real upload percentage while bytes are moving.
+  const [progress, setProgress] = useState(null)
 
   const undoStack = useRef([])
   const [undoDepth, setUndoDepth] = useState(0)
@@ -106,13 +128,73 @@ export default function useSubtitleStudio() {
     setError(null)
   }, [])
 
+  /** Transcribe a recording, optionally correcting it against a script.
+   *
+   *  The one entry point for every media-backed workflow, because they are the
+   *  same workflow with one optional step in the middle:
+   *
+   *      [read the document] -> upload -> transcribe -> [align] -> cues
+   *
+   *  The bracketed stages only happen when a reference was supplied. Nothing
+   *  here requires one, and a missing document is not an error — it is the
+   *  ordinary case.
+   *
+   *  The document is read *first*, before a single byte of video is uploaded.
+   *  A corrupt DOCX should cost the user a second, not a full transcription. */
   const transcribe = useCallback(
-    async (file, options) => {
+    async (file, options = {}) => {
+      const { referenceFile = null, referenceText = '', ...transcribeOptions } = options
+
+      const hasReference = Boolean(referenceFile || referenceText.trim())
+      const stages = [
+        ...(referenceFile ? ['document'] : []),
+        'upload',
+        'transcribe',
+        ...(hasReference ? ['align'] : []),
+        'cues',
+      ]
+
+      const advance = (stage, percent = null) =>
+        setProgress({
+          stages,
+          labels: STAGE_LABELS,
+          current: stage,
+          done: stages.slice(0, stages.indexOf(stage)),
+          percent,
+        })
+
       setBusy('transcribe')
       setError(null)
+      advance(stages[0])
+
       try {
-        const result = await api.transcribeMedia(file, options)
-        startFrom(result.cues, {
+        // ---- the reference, if there is one --------------------------------
+        let script = referenceText.trim()
+        if (referenceFile) {
+          const document = await api.subtitlesFromDocument(referenceFile)
+          script = document.text
+        }
+
+        // ---- the recording -------------------------------------------------
+        advance('upload', 0)
+        const result = await api.transcribeMedia(file, {
+          ...transcribeOptions,
+          onProgress: (percent) => advance('upload', percent),
+          onUploaded: () => advance('transcribe'),
+        })
+
+        // ---- the correction, if there is a script --------------------------
+        let cues = result.cues
+        let alignment = null
+        if (script) {
+          advance('align')
+          const aligned = await api.alignSubtitles(cues, script, transcribeOptions.styleKey)
+          cues = aligned.cues
+          alignment = aligned.alignment
+        }
+
+        advance('cues')
+        startFrom(cues, {
           kind: 'transcription',
           provider: result.provider,
           model: result.model,
@@ -121,11 +203,24 @@ export default function useSubtitleStudio() {
           wordCount: result.word_count,
           mediaUrl: result.source_url,
           assetId: result.source_asset_id,
+          filename: file.name,
           translated: result.translated,
+          // Timing came off the audio, whether or not a script was involved.
           estimated: false,
+          alignment,
+          referenceName: referenceFile?.name || (script ? 'Pasted script' : null),
         })
-        toast.success(`Transcribed ${result.cues.length} subtitles.`)
-        return result
+
+        if (alignment?.applied) {
+          toast.success(`${cues.length} subtitles, corrected against your script.`)
+        } else if (alignment) {
+          // The script was supplied and deliberately not used. Saying so is
+          // the whole point of the report — otherwise it looks ignored.
+          toast.info(alignment.message || 'Your script did not match this recording.')
+        } else {
+          toast.success(`Transcribed ${cues.length} subtitles.`)
+        }
+        return { ...result, cues, alignment }
       } catch (err) {
         const message = err?.message || 'Could not transcribe that file.'
         setError(message)
@@ -133,9 +228,86 @@ export default function useSubtitleStudio() {
         return null
       } finally {
         setBusy(null)
+        setProgress(null)
       }
     },
     [startFrom, toast],
+  )
+
+  /** A document on its own: read it, then time its words. No audio involved,
+   *  so the timing is an estimate unless a target length was given — and the
+   *  `estimated` flag carries that straight through to the UI. */
+  const fromDocument = useCallback(
+    async (file, { durationSeconds = null, wordsPerMinute = null } = {}) => {
+      setBusy('document')
+      setError(null)
+      setProgress({
+        stages: ['document', 'cues'],
+        labels: { document: 'Reading the document', cues: 'Creating subtitles and estimating timing' },
+        current: 'document',
+        done: [],
+        percent: null,
+      })
+      try {
+        const result = await api.subtitlesFromDocument(file, {
+          durationSeconds,
+          wordsPerMinute,
+          styleKey: style?.key,
+        })
+        startFrom(result.cues, {
+          kind: 'document',
+          filename: result.filename,
+          documentKind: result.kind,
+          wordCount: result.word_count,
+          duration: result.duration_seconds,
+          truncated: result.truncated,
+          estimated: result.estimated,
+        })
+        toast.success(`Created ${result.cues.length} subtitles from ${result.filename}.`)
+        return result
+      } catch (err) {
+        const message = err?.message || 'Could not read that document.'
+        setError(message)
+        toast.error(message)
+        return null
+      } finally {
+        setBusy(null)
+        setProgress(null)
+      }
+    },
+    [startFrom, style, toast],
+  )
+
+  /** Apply a script to the track that is already open.
+   *
+   *  Reachable after an import as well as after a transcription: an SRT from
+   *  somewhere else has real timings too, and correcting its wording against
+   *  the original script is the same operation. */
+  const alignWithScript = useCallback(
+    async (script) => {
+      if (!script?.trim()) return null
+      setBusy('align')
+      setError(null)
+      const previous = cues
+      try {
+        const result = await api.alignSubtitles(previous, script, style?.key)
+        remember(previous)
+        setCues(result.cues)
+        setSource((current) => ({ ...(current || {}), alignment: result.alignment }))
+        toast[result.alignment.applied ? 'success' : 'info'](
+          result.alignment.message || 'Compared your script with the audio.',
+        )
+        return result
+      } catch (err) {
+        const message = err?.message || 'Could not compare that script with the audio.'
+        setError(message)
+        toast.error(message)
+        return null
+      } finally {
+        setBusy(null)
+      }
+    },
+    [cues, remember, style, toast],
   )
 
   const fromScript = useCallback(
@@ -229,12 +401,15 @@ export default function useSubtitleStudio() {
     setStyle,
     styleOptions,
     busy,
+    progress,
     error,
     clearError: () => setError(null),
     canUndo: undoDepth > 0,
     undo,
     transcribe,
     fromScript,
+    fromDocument,
+    alignWithScript,
     importFile,
     startFrom,
     ...editors,

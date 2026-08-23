@@ -499,3 +499,31 @@ def test_you_cannot_import_someone_elses_upload(studio_client, headers, other_he
     )
 
     assert response.status_code == 404
+
+
+def test_the_words_of_a_search_are_matched_in_any_order(studio_client, headers):
+    """One LIKE over the whole phrase needs the words adjacent and in order, so
+    "reel demo" missed "QA Demo Reel" — and nobody remembers their own file
+    names in order."""
+    upload(studio_client, headers, name="clip.png", title="QA Demo Reel")
+
+    forwards = studio_client.get(
+        "/api/video/media?search=Demo%20Reel", headers=headers
+    ).json()
+    backwards = studio_client.get(
+        "/api/video/media?search=Reel%20Demo", headers=headers
+    ).json()
+
+    assert forwards["total"] >= 1
+    assert backwards["total"] == forwards["total"]
+
+
+def test_every_word_of_a_media_search_has_to_match(studio_client, headers):
+    """Two words are narrower than one, not broader."""
+    upload(studio_client, headers, name="clip.png", title="QA Demo Reel")
+
+    body = studio_client.get(
+        "/api/video/media?search=Reel%20nonexistentword", headers=headers
+    ).json()
+
+    assert body["total"] == 0

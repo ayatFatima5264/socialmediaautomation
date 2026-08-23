@@ -204,7 +204,7 @@ export const VIDEO_TOOLS = [
     category: 'assets',
     tint: 'rose',
     icon: 'music',
-    built: false,
+    built: true,
     longDescription:
       'A catalogue of tracks that are cleared for use, with the licence and attribution shown before you pick one.',
     capabilities: [

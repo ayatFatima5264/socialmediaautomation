@@ -23,10 +23,19 @@ seconds long", so the target duration is converted to a word budget at a
 measured speaking rate and enforced on the way out — the script is trimmed or
 the shortfall is reported. Asking politely and hoping is how a "30-second"
 video renders at 1:10.
+
+**Past a few minutes, one call is not enough.** A half-hour script is roughly
+4,500 words, several times what any provider will return in one response, and
+the failure is silent: the model writes a third of it and stops, or compresses
+the whole thing into something that reads at four minutes. So long scripts are
+written the way a person writes one — an outline pass, then the chapters, a few
+at a time and concurrently. Same document out; see `generate_long_form`.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
+import math
 import re
 from datetime import datetime, timezone
 
@@ -105,14 +114,48 @@ WORDS_PER_SECOND = {
 DEFAULT_WORDS_PER_SECOND = 2.3
 
 # What a script is allowed to be. Below the floor there is nothing to make a
-# video out of; above the ceiling the render caps would refuse it anyway, so
-# refusing here gives the user the reason before they wait for a generation.
+# video out of; the ceiling is a half-hour talk, which at a speaking rate is
+# roughly 4,500 words — long enough for a webinar or a YouTube explainer, and
+# far enough short of "a book" that the generation still finishes in a request.
+#
+# This ceiling is about the *script*. Rendering a video is a separate, much
+# lower limit (`settings.video_max_duration_seconds`), and it has its own
+# refusal with its own reason — see `projects.render_refusal`.
 MIN_DURATION_SECONDS = 5
-MAX_DURATION_SECONDS = 600
+MAX_DURATION_SECONDS = 1800
 
-# How many main points to ask for, by length. Deliberately few: the most common
-# failure of an AI script is six shallow points where three developed ones
-# would have held attention.
+# Past this length one model call cannot write the whole thing: 4,500 words is
+# several times any provider's per-response token ceiling, and asking for it
+# anyway returns a script that stops mid-sentence at the halfway mark. Above the
+# line the script is written in passes — an outline first, then the chapters.
+LONG_FORM_SECONDS = 240
+
+# How many words one long-form call is asked for. Small enough to finish inside
+# `ai_request_timeout`, large enough that a half-hour script is six calls rather
+# than twenty-four.
+CHAPTER_BATCH_WORDS = 700
+
+# How many of those calls are in flight at once. Free provider tiers are rate
+# limited per minute, so this is deliberately modest — it is the difference
+# between a 20-second wait and a 60-second one, not between working and not.
+MAX_CONCURRENT_BATCHES = 3
+
+# The most chapters a script is cut into, whatever its length. Past this the
+# editor becomes a list nobody scrolls, and each chapter gets too little to say.
+MAX_MAIN_POINTS = 24
+
+# The longest script that can be turned into a video *project*. Lower than
+# `MAX_DURATION_SECONDS` because a project is a scene, a visual and a voice-over
+# per beat — a different order of cost from a page of text — and lower still is
+# `settings.video_max_duration_seconds`, which is what may actually be rendered.
+MAX_PROJECT_SECONDS = 600
+
+
+# How many main points to ask for, by length. Deliberately few at short lengths:
+# the most common failure of an AI script is six shallow points where three
+# developed ones would have held attention. Long form is the opposite problem —
+# a 20-minute video with five points is five ten-minute monologues — so past
+# five minutes a new chapter is added roughly every 90 seconds.
 def points_for(duration_seconds: float) -> int:
     if duration_seconds <= 20:
         return 1
@@ -122,7 +165,9 @@ def points_for(duration_seconds: float) -> int:
         return 3
     if duration_seconds <= 180:
         return 4
-    return 5
+    if duration_seconds <= 300:
+        return 5
+    return min(MAX_MAIN_POINTS, 5 + math.ceil((duration_seconds - 300) / 90))
 
 
 def words_per_second(language: str) -> float:
@@ -289,13 +334,51 @@ _SYSTEM = (
     "Return only the JSON object you are asked for."
 )
 
+# The same writer, given a length where the short-form instincts stop helping.
+# A twenty-minute script written in scroll-stopping one-liners is exhausting;
+# what holds attention at that length is examples, numbers and a thread that
+# carries from one chapter to the next.
+_SYSTEM_LONG = (
+    "You are a video scriptwriter for long-form video — explainers, talks and "
+    "tutorials that run for many minutes. You write narration that is spoken "
+    "aloud, not prose that is read. You develop an idea with concrete examples, "
+    "numbers and short stories rather than restating it, and you never pad. No "
+    "stage directions, no camera notes, no emoji, no markdown, and never a line "
+    "like 'In this video we will'. Return only the JSON object you are asked for."
+)
 
-def _brief_lines(brief: dict) -> list[str]:
+
+def is_long_form(brief: dict) -> bool:
+    """Whether this script has to be written in passes rather than one call."""
+    return float(brief.get("duration_seconds") or 0) > LONG_FORM_SECONDS
+
+
+def _system_for(brief: dict) -> str:
+    return _SYSTEM_LONG if is_long_form(brief) else _SYSTEM
+
+
+def _max_tokens_for(words: int) -> int:
+    """A response ceiling sized to what was actually asked for.
+
+    `ai_max_tokens` is set for a social post — around 750 words, which is fine
+    for a two-minute script and silently truncates a ten-minute one. So it acts
+    as the floor here, not the value: the ask is the word count plus room for
+    the JSON around it, and non-Latin scripts (Urdu, Arabic) that tokenize
+    several times worse per word.
+    """
+    return max(settings.ai_max_tokens, min(8000, int(words * 2.6) + 500))
+
+
+def _brief_lines(brief: dict, *, total_budget: bool = True) -> list[str]:
     """The brief, as the lines the model is actually given.
 
     Every field the form collects appears here. A field the UI asks for and the
     prompt drops is a control that does nothing, which is worse than not
     offering it.
+
+    `total_budget` is off when the call is writing one part of a longer script:
+    telling a model that is producing 700 words of chapter three that the whole
+    thing is 4,500 words invites it to write the whole thing.
     """
     lines = [
         f"TOPIC: {brief['topic']}",
@@ -304,10 +387,19 @@ def _brief_lines(brief: dict) -> list[str]:
         f"AUDIENCE: {brief['audience']}",
         f"PLATFORM: {brief['platform_label']}",
         f"CONTENT TYPE: {brief['content_type']}",
-        f"TARGET LENGTH: {brief['duration_seconds']:.0f} seconds of narration, "
-        f"which is about {brief['word_budget']} words IN TOTAL across every "
-        f"section. This is a hard budget, not a suggestion.",
     ]
+
+    if total_budget:
+        lines.append(
+            f"TARGET LENGTH: {brief['duration_seconds']:.0f} seconds of narration, "
+            f"which is about {brief['word_budget']} words IN TOTAL across every "
+            f"section. This is a hard budget, not a suggestion."
+        )
+    else:
+        lines.append(
+            f"THE FINISHED VIDEO: about {brief['duration_seconds'] / 60:.0f} "
+            f"minutes long. You are writing one part of it, not the whole thing."
+        )
 
     if brief["visual_mode"] == "animated":
         lines.append(
@@ -385,9 +477,9 @@ def normalize_script(data: dict, brief: dict) -> dict:
         for index, point in enumerate(raw_points):
             if isinstance(point, dict):
                 heading = _clean(point.get("heading"), 120)
-                text = _clean(point.get("text"))
+                text = _clean(point.get("text"), MAX_SECTION_CHARS)
             else:
-                heading, text = "", _clean(point)
+                heading, text = "", _clean(point, MAX_SECTION_CHARS)
             if not text:
                 continue
             points.append(
@@ -476,14 +568,20 @@ async def generate_script(brief: dict, *, provider: AIProvider | None = None) ->
     `provider` is injectable so a test can run the whole pipeline without a
     network call and so a caller can pin a model; left out, the configured
     chain with its fallbacks is used.
+
+    Anything past `LONG_FORM_SECONDS` goes the other way — see
+    `generate_long_form`. One call cannot write half an hour of narration.
     """
     client = provider or get_provider()
+
+    if is_long_form(brief):
+        return await generate_long_form(brief, client)
 
     try:
         raw = await client.complete(
             system=_SYSTEM,
             user=build_prompt(brief),
-            max_tokens=settings.ai_max_tokens,
+            max_tokens=_max_tokens_for(brief["word_budget"]),
             temperature=settings.ai_temperature,
             json_mode=True,
             context={"feature": "video_script", "topic": brief["topic"]},
@@ -505,6 +603,354 @@ async def generate_script(brief: dict, *, provider: AIProvider | None = None) ->
             "reword the topic."
         )
 
+    return fit_to_budget(script)
+
+
+# ---------------------------------------------------------------------------
+# Long form — a script written in passes
+# ---------------------------------------------------------------------------
+# A half-hour video is about 4,500 words of narration. No provider will return
+# that in one response, and the failure is not an error: the model writes the
+# first third at the right quality and then stops, or compresses the whole thing
+# into a summary that reads at four minutes. Either way the user asked for
+# twenty minutes and got five.
+#
+# So long scripts are written the way a person writes one:
+#
+#   1. an OUTLINE pass  — the title, the framing lines, and a heading plus a
+#      one-line summary for every chapter. Cheap, and it is what makes the
+#      chapters belong to the same video instead of being N essays on a theme.
+#   2. CHAPTER passes   — the actual narration, a few chapters at a time, each
+#      call given the whole outline as context so it knows what the chapters
+#      around it already cover and does not repeat them.
+#
+# The chapter passes are independent once the outline exists, so they run
+# concurrently. That is the difference between a twenty-second wait and a minute
+# and a half.
+
+
+def framing_and_chapter_words(brief: dict) -> tuple[int, list[int]]:
+    """Split the word budget into framing and one number per chapter.
+
+    Not proportionally: a half-hour video still opens with a three-second hook
+    and closes with a one-line CTA. Framing takes a small, capped share and the
+    body gets everything else — otherwise a 4,500-word budget produces a
+    360-word "hook".
+    """
+    count = max(1, int(brief["main_point_count"]))
+    budget = max(1, int(brief["word_budget"]))
+
+    framing = max(60, min(220, int(budget * 0.08)))
+    body = max(count * 40, budget - framing)
+
+    base, extra = divmod(body, count)
+    return framing, [base + (1 if index < extra else 0) for index in range(count)]
+
+
+def batch_chapters(words: list[int]) -> list[list[int]]:
+    """Group chapter indexes into the calls that will write them.
+
+    Consecutive, so a batch is a run of the video rather than a scatter — the
+    model writing chapters 5–8 can carry a thread through them. Each batch stops
+    at `CHAPTER_BATCH_WORDS`, which is what keeps one call inside the provider's
+    response ceiling and the request timeout.
+    """
+    batches: list[list[int]] = []
+    current: list[int] = []
+    total = 0
+
+    for index, count in enumerate(words):
+        if current and total + count > CHAPTER_BATCH_WORDS:
+            batches.append(current)
+            current, total = [], 0
+        current.append(index)
+        total += count
+
+    if current:
+        batches.append(current)
+    return batches
+
+
+def build_outline_prompt(brief: dict, framing_words: int, chapter_words: list[int]) -> str:
+    count = len(chapter_words)
+    return "\n".join(
+        [
+            *_brief_lines(brief),
+            "",
+            f"This is a long video, so plan it before writing it. Break it into "
+            f"exactly {count} chapters that move the idea forward in order — "
+            f"each one a different part of the subject, none of them a restatement "
+            f"of another. Each chapter will be about {chapter_words[0]} words of "
+            f"narration when it is written.",
+            "",
+            f"Write the framing lines in full — hook, introduction, ending and "
+            f"call to action, about {framing_words} words between them. For the "
+            f"chapters write only the heading and one sentence saying what that "
+            f"chapter covers; the narration comes later.",
+            "",
+            "Return ONLY this JSON object:",
+            "{",
+            '  "title": "a short title for the video",',
+            '  "hook": "the first line, said in under 3 seconds, that stops the scroll",',
+            '  "introduction": "what the video will cover and why it is worth the time",',
+            '  "chapters": [',
+            '    {"heading": "a 2-5 word label", '
+            '"summary": "one sentence on what this chapter covers"}',
+            "  ],",
+            '  "ending": "the line that closes the idea",',
+            '  "cta": "one short call to action",',
+            '  "keywords": ["3-6 words describing the subject, for finding visuals"]',
+            "}",
+        ]
+    )
+
+
+def build_chapter_prompt(
+    brief: dict, outline: dict, indexes: list[int], chapter_words: list[int]
+) -> str:
+    chapters = outline["chapters"]
+
+    plan = [
+        f"{position}. {row['heading']} — {row['summary']}"
+        for position, row in enumerate(chapters, start=1)
+    ]
+    asks = [
+        f"{index + 1}. {chapters[index]['heading']} — {chapters[index]['summary']} "
+        f"(about {chapter_words[index]} words)"
+        for index in indexes
+    ]
+
+    return "\n".join(
+        [
+            *_brief_lines(brief, total_budget=False),
+            "",
+            f"THE VIDEO IS TITLED: {outline['title']}",
+            f"IT OPENS WITH: {outline['hook']} {outline['introduction']}",
+            f"IT CLOSES WITH: {outline['ending']}",
+            "",
+            "THE FULL CHAPTER PLAN. Every one of these is being written, so do "
+            "not cover a chapter that is not yours — say your part and hand over:",
+            *plan,
+            "",
+            f"Write the narration for {'these chapters' if len(asks) > 1 else 'this chapter'}, "
+            "in this order, and nothing else:",
+            *asks,
+            "",
+            "Hit those word counts — they are what makes the video come out the "
+            "right length. Use concrete examples, numbers and short stories "
+            "rather than repeating the heading in longer words. Do not open a "
+            "chapter by announcing it ('In this chapter'); just start saying it.",
+            "",
+            "Return ONLY this JSON object:",
+            "{",
+            '  "chapters": [',
+            '    {"heading": "the heading you were given", '
+            '"text": "the narration for that chapter"}',
+            "  ]",
+            "}",
+            f"There must be exactly {len(asks)} entries in that array, in the "
+            "order they were asked for.",
+        ]
+    )
+
+
+def normalize_outline(data: object, brief: dict, count: int) -> dict:
+    """A model's outline response, made complete and the right length.
+
+    A short outline is padded rather than refused: the chapters carry the video
+    and a missing heading is a placeholder the chapter pass can still write to,
+    where a raised error is a half-hour script the user does not get at all.
+    """
+    if not isinstance(data, dict):
+        raise ScriptError("The script outline came back unusable. Try again.")
+
+    rows = data.get("chapters")
+    chapters: list[dict] = []
+    if isinstance(rows, list):
+        for row in rows:
+            if isinstance(row, dict):
+                heading = _clean(row.get("heading"), 120)
+                summary = _clean(row.get("summary"), 400)
+            else:
+                heading, summary = _clean(row, 120), ""
+            if heading or summary:
+                chapters.append(
+                    {"heading": heading or summary[:60], "summary": summary or heading}
+                )
+
+    chapters = chapters[:count]
+    hook = _clean(data.get("hook"))
+
+    # Checked before the padding below, not after: a response with nothing in it
+    # would otherwise be padded into `count` placeholder chapters and go on to
+    # spend twenty calls writing narration for "Part 1" through "Part 22".
+    if not hook and not chapters:
+        raise ScriptError(
+            "The script outline came back empty. Try again, or reword the topic."
+        )
+
+    while len(chapters) < count:
+        position = len(chapters) + 1
+        chapters.append(
+            {
+                "heading": f"Part {position}",
+                "summary": f"another part of {brief['topic']}",
+            }
+        )
+
+    keywords = data.get("keywords")
+    keywords = [_clean(word, 40) for word in keywords] if isinstance(keywords, list) else []
+
+    return {
+        "title": _clean(data.get("title"), 200) or brief["topic"][:200],
+        "hook": hook,
+        "introduction": _clean(data.get("introduction")),
+        "ending": _clean(data.get("ending")),
+        "cta": _clean(data.get("cta")),
+        "chapters": chapters,
+        "keywords": [word for word in keywords if word][:8],
+    }
+
+
+async def _write_batch(
+    brief: dict,
+    outline: dict,
+    indexes: list[int],
+    chapter_words: list[int],
+    client: AIProvider,
+) -> dict[int, str]:
+    """The narration for one run of chapters, keyed by chapter index.
+
+    A batch that fails comes back empty rather than raising. Losing one chapter
+    out of twenty to a rate limit should not lose the other nineteen — the
+    caller falls back to the outline's summary for that chapter, which leaves a
+    complete, editable document with one thin section the user can rewrite in
+    place.
+    """
+    from app.services.ai_service import _parse_json
+
+    asked = sum(chapter_words[index] for index in indexes)
+
+    try:
+        raw = await client.complete(
+            system=_SYSTEM_LONG,
+            user=build_chapter_prompt(brief, outline, indexes, chapter_words),
+            max_tokens=_max_tokens_for(asked),
+            temperature=settings.ai_temperature,
+            json_mode=True,
+            context={
+                "feature": "video_script_chapters",
+                "topic": brief["topic"],
+                "chapters": len(indexes),
+            },
+        )
+    except ProviderError as exc:
+        logger.warning("Long-form chapters %s failed: %s", indexes, exc)
+        return {}
+
+    data = _parse_json(raw)
+
+    rows = data.get("chapters") if isinstance(data, dict) else None
+    if not isinstance(rows, list):
+        logger.warning("Long-form chapters %s came back in the wrong shape", indexes)
+        return {}
+
+    # Matched by heading where the model echoed one back, positionally where it
+    # did not. Order alone would be enough if models always returned the array
+    # they were asked for; when one drops a chapter, positional matching quietly
+    # files every chapter after it under the wrong heading.
+    by_heading = {
+        outline["chapters"][index]["heading"].casefold(): index for index in indexes
+    }
+    spare = list(indexes)
+
+    written: dict[int, str] = {}
+    for row in rows:
+        if isinstance(row, dict):
+            heading = _clean(row.get("heading"), 120).casefold()
+            text = _clean(row.get("text"), MAX_SECTION_CHARS)
+        else:
+            heading, text = "", _clean(row, MAX_SECTION_CHARS)
+
+        index = by_heading.get(heading)
+        if index is None or index in written:
+            index = next((value for value in spare if value not in written), None)
+        if index is None:
+            break
+        if text:
+            written[index] = text
+
+    return written
+
+
+async def generate_long_form(brief: dict, client: AIProvider) -> dict:
+    """Write a script too long for a single call: outline, then chapters.
+
+    Returns the same document shape as `generate_script` — there is no separate
+    "long" script the editor would have to know about.
+    """
+    from app.services.ai_service import _parse_json
+
+    framing_words, chapter_words = framing_and_chapter_words(brief)
+
+    try:
+        raw = await client.complete(
+            system=_SYSTEM_LONG,
+            user=build_outline_prompt(brief, framing_words, chapter_words),
+            max_tokens=_max_tokens_for(framing_words + 25 * len(chapter_words)),
+            temperature=settings.ai_temperature,
+            json_mode=True,
+            context={
+                "feature": "video_script_outline",
+                "topic": brief["topic"],
+                "chapters": len(chapter_words),
+            },
+        )
+    except ProviderError as exc:
+        raise ScriptError(f"The script could not be generated: {exc}") from exc
+
+    outline = normalize_outline(_parse_json(raw), brief, len(chapter_words))
+
+    # Independent once the outline exists, so they overlap. The semaphore is
+    # what keeps a 24-chapter script from opening ten connections at once and
+    # tripping a free tier's per-minute limit.
+    gate = asyncio.Semaphore(MAX_CONCURRENT_BATCHES)
+
+    async def run(indexes: list[int]) -> dict[int, str]:
+        async with gate:
+            return await _write_batch(brief, outline, indexes, chapter_words, client)
+
+    batches = batch_chapters(chapter_words)
+    written: dict[int, str] = {}
+    for result in await asyncio.gather(*(run(batch) for batch in batches)):
+        written.update(result)
+
+    if not written:
+        raise ScriptError(
+            "The script generator returned nothing usable. Try again, or "
+            "reword the topic."
+        )
+
+    points = [
+        {
+            "heading": chapter["heading"],
+            "text": written.get(index) or chapter["summary"],
+        }
+        for index, chapter in enumerate(outline["chapters"])
+    ]
+
+    script = normalize_script(
+        {
+            "title": outline["title"],
+            "hook": outline["hook"],
+            "introduction": outline["introduction"],
+            "main_points": points,
+            "ending": outline["ending"],
+            "cta": outline["cta"],
+            "keywords": outline["keywords"],
+        },
+        brief,
+    )
     return fit_to_budget(script)
 
 
@@ -536,11 +982,18 @@ def find_point(script: dict, point_id: str) -> dict | None:
     return None
 
 
-def _script_as_text(script: dict, *, skip: str = "", skip_point: str = "") -> str:
+def _script_as_text(
+    script: dict, *, skip: str = "", skip_point: str = "", point_limit: int = 0
+) -> str:
     """The script as the model should see it: labelled, in running order.
 
     The section being rewritten is left out — including it invites the model to
     hand back a lightly reworded copy of the line the user just rejected.
+
+    `point_limit` shortens each main point to that many characters. A long-form
+    script is thousands of words, and sending all of it to rewrite one line
+    buries the actual instruction; what the model needs from the other chapters
+    is what they cover, which the opening of each one already says.
     """
     parts: list[str] = []
     if script.get("title") and skip != "title":
@@ -555,12 +1008,36 @@ def _script_as_text(script: dict, *, skip: str = "", skip_point: str = "") -> st
         if skip == "point" and point.get("id") == skip_point:
             continue
         heading = point.get("heading") or f"Point {index}"
-        parts.append(f"MAIN POINT {index} ({heading}): {point.get('text') or ''}")
+        text = str(point.get("text") or "")
+        if point_limit and len(text) > point_limit:
+            text = text[:point_limit].rsplit(" ", 1)[0] + "…"
+        parts.append(f"MAIN POINT {index} ({heading}): {text}")
     if script.get("ending") and skip != "ending":
         parts.append(f"ENDING: {script['ending']}")
     if script.get("cta") and skip != "cta":
         parts.append(f"CALL TO ACTION: {script['cta']}")
     return "\n".join(parts)
+
+
+def _section_words(brief: dict, script: dict, section: str, point_id: str = "") -> int:
+    """How long the replacement for a section should be.
+
+    Match the length of what is being replaced, so rewriting one line does not
+    quietly blow the duration budget the rest of the script was fitted to. A
+    section that is empty has nothing to match, so it gets an even share of the
+    budget instead.
+    """
+    if section == "point":
+        point = find_point(script, point_id)
+        current = str((point or {}).get("text") or "")
+    else:
+        current = str(script.get(section) or "")
+
+    words = count_words(current)
+    if words < 3:
+        share = max(1, brief["main_point_count"] + 4)
+        words = max(6, brief["word_budget"] // share)
+    return words
 
 
 def build_section_prompt(
@@ -576,17 +1053,20 @@ def build_section_prompt(
         current = str(script.get(section) or "")
         ask = _SECTION_ASKS[section]
 
-    # Match the length of what is being replaced, so rewriting one line does
-    # not quietly blow the duration budget the rest of the script was fitted to.
-    words = count_words(current)
-    if words < 3:
-        share = max(1, brief["main_point_count"] + 4)
-        words = max(6, brief["word_budget"] // share)
+    words = _section_words(brief, script, section, point_id)
 
-    context_text = _script_as_text(script, skip=section, skip_point=point_id)
+    # Past a handful of chapters the surrounding script is longer than anything
+    # a model reads carefully, so the others are reduced to their openings.
+    others = len(script.get("main_points") or [])
+    context_text = _script_as_text(
+        script,
+        skip=section,
+        skip_point=point_id,
+        point_limit=240 if others > 6 else 0,
+    )
 
     lines = [
-        *_brief_lines(brief),
+        *_brief_lines(brief, total_budget=not is_long_form(brief)),
         "",
         "THE REST OF THE SCRIPT. Do not rewrite any of it. The new text has to "
         "sit inside it without repeating a line that is already there:",
@@ -637,9 +1117,9 @@ async def regenerate_section(
 
     try:
         raw = await client.complete(
-            system=_SYSTEM,
+            system=_system_for(brief),
             user=prompt,
-            max_tokens=settings.ai_max_tokens,
+            max_tokens=_max_tokens_for(_section_words(brief, script, section, point_id)),
             temperature=settings.ai_temperature,
             json_mode=True,
             context={
@@ -738,6 +1218,14 @@ def fit_to_budget(script: dict) -> dict:
     return script
 
 
+# The lengths the form offers as one tap. Any value inside `duration_range` is
+# accepted, so this is a menu rather than a constraint — but it lives here
+# rather than in JavaScript so "what lengths exist" has one answer.
+DURATION_CHOICES = (
+    15, 30, 45, 60, 90, 120, 180, 300, 600, 900, 1200, 1500, 1800,
+)
+
+
 def options() -> dict:
     """Everything the "new AI video" form needs to build itself."""
     return {
@@ -746,5 +1234,12 @@ def options() -> dict:
         "visual_modes": list(VISUAL_MODES),
         "languages": [dict(entry) for entry in LANGUAGES],
         "duration_range": [MIN_DURATION_SECONDS, MAX_DURATION_SECONDS],
+        "durations": list(DURATION_CHOICES),
         "default_duration": 30,
+        # A script can be far longer than a video this deployment will render,
+        # and longer again than one it will cut into a project. The form for
+        # *making a video* stops at these; Script Studio does not, and a script
+        # written past them is still worth having.
+        "max_video_seconds": settings.video_max_duration_seconds,
+        "project_max_seconds": MAX_PROJECT_SECONDS,
     }

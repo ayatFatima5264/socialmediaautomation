@@ -19,13 +19,19 @@ creator, which is exactly the metadata this module refuses to work without. The
 search is restricted to `license_type=commercial`, so a track that cannot be
 used in a business video does not come back at all.
 
-**The catalogue is cached, not mirrored.** A search stores the *metadata* and
-streams the audio from the source's URL. Downloading every search result into
-our bucket would mean paying to store thousands of tracks nobody picked, and
-re-hosting somebody else's file is a bigger licensing claim than linking to it.
-The consequence is honest and worth stating: a catalogue track plays from
-Openverse, so it needs the network, and a render that uses one has to fetch it.
-An uploaded track is ours and has neither problem.
+**The catalogue is cached, not mirrored — until a track is picked.** A search
+stores the *metadata* and previews the audio from the source's URL. Downloading
+every search result would mean paying to store thousands of tracks nobody
+picked, and re-hosting somebody else's file is a bigger licensing claim than
+linking to it.
+
+But the moment a track is added to a project, `ensure_stored` fetches it into
+our own storage. That is not an optimisation — the renderer reads its inputs
+from object storage and nowhere else, so a layer that pointed at a third-party
+URL was attached, credited, and silent in the export. Fetching at pick time
+rather than render time also puts the failure where the user can act on it: a
+dead link is a message while they are still choosing, not a render that dies
+twenty minutes later.
 
 **Uploads.** The user's own file goes through the normal asset pipeline into
 object storage with de-duplication on, and gets a `license="user"` row: they
@@ -37,7 +43,7 @@ from __future__ import annotations
 import logging
 
 import httpx
-from sqlalchemy import func, or_, select
+from sqlalchemy import String, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -444,13 +450,34 @@ def _filtered(
     query = _visible(user_id)
 
     if search:
-        pattern = f"%{search.strip().lower()}%"
-        query = query.where(
-            or_(
-                func.lower(MusicTrack.title).like(pattern),
-                func.lower(func.coalesce(MusicTrack.artist, "")).like(pattern),
+        # Every word, against everything that describes the track.
+        #
+        # Titles are the *least* useful field here: catalogue music is called
+        # "berceusounette" and "Chicken Hiccups", and what makes it findable is
+        # its tags, mood and genre. Matching the title and artist alone meant a
+        # search for "guitar" returned nothing while the catalogue held eight
+        # tracks tagged guitar.
+        #
+        # And each word separately, not the phrase: "upbeat guitar" as one LIKE
+        # requires those two words adjacent and in that order, so it misses
+        # "Upbeat Acoustic Guitar" — which is exactly how people search for
+        # music. Every word must appear somewhere, which keeps two words
+        # narrower than one rather than broader.
+        for word in search.strip().lower().split()[:8]:
+            pattern = f"%{word}%"
+            query = query.where(
+                or_(
+                    func.lower(MusicTrack.title).like(pattern),
+                    func.lower(func.coalesce(MusicTrack.artist, "")).like(pattern),
+                    func.lower(MusicTrack.mood).like(pattern),
+                    func.lower(MusicTrack.genre).like(pattern),
+                    # `tags` is a JSON array; comparing it as text matches a tag
+                    # anywhere in it on both SQLite and Postgres, which is all
+                    # this needs — the alternative is a per-dialect JSON
+                    # operator for a search box.
+                    func.lower(func.cast(MusicTrack.tags, String)).like(pattern),
+                )
             )
-        )
 
     if mood and mood in MUSIC_MOODS:
         query = query.where(MusicTrack.mood == mood)
@@ -740,6 +767,126 @@ DEFAULT_MUSIC_VOLUME = 0.18
 DEFAULT_FADE_SECONDS = 1.5
 
 
+# ---------------------------------------------------------------------------
+# Getting a catalogue track into a renderable state
+# ---------------------------------------------------------------------------
+# A catalogue row holds metadata and a URL at somebody else's origin. The
+# renderer only takes inputs from our own object storage, and the timeline
+# bridge in `storyboard._music_layers` skips a layer with no stored audio — so
+# a catalogue track added to a project used to be attached, credited, listed in
+# the project's audio, and completely silent in the export.
+#
+# Fetching it on the way in is what closes that. It happens when the user picks
+# the track, not when they render: a render that stops to download from a third
+# party is a render that fails for a reason the user cannot act on.
+
+FETCH_TIMEOUT = 60.0
+
+AUDIO_TYPES = {
+    "audio/mpeg": "mp3",
+    "audio/mp3": "mp3",
+    "audio/wav": "wav",
+    "audio/x-wav": "wav",
+    "audio/wave": "wav",
+    "audio/ogg": "ogg",
+    "audio/vorbis": "ogg",
+    "audio/flac": "flac",
+    "audio/x-flac": "flac",
+    "audio/mp4": "m4a",
+    "audio/aac": "aac",
+    "audio/webm": "webm",
+}
+
+
+async def fetch_audio(url: str) -> tuple[bytes, str]:
+    """Download a track, or raise. Returns `(bytes, content_type)`.
+
+    The type is checked after the response arrives rather than guessed from the
+    URL: a catalogue link that redirects to an HTML landing page is common, and
+    storing that as audio would produce a track that fails at the encoder
+    instead of here.
+    """
+    try:
+        async with httpx.AsyncClient(
+            timeout=FETCH_TIMEOUT,
+            follow_redirects=True,
+            headers={"User-Agent": "AutoSocialAI/1.0 (+https://autosocial.ai)"},
+        ) as client:
+            response = await client.get(url)
+            response.raise_for_status()
+            data = response.content
+            content_type = (
+                response.headers.get("content-type", "").split(";")[0].strip().lower()
+            )
+    except httpx.HTTPError as exc:
+        raise MusicError(f"That track could not be downloaded: {exc}") from exc
+
+    if content_type not in AUDIO_TYPES:
+        raise MusicError(
+            "That track's link did not return audio. It may have been removed "
+            "from the source."
+        )
+
+    limit = settings.video_max_upload_mb * 1024 * 1024
+    if not data:
+        raise MusicError("That track's link returned an empty file.")
+    if len(data) > limit:
+        raise MusicError(
+            f"That track is larger than the {settings.video_max_upload_mb} MB limit."
+        )
+
+    return data, content_type
+
+
+async def ensure_stored(db: Session, *, track: MusicTrack, user_id: int) -> MusicTrack:
+    """Make sure a track has audio in our own storage, fetching it if not.
+
+    An upload already has an asset and is returned untouched. A catalogue track
+    is downloaded once and keeps the asset, so picking the same track for a
+    second project costs nothing — `store_asset` de-duplicates on checksum, so
+    two users picking the same track share the bytes.
+    """
+    if track.asset_id is not None:
+        return track
+
+    if not track.stream_url:
+        raise MusicError(
+            f"“{track.title}” has no audio to fetch. Try another track."
+        )
+
+    data, content_type = await fetch_audio(track.stream_url)
+    extension = AUDIO_TYPES[content_type]
+
+    asset = asset_service.store_asset(
+        db,
+        user_id=user_id,
+        kind="music",
+        data=data,
+        content_type=content_type,
+        title=track.title[:200],
+        filename=f"{track.id}-{track.title[:40]}.{extension}",
+        dedupe=True,
+        meta={
+            "music_track_id": track.id,
+            "license": track.license,
+            "attribution": track.attribution,
+            "source_url": track.source_url,
+        },
+    )
+
+    track.asset_id = asset.id
+    if not track.duration_seconds and asset.duration_seconds:
+        track.duration_seconds = float(asset.duration_seconds)
+    db.commit()
+    db.refresh(track)
+
+    logger.info(
+        "Fetched catalogue track %s into asset %s (%s bytes)",
+        track.id, asset.id, len(data),
+    )
+    return track
+
+
 def add_to_project(
     db: Session,
     *,
@@ -829,11 +976,83 @@ def add_to_project(
     db.commit()
     db.refresh(layer)
 
+    _place_on_timeline(db, project=project, layer=layer, track=track)
+
     logger.info(
         "Added track %s (%s) to project %s as music layer %s",
         track.id, track.license, project.id, layer.id,
     )
     return layer
+
+
+def _place_on_timeline(
+    db: Session, *, project: VideoProject, layer: VideoAudio, track: MusicTrack
+) -> None:
+    """Put the new layer on the project's timeline straight away.
+
+    `storyboard._music_layers` folds these rows in when a project is *rebuilt*
+    from its storyboard, which covers the AI flow. It does not cover a project
+    someone built by hand in the editor: there, adding music succeeded, showed a
+    credit, and then nothing played — the layer sat in the audio inbox waiting
+    for a rebuild that never comes.
+
+    `meta.audio_layer_id` is the same marker the rebuild uses, so folding in
+    later recognises this clip instead of stacking a duplicate on top of it.
+    """
+    from app.services.video import projects as project_service
+    from app.services.video import timeline as tl
+
+    if layer.asset_id is None:
+        return
+
+    asset = db.get(VideoAsset, layer.asset_id)
+    if asset is None:
+        return
+
+    document = tl.normalize(project.timeline or {})
+
+    # A bed is trimmed to the picture, never the other way round. Taking the
+    # track's own length would make adding two minutes of music turn a
+    # six-second Reel into a two-minute one — the video the user actually made
+    # followed by silence over a black frame.
+    visual = max(
+        (
+            clip["start"] + clip["duration"]
+            for track in document["tracks"]
+            if track["id"] in ("video", "text")
+            for clip in track["clips"]
+        ),
+        default=0.0,
+    )
+    natural = float(layer.duration_seconds or asset.duration_seconds or 30.0)
+    length = min(natural, visual) if visual > 0 else natural
+
+    try:
+        document, _ = tl.add_clip(
+            document,
+            track_id="audio",
+            clip={
+                "kind": "audio",
+                "asset_id": asset.id,
+                "duration": length,
+                "volume": float(layer.volume),
+                "fade_in": float(layer.fade_in),
+                "fade_out": float(layer.fade_out),
+                "role": "music",
+                "label": layer.label or track.title[:200],
+                "meta": {"audio_layer_id": layer.id},
+            },
+            at=float(layer.start_seconds or 0.0),
+        )
+    except tl.TimelineError as exc:
+        # The layer is real and credited either way. A full audio track is not
+        # a reason to fail the request the user actually made.
+        logger.warning(
+            "Could not place music layer %s on project %s: %s", layer.id, project.id, exc
+        )
+        return
+
+    project_service.update_project(db, project=project, patch={"timeline": document})
 
 
 def project_credits(db: Session, project_id: int) -> list[str]:

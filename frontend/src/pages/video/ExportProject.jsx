@@ -65,6 +65,7 @@ export default function ExportProject() {
   const [render, setRender] = useState(null)
   const [formats, setFormats] = useState(null)
   const [targets, setTargets] = useState(null)
+  const [credits, setCredits] = useState([])
 
   const [quality, setQuality] = useState('standard')
   const [busy, setBusy] = useState(null)
@@ -74,16 +75,21 @@ export default function ExportProject() {
 
   const reload = useCallback(async () => {
     try {
-      const [exports, renders, formatList, publish] = await Promise.all([
+      const [exports, renders, formatList, publish, music] = await Promise.all([
         api.exportManifest(projectId),
         api.listRenders(projectId),
         api.projectFormats(projectId),
         api.publishTargets(projectId),
+        // A licence that requires attribution is an obligation the user takes
+        // on at the moment they publish, so this is where it has to appear.
+        // Recording a credit nobody can read is not honouring the licence.
+        api.projectMusicCredits(projectId).catch(() => ({ credits: [] })),
       ])
       setManifest(exports)
       setRender(renders.active || renders.renders?.[0] || null)
       setFormats(formatList)
       setTargets(publish)
+      setCredits(music?.credits || [])
     } catch (err) {
       toast.error(err?.message || 'Could not load this project.')
     }
@@ -343,6 +349,40 @@ export default function ExportProject() {
                     </span>
                   </span>
                   {converting === entry.key && <Spinner />}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* ---- 3a. What the music obliges you to credit ---- */}
+      {credits.length > 0 && (
+        <div className="card mb-4 p-4">
+          <h2 className="font-semibold text-body">Credit required</h2>
+          <p className="mt-1 text-sm text-muted">
+            A track in this video is licensed on condition it is credited. Put
+            these lines in the description wherever you publish it.
+          </p>
+          <ul className="mt-3 flex flex-col gap-2">
+            {credits.map((line) => (
+              <li
+                key={line}
+                className="panel flex items-start gap-2 p-2.5 text-sm text-body"
+              >
+                <span className="min-w-0 flex-1 break-words">{line}</span>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm shrink-0 px-2"
+                  onClick={() => {
+                    navigator.clipboard
+                      ?.writeText(line)
+                      .then(() => toast.success('Credit copied.'))
+                      .catch(() => {})
+                  }}
+                >
+                  <VideoIcon name="copy" className="h-4 w-4" />
+                  Copy
                 </button>
               </li>
             ))}

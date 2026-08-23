@@ -76,6 +76,71 @@ class ScriptResult(BaseModel):
     estimated: bool
 
 
+class DocumentResult(ScriptResult):
+    """Cues from an uploaded TXT, DOCX or PDF.
+
+    Carries the extracted `text` as well as the cues, because a document is
+    two different inputs depending on what else the user supplied: on its own
+    it is a script to be timed, and alongside a recording it is a *reference*
+    to align the transcript against. Returning both means the combined
+    workflow reads the file once rather than uploading it twice.
+    """
+
+    text: str
+    #: What it was read as — "pdf", "docx", "text", "rtf".
+    kind: str
+    filename: str
+    word_count: int
+    character_count: int
+    #: True when the document was longer than the reader's ceiling and the tail
+    #: was dropped. Said out loud rather than silently truncated.
+    truncated: bool = False
+
+
+class AlignmentReport(BaseModel):
+    """What comparing a script against the spoken audio actually changed.
+
+    Returned rather than logged because the difference between "your script was
+    used" and "your script did not match this recording" is something the user
+    has to be told — otherwise a subtitle track that ignored their document
+    looks like a bug.
+    """
+
+    #: False when the script was not used at all: it did not match the
+    #: recording, or one side was empty. The cues are then the transcription,
+    #: untouched.
+    applied: bool
+    #: "aligned" | "partial" | "unmatched" | "empty".
+    status: str
+    #: How alike the two texts are overall, 0–1.
+    similarity: float
+    #: The share of the spoken words the script accounts for, 0–1. This, not
+    #: `similarity`, is what decides whether the script was usable: a long
+    #: script recorded one section at a time is a correct pairing with low
+    #: similarity and high coverage.
+    coverage: float = 0.0
+    matched_words: int = 0
+    #: Words whose spelling came from the script.
+    corrected_words: int = 0
+    #: Words where the speaker said something else and the audio won.
+    kept_words: int = 0
+    #: Script words that were never spoken. They do not become subtitles.
+    skipped_words: int = 0
+    #: Spoken words absent from the script. They stay.
+    added_words: int = 0
+    message: str | None = None
+    #: Set when the delivery diverged from the script enough to be worth
+    #: saying. Non-blocking — the track is still usable.
+    warning: str | None = None
+
+
+class AlignRequest(CueList):
+    """Correct a transcribed track against the script it was read from."""
+
+    script: str = Field(min_length=1)
+    style_key: str | None = None
+
+
 # ---------------------------------------------------------------------------
 # Editing
 # ---------------------------------------------------------------------------
@@ -136,6 +201,12 @@ class EditResult(BaseModel):
     #: Only set by search/replace — "replaced 14 occurrences" is the only way
     #: to tell a working find from a silent no-match.
     replacements: int | None = None
+
+
+class AlignResult(EditResult):
+    """An aligned track, plus what the alignment did to it."""
+
+    alignment: AlignmentReport
 
 
 # ---------------------------------------------------------------------------

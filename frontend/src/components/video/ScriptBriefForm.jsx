@@ -13,9 +13,19 @@ import Spinner from '../Spinner.jsx'
 // starting a video, the other is only writing a script.
 // ---------------------------------------------------------------------------
 
-// The lengths offered as buttons. The server accepts anything in its own
-// range; these are the ones worth one tap.
-const DURATIONS = [15, 30, 45, 60, 90, 120]
+// The lengths worth one tap. The server sends this list (`options.durations`)
+// for the same reason it sends the tones — a length the form offers and the
+// generator refuses is a control that does nothing. This copy is the fallback
+// for a server that has not been deployed yet.
+const DURATIONS = [15, 30, 45, 60, 90, 120, 180, 300, 600, 900, 1200, 1500, 1800]
+
+function durationLabel(seconds) {
+  if (seconds < 60) return `${seconds} seconds`
+  const minutes = seconds / 60
+  // 90 seconds is "1.5 minutes"; 600 is "10 minutes", not "10.0".
+  const shown = Number.isInteger(minutes) ? minutes : minutes.toFixed(1)
+  return `${shown} minute${minutes === 1 ? '' : 's'}`
+}
 
 function Field({ label, hint, children }) {
   return (
@@ -33,6 +43,11 @@ export default function ScriptBriefForm({
   busy,
   submitLabel = 'Write the script',
   busyLabel = 'Writing the script…',
+  // The longest length this form may offer. Script Studio leaves it open —
+  // writing a half-hour script is free. The video flow passes the render limit,
+  // because offering a length the renderer will refuse is a wall at the end of
+  // a long generation rather than a choice made up front.
+  maxDuration = Infinity,
 }) {
   const [form, setForm] = useState({
     topic: '',
@@ -47,6 +62,27 @@ export default function ScriptBriefForm({
   })
 
   const set = (patch) => setForm((current) => ({ ...current, ...patch }))
+
+  const durations = (options?.durations?.length ? options.durations : DURATIONS).filter(
+    (value) => value <= maxDuration,
+  )
+
+  // A script longer than this deployment will render is still worth writing —
+  // but the user should hear that here, not after the generation, from the
+  // export screen.
+  // A long script is written in passes, which is tens of seconds rather than
+  // a few. Saying so beats a spinner that looks identical to a hung request.
+  const waiting =
+    form.duration_seconds > 240
+      ? `Writing ${durationLabel(form.duration_seconds)} of script — this takes a moment…`
+      : busyLabel
+
+  const renderCap = Number(options?.max_video_seconds) || 0
+  const lengthHint =
+    renderCap && form.duration_seconds > renderCap
+      ? `Rendering is limited to ${durationLabel(renderCap)} on this plan. ` +
+        'A script this long is yours to keep, edit and export as text.'
+      : null
 
   return (
     <form
@@ -133,15 +169,15 @@ export default function ScriptBriefForm({
           </select>
         </Field>
 
-        <Field label="Length">
+        <Field label="Length" hint={lengthHint}>
           <select
             className="select"
             value={form.duration_seconds}
             onChange={(event) => set({ duration_seconds: Number(event.target.value) })}
           >
-            {DURATIONS.map((value) => (
+            {durations.map((value) => (
               <option key={value} value={value}>
-                {value < 60 ? `${value} seconds` : `${value / 60} minute${value > 60 ? 's' : ''}`}
+                {durationLabel(value)}
               </option>
             ))}
           </select>
@@ -187,7 +223,7 @@ export default function ScriptBriefForm({
         disabled={busy || form.topic.trim().length < 3}
       >
         {busy ? <Spinner /> : <VideoIcon name="sparkle" className="h-4 w-4" />}
-        {busy ? busyLabel : submitLabel}
+        {busy ? waiting : submitLabel}
       </button>
     </form>
   )

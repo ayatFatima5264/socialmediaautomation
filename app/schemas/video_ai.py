@@ -18,6 +18,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.services.video import scripting
+
 
 # ---------------------------------------------------------------------------
 # Options
@@ -37,7 +39,14 @@ class AIOptions(BaseModel):
     visual_modes: list[str]
     languages: list[dict]
     duration_range: list[int]
+    # The lengths offered as one tap. `duration_range` is what is accepted.
+    durations: list[int] = Field(default_factory=list)
     default_duration: int
+    # The longest video this deployment will render, and the longest script it
+    # will cut into a project. A script may be longer than either — Script
+    # Studio writes scripts, which is not the same as rendering them.
+    max_video_seconds: int = 0
+    project_max_seconds: int = 0
     platforms: list[dict] = Field(default_factory=list)
     # False when no text provider is configured — the UI says so instead of
     # offering a generate button that will always fail.
@@ -56,7 +65,7 @@ class ScriptBrief(BaseModel):
     language: str = "en-US"
     tone: str = "friendly"
     audience: str = Field(default="a general audience", max_length=200)
-    duration_seconds: float = Field(default=30, ge=5, le=600)
+    duration_seconds: float = Field(default=30, ge=5, le=1800)
     platform: str = "youtube_shorts"
     content_type: str = "educational"
     instructions: str | None = Field(default=None, max_length=1000)
@@ -254,6 +263,14 @@ class CreateAIProject(ScriptBrief):
     inside one request is a request that times out — and a user watching
     "5 of 8 visuals" is being told the truth in a way a spinner is not.
     """
+
+    # A project is a video in the making, so its length is bounded by what the
+    # video pipeline can carry — a scene, a visual and a voice-over per beat.
+    # `ScriptBrief` itself goes much further (Script Studio writes half-hour
+    # scripts), which is why this is narrowed here rather than there.
+    duration_seconds: float = Field(
+        default=30, ge=5, le=scripting.MAX_PROJECT_SECONDS
+    )
 
     name: str | None = Field(default=None, max_length=200)
     # A script the user already wrote and edited — in Script Studio, say.

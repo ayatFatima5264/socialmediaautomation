@@ -312,3 +312,136 @@ def test_you_cannot_delete_someone_elses_template(
     )
 
     assert response.status_code == 422
+
+
+def test_a_template_is_findable_by_its_platform_and_category(studio_client, headers):
+    """No template is *named* "tiktok", so a search over the name and
+    description alone returned nothing for the word people actually type."""
+    body = studio_client.get(
+        "/api/video/templates?search=tiktok", headers=headers
+    ).json()
+
+    assert body["templates"], "no template matched a platform word"
+
+
+def test_template_search_matches_words_in_any_order(studio_client, headers):
+    forwards = studio_client.get(
+        "/api/video/templates?search=blank%20vertical", headers=headers
+    ).json()
+    backwards = studio_client.get(
+        "/api/video/templates?search=vertical%20blank", headers=headers
+    ).json()
+
+    assert forwards["templates"]
+    assert len(backwards["templates"]) == len(forwards["templates"])
+
+
+# ---------------------------------------------------------------------------
+# Prompt-style placeholders
+# ---------------------------------------------------------------------------
+# A template says what each beat is *for*. Putting that guidance in `text`
+# would be putting words in a business's mouth: `text` is what the voice reads,
+# what the subtitles are built from and what the renderer draws, so a prompt
+# left there would be narrated and published by anyone who did not notice it.
+#
+# It lives in `settings` instead, and the editor binds it to the field's
+# placeholder rather than its value. These tests hold that line.
+
+
+def test_every_template_scene_carries_guidance_and_no_words():
+    from app.services.video.templates import SYSTEM_TEMPLATES
+
+    for template in SYSTEM_TEMPLATES:
+        for scene in template["definition"].get("scenes") or []:
+            assert not scene["text"], (
+                f"{template['key']}/{scene['title']} ships sample copy in `text`, "
+                "which would be narrated and exported verbatim"
+            )
+            assert scene["prompt"], (
+                f"{template['key']}/{scene['title']} has no guidance for the user"
+            )
+            assert scene["role"] and scene["media"]
+
+
+def test_a_template_project_gets_the_prompt_in_settings_not_text(
+    studio_client, headers
+):
+    project = build_project(
+        studio_client, headers, project_type="blank", template_key="tiktok_hook"
+    )
+
+    scenes = studio_client.get(
+        f"/api/video/projects/{project['id']}/scenes", headers=headers
+    ).json()["scenes"]
+
+    assert scenes, "the template produced no storyboard"
+    for scene in scenes:
+        assert not (scene["text"] or ""), "a prompt reached the narration field"
+        assert scene["settings"]["prompt"]
+        assert scene["settings"]["role"]
+        assert scene["settings"]["media"]
+
+
+def test_a_prompt_is_never_narrated(studio_client, headers):
+    """Voice generation refuses an empty scene rather than reading the prompt."""
+    project = build_project(
+        studio_client, headers, project_type="blank", template_key="tiktok_hook"
+    )
+    scenes = studio_client.get(
+        f"/api/video/projects/{project['id']}/scenes", headers=headers
+    ).json()["scenes"]
+
+    response = studio_client.post(
+        f"/api/video/projects/{project['id']}/scenes/{scenes[0]['id']}/voice",
+        headers=headers,
+        json={},
+    )
+
+    assert response.status_code == 422
+    assert "no narration" in response.json()["detail"].lower()
+
+
+def test_a_prompt_is_never_captioned(studio_client, headers):
+    """Subtitles are built from scene text, and skip a scene that has none."""
+    project = build_project(
+        studio_client, headers, project_type="blank", template_key="tiktok_hook"
+    )
+
+    response = studio_client.post(
+        f"/api/video/projects/{project['id']}/ai/subtitles", headers=headers, json={}
+    )
+
+    assert response.status_code < 500
+    if response.status_code == 200:
+        assert response.json().get("cue_count", 0) == 0, (
+            "a prompt was turned into a caption"
+        )
+
+
+def test_the_preview_endpoint_carries_what_the_card_draws(studio_client, headers):
+    """The preview is rendered from the definition, so the definition has to
+    actually contain the things the card claims to show."""
+    body = studio_client.get(
+        "/api/video/templates/product_promo", headers=headers
+    ).json()
+
+    assert body["preview"]["accent"]
+    assert len(body["preview"]["background"]) >= 1
+    assert body["preview"]["style"]
+    assert body["subtitle_style"]["position"]
+    assert body["typography"]["family"]
+    assert body["scenes"] and body["scenes"][0]["prompt"]
+    assert body["estimated_seconds"] > 0
+
+
+def test_a_template_that_wants_music_says_so(studio_client, headers):
+    quiet = studio_client.get(
+        "/api/video/templates/talking_head_shorts", headers=headers
+    ).json()
+    scored = studio_client.get(
+        "/api/video/templates/motivation_quote", headers=headers
+    ).json()
+
+    # A talking-head clip with a bed under the voice is worse than silence.
+    assert quiet["music"] is None
+    assert scored["music"]["mood"]

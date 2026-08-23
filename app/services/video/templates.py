@@ -83,6 +83,15 @@ def _definition(**overrides) -> dict:
         "scenes": [],
         "subtitle_style": subtitle_engine.preset(subtitle_engine.DEFAULT_PRESET),
         "layout": deepcopy(DEFAULT_LAYOUT),
+        # Which face the burned-in text uses. A name the compositor already
+        # resolves (see `compositor._FONT_CANDIDATES`), never a file — a
+        # template that shipped a font would be shipping a licence too.
+        "typography": {"family": "inter", "weight": "bold", "case": "none"},
+        # Where a music bed belongs, if one does. `None` means the format does
+        # not want one — a talking-head clip with a bed under the voice is
+        # worse than silence. Nothing is chosen here: the Music Library picks
+        # the track, this says what it should sound like when it lands.
+        "music": None,
         "brand": {"apply": True},
         "export_settings": {
             "format": "mp4",
@@ -115,19 +124,56 @@ def _preview(accent: str, background: list[str], sample: str, style: str = "bold
     }
 
 
-def _scene(title: str, seconds: float, transition: str = "fade", text: str = "") -> dict:
-    """One scene placeholder.
+# What a scene is *for*, as a closed vocabulary. Drives the preview's shape and
+# gives the editor something to label a beat with beyond its position.
+SCENE_ROLES = (
+    "hook", "intro", "point", "step", "proof", "quote", "product", "cta", "outro",
+)
 
-    `text` is empty on purpose across the whole system set. A template supplies
-    the *shape* of a video — how many beats, how long each runs, what each one
-    is for — and filling in sentences the user did not write would put words in
-    a business's mouth that they then have to find and delete.
+# What kind of visual the beat wants. The template cannot supply the media — it
+# says what belongs there, and the editor and the AI visual step both read it.
+MEDIA_KINDS = (
+    "footage", "image", "product", "screen", "b-roll", "text-only", "speaker",
+)
+
+
+def _scene(
+    title: str,
+    seconds: float,
+    transition: str = "fade",
+    *,
+    role: str = "point",
+    prompt: str = "",
+    media: str = "footage",
+    animation: str = "fade",
+    layout: str = "center",
+    text: str = "",
+) -> dict:
+    """One beat of the template.
+
+    **`text` is empty across the whole system set, and `prompt` is why that is
+    not a gap.** A template supplies the *shape* of a video — how many beats,
+    how long each runs, what each one is for. Writing sentences into `text`
+    would put words in a business's mouth: `text` is what the voice reads, what
+    the subtitles are built from, and what the renderer draws, so a sample line
+    nobody edited would be narrated and published verbatim.
+
+    `prompt` is the instruction instead — "Open with the problem your viewer
+    has". It travels to the project in `VideoScene.settings`, which nothing
+    renders from, and the editor binds it to the field's *placeholder* rather
+    than its value. So it is visible exactly where the user needs it and cannot
+    become content by being left alone.
     """
     return {
         "title": title,
         "text": text,
         "duration_seconds": seconds,
         "transition": transition,
+        "role": role,
+        "prompt": prompt,
+        "media": media,
+        "animation": animation,
+        "layout": layout,
     }
 
 
@@ -180,6 +226,7 @@ SYSTEM_TEMPLATES: tuple[dict, ...] = (
         "platform": "youtube",
         "sort_order": 30,
         "definition": _definition(
+            music=None,
             subtitle_style=subtitle_engine.preset("youtube"),
             preview=_preview("#ef4444", ["#1f2937", "#111827"], "EXPLAINED", "lower-third"),
             layout={
@@ -190,12 +237,19 @@ SYSTEM_TEMPLATES: tuple[dict, ...] = (
                 "title": {"position": "lower", "size": "lg", "align": "left", "max_lines": 2},
             },
             scenes=[
-                _scene("Cold open", 6.0, "cut"),
-                _scene("Intro", 8.0),
-                _scene("Section 1", 30.0),
-                _scene("Section 2", 30.0),
-                _scene("Section 3", 30.0),
-                _scene("Outro", 12.0),
+                _scene("Cold open", 6.0, "cut", role="hook", media="b-roll",
+                       animation="none", layout="lower",
+                       prompt="Open with the problem your viewer has, in one sentence"),
+                _scene("Intro", 8.0, role="intro", media="speaker", layout="lower",
+                       prompt="Say who you are and what they will know by the end"),
+                _scene("Section 1", 30.0, role="point", media="screen", layout="lower",
+                       prompt="Introduce the main idea and why it matters"),
+                _scene("Section 2", 30.0, role="point", media="screen", layout="lower",
+                       prompt="Show the key benefit, with an example"),
+                _scene("Section 3", 30.0, role="point", media="b-roll", layout="lower",
+                       prompt="Handle the objection they are already thinking"),
+                _scene("Outro", 12.0, role="cta", media="speaker", layout="lower",
+                       prompt="End with a clear CTA - one action, not three"),
             ],
         ),
     },
@@ -209,6 +263,16 @@ SYSTEM_TEMPLATES: tuple[dict, ...] = (
         "platform": "youtube_shorts",
         "sort_order": 40,
         "definition": _definition(
+            music=None,
+            scenes=[
+                _scene("Hook", 3.0, "cut", role="hook", media="speaker",
+                       animation="pop", layout="center",
+                       prompt="Open with the line that stops the scroll"),
+                _scene("The point", 18.0, role="point", media="speaker", layout="center",
+                       prompt="Make one point. A short clip cannot carry two"),
+                _scene("Sign off", 4.0, role="cta", media="speaker", layout="lower",
+                       prompt="End with a clear CTA"),
+            ],
             subtitle_style=subtitle_engine.preset("shorts"),
             preview=_preview("#10b981", ["#134e4a", "#0f2f2c"], "BIG CAPTIONS", "caption-heavy"),
         ),
@@ -223,6 +287,7 @@ SYSTEM_TEMPLATES: tuple[dict, ...] = (
         "platform": "tiktok",
         "sort_order": 50,
         "definition": _definition(
+            music={'mood': 'energetic', 'volume': 0.18, 'ducking': True},
             subtitle_style=subtitle_engine.preset("tiktok"),
             preview=_preview("#f43f5e", ["#18181b", "#27272a"], "WAIT FOR IT…", "caption-heavy"),
             layout={
@@ -233,10 +298,16 @@ SYSTEM_TEMPLATES: tuple[dict, ...] = (
                 "safe_area": {"top": 0.10, "bottom": 0.22, "left": 0.06, "right": 0.18},
             },
             scenes=[
-                _scene("Hook", 3.0, "cut"),
-                _scene("Setup", 5.0),
-                _scene("Payoff", 6.0),
-                _scene("Loop back", 2.0, "cut"),
+                _scene("Hook", 3.0, "cut", role="hook", media="footage",
+                       animation="pop", layout="upper",
+                       prompt="Open with the problem your viewer has - three seconds, no build-up"),
+                _scene("Setup", 5.0, "cut", role="intro", media="footage", layout="upper",
+                       prompt="Introduce the main idea"),
+                _scene("Payoff", 5.0, "cut", role="proof", media="footage",
+                       animation="pop", layout="upper",
+                       prompt="Show the key benefit - this is what they stayed for"),
+                _scene("Loop back", 3.0, "cut", role="cta", media="footage", layout="upper",
+                       prompt="End with a clear CTA, or a line that sends them back to the start"),
             ],
         ),
     },
@@ -250,13 +321,25 @@ SYSTEM_TEMPLATES: tuple[dict, ...] = (
         "platform": "instagram_reels",
         "sort_order": 60,
         "definition": _definition(
+            music={'mood': 'uplifting', 'volume': 0.28, 'ducking': True},
             subtitle_style=subtitle_engine.preset("minimal"),
             preview=_preview("#a855f7", ["#2e1065", "#1e1b4b"], "SHOWCASE", "grid"),
             layout={
                 **deepcopy(DEFAULT_LAYOUT),
                 "safe_area": {"top": 0.12, "bottom": 0.20, "left": 0.06, "right": 0.16},
             },
-            scenes=[_scene(f"Beat {n}", 3.0, "cut" if n == 1 else "fade") for n in range(1, 6)],
+            scenes=[
+                _scene("Beat 1", 3.0, "cut", role="hook", media="image",
+                       animation="slide-up", prompt="Open on the strongest shot you have"),
+                _scene("Beat 2", 3.0, "cut", role="point", media="image",
+                       animation="slide-up", prompt="Add supporting visual"),
+                _scene("Beat 3", 3.0, "cut", role="point", media="image",
+                       animation="slide-up", prompt="Add supporting visual"),
+                _scene("Beat 4", 3.0, "cut", role="point", media="image",
+                       animation="slide-up", prompt="Add supporting visual"),
+                _scene("Beat 5", 3.0, "cut", role="cta", media="image",
+                       animation="slide-up", prompt="End with a clear CTA"),
+            ],
         ),
     },
 
@@ -269,13 +352,19 @@ SYSTEM_TEMPLATES: tuple[dict, ...] = (
         "platform": "instagram_reels",
         "sort_order": 70,
         "definition": _definition(
+            music={'mood': 'calm', 'volume': 0.15, 'ducking': True},
             preview=_preview("#0ea5e9", ["#0c4a6e", "#082f49"], "HOW IT WORKS", "bold-center"),
             scenes=[
-                _scene("The question", 4.0, "cut"),
-                _scene("Because…", 6.0),
-                _scene("Which means…", 6.0),
-                _scene("So…", 6.0),
-                _scene("Summary", 4.0),
+                _scene("The question", 4.0, "cut", role="hook", media="text-only",
+                       animation="pop", prompt="Ask the question your viewer already has"),
+                _scene("Because", 6.0, role="point", media="footage",
+                       prompt="Introduce the main idea in one sentence"),
+                _scene("Which means", 6.0, role="point", media="footage",
+                       prompt="Show what follows from it"),
+                _scene("So", 6.0, role="point", media="footage",
+                       prompt="Show the key benefit to them specifically"),
+                _scene("Summary", 4.0, role="outro", media="text-only",
+                       animation="pop", prompt="Say the one thing to remember"),
             ],
         ),
     },
@@ -287,12 +376,22 @@ SYSTEM_TEMPLATES: tuple[dict, ...] = (
         "platform": "youtube_shorts",
         "sort_order": 75,
         "definition": _definition(
+            music={'mood': 'calm', 'volume': 0.12, 'ducking': True},
             subtitle_style=subtitle_engine.preset("highlight"),
             preview=_preview("#0ea5e9", ["#082f49", "#0c4a6e"], "STEP 1", "numbered"),
             scenes=[
-                _scene("What you will make", 4.0, "cut"),
-                *[_scene(f"Step {n}", 7.0) for n in range(1, 5)],
-                _scene("The result", 5.0),
+                _scene("What you will make", 5.0, "cut", role="hook", media="product",
+                       prompt="Show the finished result first - that is the reason to watch"),
+                _scene("Step 1", 8.0, role="step", media="screen",
+                       prompt="First step. One action, stated plainly"),
+                _scene("Step 2", 8.0, role="step", media="screen",
+                       prompt="Second step"),
+                _scene("Step 3", 8.0, role="step", media="screen",
+                       prompt="Third step"),
+                _scene("Step 4", 4.0, role="step", media="screen",
+                       prompt="Final step"),
+                _scene("The result", 4.0, role="cta", media="product",
+                       prompt="Show the result again and end with a clear CTA"),
             ],
         ),
     },
@@ -306,17 +405,23 @@ SYSTEM_TEMPLATES: tuple[dict, ...] = (
         "platform": "instagram_post",
         "sort_order": 80,
         "definition": _definition(
+            music={'mood': 'professional', 'volume': 0.14, 'ducking': True},
             subtitle_style=subtitle_engine.preset("clean"),
             preview=_preview("#0f766e", ["#134e4a", "#0f2f2c"], "COMPANY UPDATE", "lower-third"),
             # The one template that leans hardest on the Brand Kit — a
             # corporate update in the wrong colours is worse than none.
             brand={"apply": True, "require_logo": True},
             scenes=[
-                _scene("Headline", 4.0, "cut"),
-                _scene("Point 1", 6.0),
-                _scene("Point 2", 6.0),
-                _scene("Point 3", 6.0),
-                _scene("Get in touch", 5.0),
+                _scene("Headline", 5.0, "cut", role="hook", media="text-only",
+                       layout="lower", prompt="The announcement, in one line"),
+                _scene("Point 1", 7.0, role="point", media="b-roll", layout="lower",
+                       prompt="Introduce the main idea"),
+                _scene("Point 2", 7.0, role="point", media="b-roll", layout="lower",
+                       prompt="Show the key benefit"),
+                _scene("Point 3", 5.0, role="point", media="b-roll", layout="lower",
+                       prompt="Add supporting visual and the detail that proves it"),
+                _scene("Get in touch", 3.0, role="cta", media="text-only", layout="lower",
+                       prompt="End with a clear CTA"),
             ],
         ),
     },
@@ -330,11 +435,23 @@ SYSTEM_TEMPLATES: tuple[dict, ...] = (
         "platform": "youtube_shorts",
         "sort_order": 90,
         "definition": _definition(
+            music={'mood': 'energetic', 'volume': 0.18, 'ducking': True},
             preview=_preview("#f59e0b", ["#451a03", "#292524"], "TOP 5", "numbered"),
             scenes=[
-                _scene("Hook", 3.0, "cut"),
-                *[_scene(f"Point {n}", 5.0) for n in range(1, 6)],
-                _scene("Call to action", 3.0),
+                _scene("Hook", 3.0, "cut", role="hook", media="text-only",
+                       animation="pop", prompt="Name the list and why it matters"),
+                _scene("Point 1", 5.0, "cut", role="point", media="footage",
+                       animation="slide-up", prompt="First item - one line"),
+                _scene("Point 2", 5.0, "cut", role="point", media="footage",
+                       animation="slide-up", prompt="Second item"),
+                _scene("Point 3", 5.0, "cut", role="point", media="footage",
+                       animation="slide-up", prompt="Third item"),
+                _scene("Point 4", 5.0, "cut", role="point", media="footage",
+                       animation="slide-up", prompt="Fourth item"),
+                _scene("Point 5", 5.0, "cut", role="point", media="footage",
+                       animation="slide-up", prompt="Strongest item last"),
+                _scene("Call to action", 3.0, role="cta", media="text-only",
+                       prompt="End with a clear CTA"),
             ],
         ),
     },
@@ -346,6 +463,7 @@ SYSTEM_TEMPLATES: tuple[dict, ...] = (
         "platform": "instagram_reels",
         "sort_order": 95,
         "definition": _definition(
+            music={'mood': 'inspiring', 'volume': 0.3, 'ducking': False},
             subtitle_style=subtitle_engine.preset("minimal"),
             preview=_preview("#f59e0b", ["#292524", "#1c1917"], "“BELIEVE IN\nYOURSELF”", "quote"),
             layout={
@@ -354,8 +472,10 @@ SYSTEM_TEMPLATES: tuple[dict, ...] = (
                 "body": {"position": "lower", "size": "sm", "align": "center", "max_lines": 1},
             },
             scenes=[
-                _scene("The quote", 7.0, "fade"),
-                _scene("Attribution", 3.0),
+                _scene("The quote", 7.0, "cut", role="quote", media="footage",
+                       animation="fade", prompt="The quote. Short enough to read in one breath"),
+                _scene("Attribution", 3.0, role="outro", media="footage",
+                       prompt="Who said it - and your handle if you want the credit"),
             ],
         ),
     },
@@ -369,12 +489,24 @@ SYSTEM_TEMPLATES: tuple[dict, ...] = (
         "platform": "youtube_shorts",
         "sort_order": 100,
         "definition": _definition(
+            music={'mood': 'energetic', 'volume': 0.18, 'ducking': True},
             subtitle_style=subtitle_engine.preset("highlight"),
             preview=_preview("#22d3ee", ["#083344", "#0c4a6e"], "FACT #5", "numbered"),
             scenes=[
-                _scene("Hook", 3.0, "cut"),
-                *[_scene(f"Fact #{n}", 5.0, "cut") for n in (5, 4, 3, 2, 1)],
-                _scene("Which one surprised you?", 3.0),
+                _scene("Hook", 3.0, "cut", role="hook", media="text-only",
+                       animation="pop", prompt="Promise the payoff - what they will know in 30 seconds"),
+                _scene("Fact #5", 5.0, "cut", role="point", media="image",
+                       animation="slide-up", prompt="Fifth-most surprising fact"),
+                _scene("Fact #4", 5.0, "cut", role="point", media="image",
+                       animation="slide-up", prompt="Fourth"),
+                _scene("Fact #3", 5.0, "cut", role="point", media="image",
+                       animation="slide-up", prompt="Third"),
+                _scene("Fact #2", 5.0, "cut", role="point", media="image",
+                       animation="slide-up", prompt="Second"),
+                _scene("Fact #1", 5.0, "cut", role="point", media="image",
+                       animation="pop", prompt="The most surprising one - save it for last"),
+                _scene("Which one surprised you?", 3.0, role="cta", media="text-only",
+                       prompt="End with a clear CTA - ask for the comment"),
             ],
         ),
     },
@@ -388,12 +520,17 @@ SYSTEM_TEMPLATES: tuple[dict, ...] = (
         "platform": "instagram_post",
         "sort_order": 110,
         "definition": _definition(
+            music={'mood': 'uplifting', 'volume': 0.2, 'ducking': True},
             preview=_preview("#ec4899", ["#500724", "#831843"], "NEW IN", "split"),
             scenes=[
-                _scene("Problem", 4.0, "cut"),
-                _scene("Product", 6.0),
-                _scene("Proof", 5.0),
-                _scene("Offer", 4.0),
+                _scene("Problem", 5.0, "cut", role="hook", media="footage",
+                       prompt="Open with the problem your viewer has"),
+                _scene("Product", 6.0, role="product", media="product",
+                       prompt="Show the product solving it - no talking about it yet"),
+                _scene("Proof", 5.0, role="proof", media="product",
+                       prompt="Show the key benefit, or the proof somebody else believed it"),
+                _scene("Offer", 3.0, role="cta", media="text-only",
+                       prompt="End with a clear CTA - price, offer, or where to get it"),
             ],
         ),
     },
@@ -405,13 +542,18 @@ SYSTEM_TEMPLATES: tuple[dict, ...] = (
         "platform": "instagram_reels",
         "sort_order": 115,
         "definition": _definition(
+            music=None,
             subtitle_style=subtitle_engine.preset("shorts"),
             preview=_preview("#ec4899", ["#831843", "#4c0519"], "UNBOXING", "caption-heavy"),
             scenes=[
-                _scene("It arrived", 3.0, "cut"),
-                _scene("Opening it", 6.0, "cut"),
-                _scene("First look", 6.0),
-                _scene("Worth it?", 5.0),
+                _scene("It arrived", 4.0, "cut", role="hook", media="product",
+                       prompt="The box, before it is opened"),
+                _scene("Opening it", 7.0, role="product", media="product",
+                       prompt="Open it. Let the moment land before you speak"),
+                _scene("First look", 6.0, role="proof", media="product",
+                       prompt="First honest reaction - what surprised you"),
+                _scene("Worth it?", 3.0, role="cta", media="speaker",
+                       prompt="End with a clear CTA - your verdict, and where to get it"),
             ],
         ),
     },
@@ -425,6 +567,7 @@ SYSTEM_TEMPLATES: tuple[dict, ...] = (
         "platform": "youtube",
         "sort_order": 120,
         "definition": _definition(
+            music=None,
             subtitle_style=subtitle_engine.preset("clean"),
             preview=_preview("#a3a3a3", ["#1c1917", "#0c0a09"], "PART ONE", "lower-third"),
             layout={
@@ -433,11 +576,17 @@ SYSTEM_TEMPLATES: tuple[dict, ...] = (
             },
             export_settings={"format": "mp4", "quality": "high", "burn_subtitles": False},
             scenes=[
-                _scene("Cold open", 10.0, "fade"),
-                _scene("Context", 20.0),
-                _scene("Act one", 40.0),
-                _scene("Act two", 40.0),
-                _scene("Close", 15.0),
+                _scene("Cold open", 15.0, "cut", role="hook", media="b-roll",
+                       animation="none", layout="lower",
+                       prompt="Open in the middle of the story, before any context"),
+                _scene("Context", 25.0, role="intro", media="b-roll", layout="lower",
+                       prompt="Introduce the main idea - what the viewer needs to follow it"),
+                _scene("Act one", 40.0, role="point", media="b-roll", layout="lower",
+                       prompt="What happened, and what it cost"),
+                _scene("Act two", 35.0, role="point", media="b-roll", layout="lower",
+                       prompt="The turn - what changed"),
+                _scene("Close", 10.0, role="outro", media="b-roll", layout="lower",
+                       prompt="Land the meaning. End with a clear CTA if you want one"),
             ],
         ),
     },
@@ -451,13 +600,18 @@ SYSTEM_TEMPLATES: tuple[dict, ...] = (
         "platform": "instagram_reels",
         "sort_order": 130,
         "definition": _definition(
+            music={'mood': 'dramatic', 'volume': 0.22, 'ducking': True},
             subtitle_style=subtitle_engine.preset("shorts"),
             preview=_preview("#8b5cf6", ["#2e1065", "#1e1b4b"], "IT STARTED\nLIKE THIS", "quote"),
             scenes=[
-                _scene("Setup", 6.0, "cut"),
-                _scene("The turn", 7.0),
-                _scene("Climax", 8.0),
-                _scene("Resolution", 6.0),
+                _scene("Setup", 6.0, "cut", role="hook", media="footage",
+                       prompt="Where it started - one line, no preamble"),
+                _scene("The turn", 8.0, role="point", media="footage",
+                       prompt="What changed, and when you knew"),
+                _scene("Climax", 8.0, role="proof", media="footage",
+                       animation="pop", prompt="The moment it mattered"),
+                _scene("Resolution", 5.0, role="cta", media="footage",
+                       prompt="Where it left you. End with a clear CTA"),
             ],
         ),
     },
@@ -471,6 +625,7 @@ SYSTEM_TEMPLATES: tuple[dict, ...] = (
         "platform": "youtube_shorts",
         "sort_order": 140,
         "definition": _definition(
+            music={'mood': 'energetic', 'volume': 0.26, 'ducking': False},
             # Karaoke highlights one word at a time, which is what makes this
             # template work with no video behind it at all.
             subtitle_style=subtitle_engine.preset("karaoke"),
@@ -481,10 +636,14 @@ SYSTEM_TEMPLATES: tuple[dict, ...] = (
             },
             export_settings={"format": "mp4", "quality": "high", "burn_subtitles": True},
             scenes=[
-                _scene("Line 1", 4.0, "cut"),
-                _scene("Line 2", 4.0, "cut"),
-                _scene("Line 3", 4.0, "cut"),
-                _scene("Sign off", 3.0),
+                _scene("Line 1", 4.0, "cut", role="hook", media="text-only",
+                       animation="pop", prompt="Open with the problem your viewer has"),
+                _scene("Line 2", 4.0, "cut", role="point", media="text-only",
+                       animation="slide-up", prompt="Introduce the main idea"),
+                _scene("Line 3", 4.0, "cut", role="point", media="text-only",
+                       animation="slide-up", prompt="Show the key benefit"),
+                _scene("Sign off", 3.0, "cut", role="cta", media="text-only",
+                       animation="pop", prompt="End with a clear CTA"),
             ],
         ),
     },
@@ -566,13 +725,19 @@ def list_templates(
     if platform:
         query = query.where(VideoTemplate.platform == platform)
     if search:
-        pattern = f"%{search.strip().lower()}%"
-        query = query.where(
-            or_(
-                func.lower(VideoTemplate.name).like(pattern),
-                func.lower(func.coalesce(VideoTemplate.description, "")).like(pattern),
+        # Per word, and across the category and platform too. "vertical
+        # tiktok" is how somebody looks for a template; as one phrase over the
+        # name alone it matches nothing, because no template is called that.
+        for word in search.strip().lower().split()[:8]:
+            pattern = f"%{word}%"
+            query = query.where(
+                or_(
+                    func.lower(VideoTemplate.name).like(pattern),
+                    func.lower(func.coalesce(VideoTemplate.description, "")).like(pattern),
+                    func.lower(func.coalesce(VideoTemplate.category, "")).like(pattern),
+                    func.lower(func.coalesce(VideoTemplate.platform, "")).like(pattern),
+                )
             )
-        )
     if owned_only:
         query = query.where(VideoTemplate.user_id == user_id)
 

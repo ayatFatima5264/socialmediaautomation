@@ -150,6 +150,20 @@ def _http(exc: Exception) -> HTTPException:
 def ai_options(user: User = Depends(get_current_user)) -> AIOptions:
     """What the AI form can offer on this deployment."""
     from app.services.video import presets
+    from app.services.providers.base import ProviderError
+    from app.services.providers.factory import get_provider
+
+    # Whether a provider can actually be built, not whether one is *named*.
+    # `AI_PROVIDER` has a default, so `bool(settings.ai_provider)` was always
+    # true — the banner could never appear, and a deployment with no key sent
+    # the user through the whole brief before failing on the generate call.
+    try:
+        text_available = get_provider() is not None
+    except ProviderError:
+        text_available = False
+    except Exception:  # noqa: BLE001 — a probe must not fail the form
+        logger.warning("AI provider probe failed", exc_info=True)
+        text_available = False
 
     data = scripting.options()
     return AIOptions(
@@ -158,7 +172,7 @@ def ai_options(user: User = Depends(get_current_user)) -> AIOptions:
             {"key": preset["key"], "label": preset["label"]}
             for preset in presets.as_dicts()
         ],
-        text_available=bool(settings.ai_provider),
+        text_available=text_available,
     )
 
 

@@ -329,6 +329,8 @@ def get_template(
         subtitle_style=definition.get("subtitle_style") or {},
         layout=definition.get("layout") or {},
         export_settings=definition.get("export_settings") or {},
+        typography=definition.get("typography") or {},
+        music=definition.get("music"),
     )
 
 
@@ -366,6 +368,8 @@ def save_template(
         subtitle_style=definition.get("subtitle_style") or {},
         layout=definition.get("layout") or {},
         export_settings=definition.get("export_settings") or {},
+        typography=definition.get("typography") or {},
+        music=definition.get("music"),
     )
 
 

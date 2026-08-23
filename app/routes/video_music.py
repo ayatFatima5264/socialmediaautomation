@@ -355,7 +355,7 @@ def delete_track(
 
 
 @router.post("/{track_id}/add", response_model=AudioLayerRead, status_code=201)
-def add_to_project(
+async def add_to_project(
     track_id: int,
     body: TrackAdd,
     db: Session = Depends(get_db),
@@ -363,10 +363,15 @@ def add_to_project(
 ) -> AudioLayerRead:
     """Add a track to a project as a music layer.
 
-    Nothing is copied — the layer references the same audio the library row
-    does. The licence, the credit line and the source are written onto the
-    layer so the obligation stays with the project even if the catalogue row
-    changes later.
+    The licence, the credit line and the source are written onto the layer so
+    the obligation stays with the project even if the catalogue row changes
+    later.
+
+    A catalogue track is fetched into our own storage first. It has to be: the
+    renderer only reads inputs from object storage, so a layer that pointed at
+    somebody else's URL was attached, credited, and silent in the export. Doing
+    it here rather than at render time means the failure — a dead link, a
+    removed track — surfaces while the user is still choosing.
 
     Refused with 403 if the licence does not permit commercial use.
     """
@@ -381,6 +386,9 @@ def add_to_project(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
     try:
+        # Before the licence check writes anything: a track we cannot fetch is
+        # not one we should be recording a credit for.
+        track = await music_service.ensure_stored(db, track=track, user_id=user.id)
         layer = music_service.add_to_project(
             db,
             user_id=user.id,

@@ -480,13 +480,19 @@ def _library_query(
         # Both the display title and the original filename: people look for
         # "the one called beach" and for "IMG_4821.MOV", and only one of those
         # is the title.
-        pattern = f"%{search.strip().lower()}%"
-        query = query.where(
-            or_(
-                func.lower(VideoAsset.title).like(pattern),
-                func.lower(func.coalesce(VideoAsset.filename, "")).like(pattern),
+        #
+        # A word at a time, not the phrase. One LIKE over "reel demo" requires
+        # those words adjacent and in that order, so it misses "QA Demo Reel" —
+        # and nobody remembers their own file names in order. Every word must
+        # match something, which keeps two words narrower than one.
+        for word in search.strip().lower().split()[:8]:
+            pattern = f"%{word}%"
+            query = query.where(
+                or_(
+                    func.lower(VideoAsset.title).like(pattern),
+                    func.lower(func.coalesce(VideoAsset.filename, "")).like(pattern),
+                )
             )
-        )
 
     # `unassigned` and `project_id` are different questions, and both are
     # asked: the library's "Not in a project" filter, and a project's own
