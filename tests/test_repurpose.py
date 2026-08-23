@@ -654,3 +654,41 @@ def test_a_generated_short_exports(rp_client, headers, long_video, studio_sessio
         info = probe(path)
 
     assert (info.width, info.height) == (144, 256), "the export is not vertical"
+
+
+# ---------------------------------------------------------------------------
+# The "no transcription provider" banner
+# ---------------------------------------------------------------------------
+# `available_transcription_providers` is a list of the provider names this build
+# supports. It was being *called* — `bool(available_transcription_providers())`
+# — which raises TypeError, which a bare `except Exception` swallowed into
+# `False`. So production told every user transcription was unconfigured no
+# matter what was configured, and nothing failed loudly enough to notice.
+
+
+def test_the_banner_reflects_a_configured_provider(studio_client, headers, monkeypatch):
+    from app.config import settings
+    from app.services.video.providers import reset_provider_cache
+
+    monkeypatch.setattr(settings, "transcription_provider", "groq")
+    monkeypatch.setattr(settings, "groq_api_key", "gsk_a_key_that_is_present")
+    reset_provider_cache()
+
+    response = studio_client.get("/api/video/repurpose/targets", headers=headers)
+
+    assert response.status_code == 200, response.text
+    assert response.json()["transcription_available"] is True
+
+
+def test_the_banner_reflects_a_missing_key(studio_client, headers, monkeypatch):
+    from app.config import settings
+    from app.services.video.providers import reset_provider_cache
+
+    monkeypatch.setattr(settings, "transcription_provider", "groq")
+    monkeypatch.setattr(settings, "groq_api_key", None)
+    reset_provider_cache()
+
+    response = studio_client.get("/api/video/repurpose/targets", headers=headers)
+
+    assert response.status_code == 200, response.text
+    assert response.json()["transcription_available"] is False

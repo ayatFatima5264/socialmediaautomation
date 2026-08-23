@@ -46,7 +46,7 @@ from app.services.video import transcription as transcription_service
 from app.services.video.metering import UsageLimitExceeded
 from app.services.video.providers import (
     MediaProviderConfigError,
-    available_transcription_providers,
+    get_transcription_provider,
 )
 
 logger = logging.getLogger(__name__)
@@ -66,9 +66,15 @@ def _http(exc: Exception) -> HTTPException:
 
 @router.get("/targets", response_model=RepurposeOptions)
 def targets(user: User = Depends(get_current_user)) -> RepurposeOptions:
+    # Whether the *configured* provider can actually run, not which ones exist.
+    # Building it is the probe: the constructor raises when its key is missing,
+    # which is exactly the condition the banner is there to report.
     try:
-        available = bool(available_transcription_providers())
+        available = get_transcription_provider() is not None
+    except MediaProviderConfigError:
+        available = False
     except Exception:  # noqa: BLE001 — a provider probe must not fail the page
+        logger.warning("Transcription provider probe failed", exc_info=True)
         available = False
 
     return RepurposeOptions(
