@@ -26,6 +26,7 @@ What is covered, and why each matters:
 """
 from __future__ import annotations
 
+import asyncio
 import base64
 
 import pytest
@@ -128,6 +129,71 @@ class FakeTTS(TTSProvider):
             provider=self.name,
             word_marks=[{"start": 0.0, "end": 0.4, "word": "Hello", "kind": "word"}],
         )
+
+
+class ScriptedTTS(TTSProvider):
+    """A catalogue and a failure plan, for fallback-chain tests.
+
+    `fail` is a queue: each `synthesize` pops the next exception, so a test can
+    script a primary that goes down once and then stay out of the way.
+    """
+
+    def __init__(self, *, name, voices, fail=()):
+        self.name = name
+        self.voices_provided = list(voices)
+        self.fails = list(fail)
+        self.calls: list[SpeechRequest] = []
+
+    async def list_voices(self) -> list[Voice]:
+        return self.voices_provided
+
+    async def synthesize(self, request: SpeechRequest) -> SpeechResult:
+        self.calls.append(request)
+        if self.fails:
+            raise self.fails.pop(0)
+        return SpeechResult(
+            audio=WAV_BYTES,
+            content_type="audio/wav",
+            duration_seconds=2.0,
+            voice_id=request.voice_id,
+            provider=self.name,
+            word_marks=[],
+        )
+
+
+def install_providers(monkeypatch, providers: dict[str, TTSProvider]) -> None:
+    """Make the voice service resolve provider names from `providers`.
+
+    The same seam `provider` above uses, but keyed by name so a test can hold
+    several providers and a fallback chain behind `settings.tts_fallback_providers`.
+    """
+    def provider_for(name: str | None) -> TTSProvider:
+        if name is None:
+            name = "fake"
+        return providers[name]
+
+    monkeypatch.setattr("app.services.video.providers.factory._build_tts", provider_for)
+    monkeypatch.setattr("app.services.video.voice.get_tts_provider", provider_for)
+    monkeypatch.setattr(
+        "app.services.video.voice.get_tts_providers", lambda: list(providers.values())
+    )
+    monkeypatch.setattr(
+        "app.services.video.voice.metering.check_allowance", lambda *a, **k: None
+    )
+    reset_provider_cache()
+
+
+def a_voice(*, id, provider, language="en-US", gender="female") -> Voice:
+    """One catalogue entry, with the fields the studio reads already filled."""
+    return Voice(
+        id=id,
+        provider=provider,
+        label=id,
+        language=language,
+        language_label=language,
+        gender=gender,
+        supports_prosody=True,
+    )
 
 
 @pytest.fixture()
@@ -791,3 +857,146 @@ def test_one_unreachable_provider_does_not_empty_the_catalogue(monkeypatch, prov
     voices = asyncio.run(voice_service.list_voices())
 
     assert {v.provider for v in voices} == {"fake"}
+
+
+# ===========================================================================
+# The fallback chain
+# ===========================================================================
+
+
+def test_a_fallback_uses_its_own_closest_voice_not_the_shared_voice_id(monkeypatch):
+    """The collision case: the same voice id exists in two providers with
+    nothing in common but the id.
+
+    The user's voice belongs to the primary. When the primary fails at request
+    time, the fallback has to speak in *its* closest voice to the one picked —
+    sending the shared id to the fallback would hand the synthesis to a voice
+    whose language and gender are not the ones the user chose.
+    """
+    primary = ScriptedTTS(
+        name="primary",
+        voices=[a_voice(id="shared", provider="primary")],
+        fail=(MediaProviderError("primary is down"),),
+    )
+    fallback = ScriptedTTS(
+        name="fallback",
+        voices=[
+            a_voice(id="shared", provider="fallback", language="ur-PK", gender="male"),
+            a_voice(id="fallback-Lilac", provider="fallback"),
+        ],
+    )
+    install_providers(monkeypatch, {"primary": primary, "fallback": fallback})
+    monkeypatch.setattr("app.config.settings.tts_fallback_providers", ["fallback"])
+
+    _, details = asyncio.run(voice_service.synthesize(
+        None, user_id=1, text="Hello.", voice_id="shared", save=False,
+    ))
+
+    assert details["provider"] == "fallback"
+    assert details["voice_id"] == "fallback-Lilac"
+    # The id the fallback was actually asked to speak.
+    assert [call.voice_id for call in fallback.calls] == ["fallback-Lilac"]
+
+
+def test_a_config_error_on_the_chosen_provider_does_not_consult_the_chain(monkeypatch):
+    """A missing API key on the provider the user chose is 503 — it will not
+    succeed on retry, so the fallback chain must not be consulted at all."""
+    primary = ScriptedTTS(
+        name="primary",
+        voices=[a_voice(id="prime", provider="primary")],
+        fail=(MediaProviderConfigError("PRIMARY_KEY is not set."),),
+    )
+    fallback = ScriptedTTS(
+        name="fallback", voices=[a_voice(id="fallback-Lilac", provider="fallback")]
+    )
+    install_providers(monkeypatch, {"primary": primary, "fallback": fallback})
+    monkeypatch.setattr("app.config.settings.tts_fallback_providers", ["fallback"])
+
+    with pytest.raises(MediaProviderConfigError):
+        asyncio.run(voice_service.synthesize(
+            None, user_id=1, text="Hello.", voice_id="prime", save=False,
+        ))
+
+    assert fallback.calls == [], "a fixable-by-operator error silently changed voices"
+
+
+def test_an_unconfigured_fallback_is_skipped_and_the_next_one_answers(monkeypatch):
+    """The keyless "edge" case: a fallback whose key is missing fails with a
+    config error, is skipped, and the next fallback in the chain answers."""
+    primary = ScriptedTTS(
+        name="primary",
+        voices=[a_voice(id="prime", provider="primary")],
+        fail=(MediaProviderError("primary is down"),),
+    )
+    unconfigured = ScriptedTTS(
+        name="unconfigured",
+        voices=[a_voice(id="uc-Lilac", provider="unconfigured")],
+        fail=(MediaProviderConfigError("NO_KEY is not set."),),
+    )
+    last = ScriptedTTS(
+        name="last", voices=[a_voice(id="last-Lilac", provider="last")]
+    )
+    install_providers(
+        monkeypatch,
+        {"primary": primary, "unconfigured": unconfigured, "last": last},
+    )
+    monkeypatch.setattr(
+        "app.config.settings.tts_fallback_providers", ["unconfigured", "last"]
+    )
+
+    _, details = asyncio.run(voice_service.synthesize(
+        None, user_id=1, text="Hello.", voice_id="prime", save=False,
+    ))
+
+    assert details["provider"] == "last"
+    assert [call.voice_id for call in last.calls] == ["last-Lilac"]
+
+
+def test_when_no_fallback_answers_the_chain_fails_as_one_clear_error(monkeypatch):
+    """A single user-facing error, not a partial result or a three-error
+    summary — the failure is reported as the last provider's reason."""
+    primary = ScriptedTTS(
+        name="primary",
+        voices=[a_voice(id="prime", provider="primary")],
+        fail=(MediaProviderError("rate limited"),),
+    )
+    install_providers(monkeypatch, {"primary": primary})
+    monkeypatch.setattr("app.config.settings.tts_fallback_providers", [])
+
+    with pytest.raises(voice_service.VoiceError, match="rate limited"):
+        asyncio.run(voice_service.synthesize(
+            None, user_id=1, text="Hello.", voice_id="prime", save=False,
+        ))
+
+
+# ===========================================================================
+# Provider prosody and locale handling
+# ===========================================================================
+
+
+def test_the_prosody_conversions_are_shared_and_sane():
+    """The multiplier the studio uses means the same thing in every provider."""
+    from app.services.video.providers.base import pitch_semitones, volume_gain_db
+
+    # Unity is exactly nothing; an octave up is a full octave; half volume is
+    # −6 dB — the convention any provider that takes gain documents.
+    assert pitch_semitones(1.0) == 0.0
+    assert pitch_semitones(2.0) == pytest.approx(12.0)
+    assert volume_gain_db(1.0) == 0.0
+    assert volume_gain_db(0.5) == pytest.approx(-6.02, abs=0.01)
+    # Silence is clamped to the −96 dB floor providers accept, not −infinity.
+    assert volume_gain_db(0.0) == -96.0
+
+
+def test_google_locale_is_matched_as_a_bcp47_tag_not_split_from_the_name():
+    """Splicing the first two hyphen segments breaks on the third and fourth
+    forms Google actually ships — three-letter languages, script tags."""
+    from app.services.video.providers.google_tts import _LOCALE_RE
+
+    assert _LOCALE_RE.match("en-US-Standard-C").group(0) == "en-US"
+    assert _LOCALE_RE.match("en-GB-Wavenet-B").group(0) == "en-GB"
+    assert _LOCALE_RE.match("pt-BR-Wavenet-A").group(0) == "pt-BR"
+    # Three-letter language code — the two-hyphen-segment splice breaks here
+    # because "cmn-CN-Wavenet-B" would demand CN be the voice, not the region.
+    assert _LOCALE_RE.match("cmn-CN-Wavenet-B").group(0) == "cmn-CN"
+    assert _LOCALE_RE.match("yue-HK-Standard-C").group(0) == "yue-HK"

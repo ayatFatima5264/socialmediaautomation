@@ -19,6 +19,7 @@ the factory.
 """
 from __future__ import annotations
 
+import math
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 
@@ -33,6 +34,41 @@ class MediaProviderConfigError(MediaProviderError):
 
 class UnsupportedVoiceError(MediaProviderError):
     """The requested voice is not one this provider can speak."""
+
+
+# ---------------------------------------------------------------------------
+# Prosody conversions
+# ---------------------------------------------------------------------------
+# `SpeechRequest` carries rate, pitch and volume as *multipliers around 1.0*.
+# Every provider spells those differently — semitones, hertz offsets, decibels,
+# percentage strings — and each conversion is trivial in isolation. The reason
+# these two live here rather than in a provider is consistency: if Google maps
+# a pitch multiplier to semitones one way and some future provider maps it a
+# mathematically different way, the same slider sounds different on different
+# voices. One conversion, shared.
+
+
+def pitch_semitones(multiplier: float) -> float:
+    """A pitch multiplier around 1.0 as semitones relative to the voice.
+
+    A multiplier is a ratio and a semitone is log₂ of that ratio: 0.5–1.5 (the
+    studio's slider range) maps to −12…+7 semitones. Providers that speak in
+    semitones use this; a provider that needs a different spelling (edge's hertz
+    offset, elevenlabs' absent pitch control) documents its own instead.
+    """
+    return 12.0 * math.log2(max(multiplier, 1e-9))
+
+
+def volume_gain_db(multiplier: float) -> float:
+    """A volume multiplier around 1.0 as a gain in decibels.
+
+    1.0 is unity (0 dB), 0.5 is −6 dB, 0.1 is −20 dB. Clamped to −96 dB, the
+    floor providers accept, so a silent track is refused by the same ceiling a
+    provider enforces rather than rejected as out of range.
+    """
+    if multiplier <= 0.0:
+        return -96.0
+    return max(-96.0, 20.0 * math.log10(multiplier))
 
 
 # ---------------------------------------------------------------------------

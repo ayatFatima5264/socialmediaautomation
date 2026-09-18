@@ -12,11 +12,43 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.core.limits import MAX_SCRIPT_CHARACTERS
+
+#: The most cues a track can carry. `MAX_SCRIPT_CHARACTERS` of narration splits
+#: into a few thousand at the shortest sensible cue length, so this is well
+#: clear of any real track while still bounding the work an edit does.
+MAX_CUES = 10_000
+
+#: One cue is a line or two of subtitle. This is generous for that and still
+#: stops a single cue carrying a megabyte into an SRT and then a drawtext
+#: argument.
+MAX_CUE_CHARACTERS = 4_000
+
 
 class Cue(BaseModel):
+    """A cue as it is *returned*.
+
+    Deliberately unbounded. An imported SRT is read back as whatever it says,
+    and a response model that refuses a long line would turn somebody else's
+    unusual subtitle file into a 500 instead of something they can edit. The
+    bound belongs on the way in, where it stops the input growing — see
+    `CueIn`.
+    """
+
     start: float = Field(ge=0)
     end: float = Field(ge=0)
     text: str
+
+
+class CueIn(Cue):
+    """A cue as it is *accepted*.
+
+    Same shape, with a ceiling on the text. A cue is a line or two of subtitle;
+    this is generous for that and still stops one carrying a megabyte into an
+    SRT line and then a drawtext argument at render time.
+    """
+
+    text: str = Field(max_length=MAX_CUE_CHARACTERS)
 
 
 class CueList(BaseModel):
@@ -26,9 +58,13 @@ class CueList(BaseModel):
     cues at most, editing is interactive, and a split or a merge changes the
     index of everything after it — so an endpoint that took "cue 14" would be
     describing a track the client no longer has.
+
+    That the whole track arrives every time is also why it is bounded: the
+    request is the unit of work, so an unbounded one is an unbounded amount of
+    work per call.
     """
 
-    cues: list[Cue] = Field(default_factory=list)
+    cues: list[CueIn] = Field(default_factory=list, max_length=MAX_CUES)
 
 
 # ---------------------------------------------------------------------------
@@ -39,7 +75,7 @@ class CueList(BaseModel):
 class ScriptRequest(BaseModel):
     """Cues from a written script — the input with no audio behind it."""
 
-    text: str = Field(min_length=1)
+    text: str = Field(min_length=1, max_length=MAX_SCRIPT_CHARACTERS)
     #: The length to fit the script to, when it is known (the voice-over it was
     #: written for). Without it the timing comes from a reading speed, which is
     #: an estimate, and the response says so.
@@ -137,7 +173,7 @@ class AlignmentReport(BaseModel):
 class AlignRequest(CueList):
     """Correct a transcribed track against the script it was read from."""
 
-    script: str = Field(min_length=1)
+    script: str = Field(min_length=1, max_length=MAX_SCRIPT_CHARACTERS)
     style_key: str | None = None
 
 

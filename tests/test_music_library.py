@@ -16,7 +16,13 @@ client, so the catalogue tests run against a fixed set of results.
 """
 from __future__ import annotations
 
+import asyncio
+
+import httpx
 import pytest
+
+from app.config import settings
+from app.services.video import music as music_service
 
 from tests.conftest import WAV_BYTES
 
@@ -773,3 +779,143 @@ def test_the_bed_is_trimmed_to_the_picture(
         assert placed["duration"] <= visual + 0.01, (
             "the music bed is longer than the video it sits under"
         )
+
+
+# ---------------------------------------------------------------------------
+# Fetching a catalogue track into our own storage
+#
+# `fake_fetch` above replaces `fetch_audio` for every other test in this file,
+# which is right — no test should depend on a third party being up — but it
+# also means the real one has no coverage. These two drive it directly against
+# a mock transport. `REAL_FETCH_AUDIO` is bound at import, before the autouse
+# fixture swaps the module attribute out.
+# ---------------------------------------------------------------------------
+
+REAL_FETCH_AUDIO = music_service.fetch_audio
+
+
+def _mock_transport(monkeypatch, handler):
+    """Point `fetch_audio`'s client at a handler instead of the network."""
+    original = httpx.AsyncClient
+
+    def factory(**kwargs):
+        kwargs["transport"] = httpx.MockTransport(handler)
+        return original(**kwargs)
+
+    monkeypatch.setattr("app.services.video.music.httpx.AsyncClient", factory)
+
+
+def test_a_source_that_never_stops_sending_is_cut_off_at_the_limit(monkeypatch):
+    """The size of this response is decided by somebody else's server.
+
+    Reading it whole and then checking `len` is a promise that whatever they
+    send fits in memory — a stuck or hostile host could send indefinitely. The
+    limit has to be applied as the bytes arrive, which is also the only way it
+    can stop a response that has no end.
+    """
+    pulled = {"mb": 0}
+
+    async def endless(request):
+        async def body():
+            while True:
+                pulled["mb"] += 1
+                yield b"\0" * (1024 * 1024)
+
+        return httpx.Response(
+            200, headers={"content-type": "audio/wav"}, content=body()
+        )
+
+    _mock_transport(monkeypatch, endless)
+
+    with pytest.raises(music_service.MusicError, match="larger than"):
+        asyncio.run(REAL_FETCH_AUDIO("https://example.invalid/endless.wav"))
+
+    # Stopped just past the ceiling rather than running until memory ran out.
+    assert pulled["mb"] <= settings.video_max_upload_mb + 2
+
+
+def test_a_landing_page_is_rejected_from_its_headers_before_the_body_is_read():
+    """A catalogue link that redirects to an HTML page is common.
+
+    Checking the type before reading the body means that costs one round trip
+    rather than a download, and the track never reaches storage to fail at the
+    encoder later.
+    """
+    read = {"body": False}
+
+    async def landing_page(request):
+        async def body():
+            read["body"] = True
+            yield b"<html>Track removed</html>"
+
+        return httpx.Response(
+            200, headers={"content-type": "text/html"}, content=body()
+        )
+
+    with pytest.MonkeyPatch.context() as patch:
+        _mock_transport(patch, landing_page)
+        with pytest.raises(music_service.MusicError, match="did not return audio"):
+            asyncio.run(REAL_FETCH_AUDIO("https://example.invalid/gone.mp3"))
+
+    assert read["body"] is False, "the body was downloaded before the type was checked"
+
+
+def test_an_oversized_response_is_refused_from_content_length_before_downloading(
+    monkeypatch,
+):
+    """The server told us the length; believe it before spending the download.
+
+    `Content-Length` is the host's own estimate, so this is a fast path and not
+    the defence — the per-chunk cap that follows is what actually enforces the
+    limit against a lying header. But when the header is honest, the refusal
+    should cost zero body bytes."
+    """
+    read = {"body": False}
+    over = {
+        "content-length": str(settings.video_max_upload_mb * 1024 * 1024 + 1),
+        "content-type": "audio/wav",
+    }
+
+    async def oversized(request):
+        async def body():
+            read["body"] = True
+            yield b"\0" * (1024 * 1024)
+
+        return httpx.Response(200, headers=over, content=body())
+
+    _mock_transport(monkeypatch, oversized)
+
+    with pytest.raises(music_service.MusicError, match="larger than"):
+        asyncio.run(REAL_FETCH_AUDIO("https://example.invalid/big.wav"))
+
+    assert read["body"] is False, "the body was streamed to learn the size we were told"
+
+
+def test_a_track_refused_on_licence_is_never_downloaded(
+    studio_client, headers, project, fake_openverse, monkeypatch
+):
+    """The licence gate has to come before the fetch, not after it.
+
+    Fetching first means a track we are about to refuse gets pulled down and
+    written into our own storage anyway — and this module's whole position is
+    that re-hosting somebody else's file is a bigger licensing claim than
+    linking to it. Refusing after copying is the one order that makes the
+    claim and then declines the use.
+    """
+    tracks = seed(studio_client, headers, fake_openverse)
+    fetched: list[str] = []
+
+    async def _record(url):
+        fetched.append(url)
+        return WAV_BYTES, "audio/wav"
+
+    monkeypatch.setattr("app.services.video.music.fetch_audio", _record)
+
+    response = studio_client.post(
+        f"/api/video/music/{tracks['Dramatic Trailer Hit']['id']}/add",
+        headers=headers,
+        json={"project_id": project["id"]},
+    )
+
+    assert response.status_code == 403
+    assert fetched == [], "a track we refuse on licence was downloaded and stored"

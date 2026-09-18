@@ -22,6 +22,9 @@ from app.services.video.providers.base import (
     TTSProvider,
 )
 from app.services.video.providers.edge_tts_provider import EdgeTTSProvider
+from app.services.video.providers.elevenlabs_tts import ElevenLabsTTSProvider
+from app.services.video.providers.google_tts import GoogleTTSProvider
+from app.services.video.providers.cartesia_tts import CartesiaTTSProvider
 from app.services.video.providers.groq_tts import GroqTTSProvider
 from app.services.video.providers.openai_speech import OpenAISpeechProvider
 from app.services.video.providers.whisper import WhisperProvider
@@ -29,14 +32,44 @@ from app.services.video.providers.whisper import WhisperProvider
 logger = logging.getLogger(__name__)
 
 #: What the API advertises to clients.
-available_tts_providers: list[str] = ["edge", "groq", "custom"]
+available_tts_providers: list[str] = [
+    "elevenlabs",
+    "google",
+    "edge",
+    "cartesia",
+    "groq",
+    "custom",
+]
 available_transcription_providers: list[str] = ["groq", "openai"]
 
 
 def _build_tts(name: str) -> TTSProvider:
     name = (name or "").lower()
+
+    if name == "elevenlabs":
+        return ElevenLabsTTSProvider(
+            api_key=settings.elevenlabs_api_key,
+            model=settings.elevenlabs_tts_model,
+            base_url=settings.elevenlabs_tts_base_url,
+        )
+
+    if name == "google":
+        return GoogleTTSProvider(
+            api_key=settings.google_tts_api_key,
+            base_url=settings.google_tts_base_url,
+        )
+
+    if name == "cartesia":
+        return CartesiaTTSProvider(
+            api_key=settings.cartesia_api_key,
+            model=settings.cartesia_tts_model,
+            base_url=settings.cartesia_tts_base_url,
+            version=settings.cartesia_version,
+        )
+
     if name == "edge":
         return EdgeTTSProvider()
+
     if name == "groq":
         return GroqTTSProvider(
             api_key=settings.groq_api_key,
@@ -44,10 +77,17 @@ def _build_tts(name: str) -> TTSProvider:
             base_url=settings.groq_base_url,
             timeout=settings.ai_request_timeout * 4,
         )
+
     if name == "custom":
         # Any OpenAI-compatible /audio/speech server, including a local
         # open-source one. See openai_speech.py.
-        return OpenAISpeechProvider(timeout=settings.ai_request_timeout * 8)
+        # Timeout is 8x the base (vs 4x for Groq) because self-hosted models
+        # (Piper, Coqui XTTS, Kokoro) can be slower on cold start or when
+        # loading large models on first request.
+        return OpenAISpeechProvider(
+            timeout=settings.ai_request_timeout * 8
+        )
+
     raise MediaProviderConfigError(
         f"Unknown TTS provider {name!r}. "
         f"Available: {', '.join(available_tts_providers)}"

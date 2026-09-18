@@ -41,6 +41,7 @@ with whatever source they named.
 from __future__ import annotations
 
 import logging
+import tempfile
 
 import httpx
 from sqlalchemy import String, func, or_, select
@@ -782,6 +783,12 @@ DEFAULT_FADE_SECONDS = 1.5
 
 FETCH_TIMEOUT = 60.0
 
+#: Bytes of a download kept in RAM before `SpooledTemporaryFile` spills the
+#: rest to disk. The track still ends up as bytes for `store_asset` — nothing
+#: in the storage layer takes a stream — but the *download itself* no longer
+#: holds a large file resident in the API process while it is in flight.
+_SPOOL_MEMORY = 256 * 1024
+
 AUDIO_TYPES = {
     "audio/mpeg": "mp3",
     "audio/mp3": "mp3",
@@ -801,41 +808,86 @@ AUDIO_TYPES = {
 async def fetch_audio(url: str) -> tuple[bytes, str]:
     """Download a track, or raise. Returns `(bytes, content_type)`.
 
-    The type is checked after the response arrives rather than guessed from the
-    URL: a catalogue link that redirects to an HTML landing page is common, and
-    storing that as audio would produce a track that fails at the encoder
-    instead of here.
+    The type is checked from the headers, before the body is read, rather than
+    guessed from the URL: a catalogue link that redirects to an HTML landing
+    page is common, and storing that as audio would produce a track that fails
+    at the encoder instead of here. Checking it first also means a landing page
+    costs nothing to reject.
+
+    **Streamed to disk, not accumulated in memory.** The size of this response
+    is decided by a third-party host, not by us, so reading it whole and then
+    checking `len` is a promise that whatever they send fits in memory — a
+    stuck or hostile source could send indefinitely. The chunks land in a
+    `SpooledTemporaryFile` (in RAM up to `_SPOOL_MEMORY`, on disk beyond), and
+    the byte total is counted as each chunk arrives, so the `video_max_upload_mb`
+    limit is a limit on what is *stored*, not a post-download measurement. The
+    advertised `Content-Length` is honoured up front, so an oversized response
+    is refused before a single byte of body is transferred.
     """
+    limit = settings.video_max_upload_mb * 1024 * 1024
+
     try:
         async with httpx.AsyncClient(
             timeout=FETCH_TIMEOUT,
             follow_redirects=True,
             headers={"User-Agent": "AutoSocialAI/1.0 (+https://autosocial.ai)"},
         ) as client:
-            response = await client.get(url)
-            response.raise_for_status()
-            data = response.content
-            content_type = (
-                response.headers.get("content-type", "").split(";")[0].strip().lower()
-            )
+            async with client.stream("GET", url) as response:
+                response.raise_for_status()
+                content_type = (
+                    response.headers.get("content-type", "")
+                    .split(";")[0]
+                    .strip()
+                    .lower()
+                )
+                if content_type not in AUDIO_TYPES:
+                    raise MusicError(
+                        "That track's link did not return audio. It may have "
+                        "been removed from the source."
+                    )
+
+                length = response.headers.get("content-length")
+                if length and length.isdigit() and int(length) > limit:
+                    raise MusicError(
+                        f"That track is larger than the "
+                        f"{settings.video_max_upload_mb} MB limit."
+                    )
+
+                with tempfile.SpooledTemporaryFile(max_size=_SPOOL_MEMORY) as spool:
+                    total = 0
+                    async for chunk in response.aiter_bytes():
+                        total += len(chunk)
+                        if total > limit:
+                            raise MusicError(
+                                f"That track is larger than the "
+                                f"{settings.video_max_upload_mb} MB limit."
+                            )
+                        spool.write(chunk)
+                    spool.seek(0)
+                    data = spool.read()
     except httpx.HTTPError as exc:
         raise MusicError(f"That track could not be downloaded: {exc}") from exc
 
-    if content_type not in AUDIO_TYPES:
-        raise MusicError(
-            "That track's link did not return audio. It may have been removed "
-            "from the source."
-        )
-
-    limit = settings.video_max_upload_mb * 1024 * 1024
     if not data:
         raise MusicError("That track's link returned an empty file.")
-    if len(data) > limit:
-        raise MusicError(
-            f"That track is larger than the {settings.video_max_upload_mb} MB limit."
-        )
 
     return data, content_type
+
+
+def ensure_usable(track: MusicTrack) -> None:
+    """The licence gate, on its own so it can be applied before any work.
+
+    Both `ensure_stored` and `add_to_project` call it. That is not redundancy
+    for its own sake: they are the two places that would otherwise act on a
+    track we have decided we cannot use — one by copying its audio, the other
+    by writing it onto a project — and the rule has to hold at each.
+    """
+    if not track.can_use:
+        raise LicenseRefused(
+            f"“{track.title}” is licensed "
+            f"{LICENSE_LABELS.get(track.license, track.license)}. "
+            f"It cannot be used in a business video."
+        )
 
 
 async def ensure_stored(db: Session, *, track: MusicTrack, user_id: int) -> MusicTrack:
@@ -845,7 +897,15 @@ async def ensure_stored(db: Session, *, track: MusicTrack, user_id: int) -> Musi
     is downloaded once and keeps the asset, so picking the same track for a
     second project costs nothing — `store_asset` de-duplicates on checksum, so
     two users picking the same track share the bytes.
+
+    **The licence is checked before the download, not after it.** A track that
+    cannot be used is one we should not be copying into our own storage at all
+    — this module's position is that re-hosting somebody else's file is a
+    bigger licensing claim than linking to it, and making that claim about a
+    track we are in the act of refusing is the wrong way round.
     """
+    ensure_usable(track)
+
     if track.asset_id is not None:
         return track
 
@@ -906,9 +966,12 @@ def add_to_project(
     the library shows those tracks greyed with the reason, and a UI that hides
     a rule is a UI that eventually stops enforcing it.
 
-    Nothing is copied. An uploaded track's layer points at the same asset the
-    library row does; a catalogue track's layer carries the stream URL. One
-    track in ten projects is one file.
+    **No bytes are copied per project.** The layer points at the same asset the
+    library row does, so one track in ten projects is one file. For a catalogue
+    track that asset is the one `ensure_stored` fetched — callers run it first,
+    because a layer pointing at a third-party URL is one the renderer cannot
+    read, and the export comes out silent. The `stream_url` fallback below is
+    only the record of where the audio came from.
 
     The licence, the credit line and the source travel onto the layer's `meta`.
     That is what makes the obligation survive: the catalogue row can change or
@@ -918,11 +981,7 @@ def add_to_project(
     if project.user_id != user_id:
         raise MusicError("That project belongs to a different account.")
 
-    if not track.can_use:
-        raise LicenseRefused(
-            f"“{track.title}” is licensed {LICENSE_LABELS.get(track.license, track.license)}. "
-            f"It cannot be used in a business video."
-        )
+    ensure_usable(track)
 
     if track.asset_id is None and not track.stream_url:
         raise MusicError(f"“{track.title}” has no audio to add.")
@@ -967,8 +1026,10 @@ def add_to_project(
             "credit": track.credit_line(),
             "requires_attribution": track.needs_attribution,
             "source_url": track.source_url,
-            # Only for a catalogue track: the renderer fetches this. An upload
-            # has an asset and does not need it.
+            # Where a catalogue track's audio came from — provenance, not a
+            # source the renderer reads. It reads `asset_id` and nothing else,
+            # which is why `ensure_stored` runs before this: a layer whose
+            # audio lived only at this URL was attached, credited, and silent.
             "stream_url": track.stream_url,
         },
     )

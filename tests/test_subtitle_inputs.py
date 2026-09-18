@@ -211,6 +211,53 @@ def test_a_corrupt_docx_is_refused_with_a_sentence_not_a_traceback():
     assert "Traceback" not in str(exc.value)
 
 
+def _bomb_docx(repeats: int) -> bytes:
+    """A .docx whose `word/document.xml` is far larger than the upload it fits in.
+
+    Not a hand-built pathological case so much as what compression does to
+    repetitive markup: `<w:p><w:t>A</w:t></w:p>` is 22 bytes that deflate to
+    almost nothing, so an upload well inside `MAX_DOCUMENT_BYTES` carries an
+    arbitrary amount of XML behind it.
+    """
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("word/document.xml", b"<w:p><w:t>A</w:t></w:p>" * repeats)
+    return buffer.getvalue()
+
+
+def test_a_docx_that_expands_far_past_its_upload_size_is_refused():
+    """The upload limit bounds the zip, not what comes out of it.
+
+    Two million paragraphs compress to about 110 KB — comfortably inside the
+    10 MB upload ceiling — and expand to 44 MB of XML. Decompressing that
+    whole-hog before looking at a single character is the hole; the reader
+    stops at `MAX_ARCHIVE_BYTES` instead.
+    """
+    raw = _bomb_docx(2_000_000)
+    assert len(raw) < documents.MAX_DOCUMENT_BYTES, "the upload limit lets this in"
+
+    with pytest.raises(documents.DocumentError) as exc:
+        documents.extract("bomb.docx", raw)
+
+    assert "expands" in str(exc.value)
+
+
+def test_a_docx_of_many_tiny_paragraphs_stops_at_the_character_ceiling():
+    """Bytes alone do not bound the reader — paragraph *count* is the cost.
+
+    This file passes the archive size gate, so the only thing standing between
+    it and a regex pass per paragraph is the early stop. It has to come back
+    truncated rather than chewing through every paragraph to build a string
+    that is thrown away.
+    """
+    result = documents.extract("long.docx", _bomb_docx(400_000))
+
+    assert result["truncated"] is True
+    # The overshoot is one paragraph at most: `extract` needs to see the text
+    # run past the ceiling in order to report it as truncated.
+    assert result["character_count"] <= documents.MAX_CHARACTERS + 64
+
+
 def test_a_corrupt_pdf_is_refused():
     with pytest.raises(documents.DocumentError) as exc:
         documents.extract("script.pdf", b"%PDF-1.4 truncated nonsense")
@@ -230,6 +277,25 @@ def test_a_pdf_with_no_text_layer_says_so_rather_than_looking_broken():
         documents.extract("scan.pdf", buffer.getvalue())
 
     assert "scan" in str(exc.value).lower()
+
+
+def test_a_pdf_with_more_than_the_page_limit_is_refused():
+    """PDF has no zip-sized gate to catch a decompression bomb in, so the
+    defence is layered: upload bytes, page count, kept text. A many-page PDF is
+    the shape that matters — each page costs real parse time, and the count is
+    knowable before a page is extracted."""
+    pypdf = pytest.importorskip("pypdf")
+    writer = pypdf.PdfWriter()
+    for _ in range(documents.MAX_PDF_PAGES + 5):
+        writer.add_blank_page(width=612, height=792)
+    buffer = io.BytesIO()
+    writer.write(buffer)
+
+    with pytest.raises(documents.DocumentError) as exc:
+        documents.extract("many.pdf", buffer.getvalue())
+
+    assert "pages" in str(exc.value)
+    assert str(documents.MAX_PDF_PAGES) in str(exc.value)
 
 
 def test_a_document_over_the_size_limit_is_refused_before_it_is_parsed():
@@ -731,3 +797,66 @@ def test_both_script_endpoints_bound_the_reading_speed(studio_client, headers):
 
     assert json_route.status_code == 422
     assert upload_route.status_code == 422
+
+
+def test_both_script_endpoints_bound_the_length_of_the_script(studio_client, headers):
+    """An uploaded script was capped and a pasted one was not.
+
+    `MAX_CHARACTERS` has always bounded a document, because the reader applies
+    it. The JSON routes take the same words as a string and had no ceiling at
+    all — and `/align` runs a quadratic diff over what it is handed, so the
+    unbounded side was also the expensive one.
+    """
+    from app.schemas.video_subtitles import MAX_SCRIPT_CHARACTERS
+
+    too_long = "word " * (MAX_SCRIPT_CHARACTERS // 5 + 1)
+    assert len(too_long) > MAX_SCRIPT_CHARACTERS
+
+    from_script = studio_client.post(
+        "/api/video/subtitles/from-script",
+        headers=headers,
+        json={"text": too_long},
+    )
+    align = studio_client.post(
+        "/api/video/subtitles/align",
+        headers=headers,
+        json={
+            "cues": [{"start": 0.0, "end": 2.0, "text": "hello there"}],
+            "script": too_long,
+        },
+    )
+
+    assert from_script.status_code == 422
+    assert align.status_code == 422
+
+
+def test_an_edit_request_cannot_carry_an_unbounded_track(studio_client, headers):
+    """Every edit posts the whole track, so the request is the unit of work.
+
+    A track of a hundred thousand cues is not a subtitle track anybody typed;
+    it is a way to make one call expensive.
+    """
+    from app.schemas.video_subtitles import MAX_CUES, MAX_CUE_CHARACTERS
+
+    response = studio_client.post(
+        "/api/video/subtitles/edit/shift",
+        headers=headers,
+        json={
+            "cues": [
+                {"start": i, "end": i + 0.5, "text": "line"}
+                for i in range(MAX_CUES + 1)
+            ],
+            "seconds": 1.0,
+        },
+    )
+    assert response.status_code == 422
+
+    one_enormous_cue = studio_client.post(
+        "/api/video/subtitles/edit/shift",
+        headers=headers,
+        json={
+            "cues": [{"start": 0, "end": 1, "text": "x" * (MAX_CUE_CHARACTERS + 1)}],
+            "seconds": 1.0,
+        },
+    )
+    assert one_enormous_cue.status_code == 422

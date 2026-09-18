@@ -386,8 +386,10 @@ async def add_to_project(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
     try:
-        # Before the licence check writes anything: a track we cannot fetch is
-        # not one we should be recording a credit for.
+        # Fetched before the layer is written, so a dead link is a message
+        # while the user is still choosing rather than a silent export. The
+        # licence gate runs inside `ensure_stored`, ahead of the download — a
+        # track we are about to refuse is not one to copy into our storage.
         track = await music_service.ensure_stored(db, track=track, user_id=user.id)
         layer = music_service.add_to_project(
             db,

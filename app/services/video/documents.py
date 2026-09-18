@@ -27,6 +27,8 @@ import re
 import zipfile
 from pathlib import Path
 
+from app.core.limits import MAX_SCRIPT_CHARACTERS
+
 
 class DocumentError(RuntimeError):
     """A document could not be read. The message is user-facing."""
@@ -48,9 +50,34 @@ ACCEPTED_DOCUMENTS: dict[str, str] = {
 #: still small enough that reading it is instant.
 MAX_DOCUMENT_BYTES = 10 * 1024 * 1024
 
-#: A ceiling on the text itself, so a pathological PDF cannot produce a track
-#: with a hundred thousand cues in it. Roughly 90 minutes of narration.
-MAX_CHARACTERS = 120_000
+#: A ceiling on the text itself, so a pathological document cannot produce a
+#: track with a hundred thousand cues in it. Roughly 90 minutes of narration.
+#: Shared with the pasted-script routes via `app.core.limits`, so the same
+#: words are bounded the same way whichever way they arrive.
+MAX_CHARACTERS = MAX_SCRIPT_CHARACTERS
+
+#: A ceiling on the *decompressed* body of a container format, checked while
+#: reading rather than after it.
+#:
+#: `MAX_DOCUMENT_BYTES` bounds the upload, and for a .txt that is the whole
+#: story. A .docx is a zip, and a zip's compressed size says nothing about what
+#: it expands to: 109 KB of `<w:p><w:t>A</w:t></w:p>` decompresses to 44 MB of
+#: XML, and a purpose-built one turns the full 10 MB upload into gigabytes.
+#: `ZipFile.read` would materialise all of it before a single character was
+#: looked at.
+#:
+#: Generous against any real document — `MAX_CHARACTERS` of narration is under
+#: a megabyte of text, and Word's markup around it perhaps twenty times that.
+MAX_ARCHIVE_BYTES = 16 * 1024 * 1024
+
+#: A ceiling on the number of pages a PDF reader will parse. PDF has no
+#: decompression-bomb guard of its own — `MAX_DOCUMENT_BYTES` bounds the
+#: upload, but a 10 MB file can expand far beyond that once its content
+#: streams are inflated, and the only leaks in `_pdf_document` are the page
+#: count and the text that actually reaches `extract`. A script is well under
+#: a hundred pages; this is a ceiling for the path that still works, not a
+#: number a real document approaches.
+MAX_PDF_PAGES = 500
 
 # Zero-width and bidi marks. Word and PDF exporters sprinkle these through
 # text; they are invisible, they survive into an SRT, and they break word
@@ -131,6 +158,15 @@ def _rtf_document(data: bytes) -> str:
     return raw.replace("{", "").replace("}", "")
 
 
+def _too_large() -> DocumentError:
+    """The refusal for a container that expands past `MAX_ARCHIVE_BYTES`."""
+    return DocumentError(
+        "That document expands to far more content than a script needs. If it "
+        "holds images or embedded files, save the text on its own and upload "
+        "that."
+    )
+
+
 def _docx_document(data: bytes) -> str:
     """A .docx, paragraph by paragraph.
 
@@ -147,7 +183,19 @@ def _docx_document(data: bytes) -> str:
     """
     try:
         with zipfile.ZipFile(io.BytesIO(data)) as archive:
-            xml = archive.read("word/document.xml").decode("utf-8", errors="ignore")
+            entry = archive.getinfo("word/document.xml")
+            # The header first, because it is free — but it is written by
+            # whoever made the file, so it is a fast path and not the defence.
+            if entry.file_size > MAX_ARCHIVE_BYTES:
+                raise _too_large()
+            # The defence: read one byte past the cap and refuse if it arrives.
+            # A lying header cannot get past this, because the limit is applied
+            # to what actually came out of the decompressor.
+            with archive.open(entry) as stream:
+                body = stream.read(MAX_ARCHIVE_BYTES + 1)
+            if len(body) > MAX_ARCHIVE_BYTES:
+                raise _too_large()
+            xml = body.decode("utf-8", errors="ignore")
     except (zipfile.BadZipFile, KeyError, OSError) as exc:
         raise DocumentError(
             "That file could not be opened as a Word document. If it is an "
@@ -159,11 +207,21 @@ def _docx_document(data: bytes) -> str:
     xml = re.sub(r"(?is)<w:br[^>]*/?>", "\n", xml)
 
     paragraphs: list[str] = []
+    total = 0
     for block in re.split(r"(?is)</w:p>", xml):
         runs = re.findall(r"(?is)<w:t[^>]*>(.*?)</w:t>", block)
         if not runs:
             continue
-        paragraphs.append(html.unescape("".join(runs)))
+        paragraph = html.unescape("".join(runs))
+        paragraphs.append(paragraph)
+        # Stop once there is more text here than `extract` will keep. Bytes
+        # alone do not bound this loop: the cost is a regex pass per paragraph,
+        # and a file can be almost entirely paragraph markers. Overshooting the
+        # cap by one paragraph is deliberate — `extract` decides `truncated` by
+        # comparing against `MAX_CHARACTERS`, so it has to see the overflow.
+        total += len(paragraph) + 2
+        if total > MAX_CHARACTERS:
+            break
 
     return "\n\n".join(paragraphs)
 
@@ -174,6 +232,14 @@ def _pdf_document(data: bytes) -> str:
     A PDF that holds a scan holds pictures of words, and pypdf correctly
     returns nothing for it. That case is caught by the caller and reported as
     what it is rather than as a broken file.
+
+    Unlike DOCX, PDF has no container the reader can count bytes out of, so
+    the decompression-bomb protection is shaped to it rather than shared: the
+    upload is bounded by `MAX_DOCUMENT_BYTES`, the number of pages parsed by
+    `MAX_PDF_PAGES` (a ten-thousand-page PDF is not a script, it is a way to
+    spend half an hour decompressing), and the text kept by `MAX_CHARACTERS`.
+    Under all three the file is read page by page, so a bomb stops at the
+    point its text stops being used.
     """
     try:
         from pypdf import PdfReader
@@ -185,7 +251,28 @@ def _pdf_document(data: bytes) -> str:
 
     try:
         reader = PdfReader(io.BytesIO(data))
-        pages = [(page.extract_text() or "") for page in reader.pages]
+        if len(reader.pages) > MAX_PDF_PAGES:
+            raise DocumentError(
+                f"That PDF has {len(reader.pages)} pages. The limit is "
+                f"{MAX_PDF_PAGES} — split the document and upload the relevant "
+                f"section."
+            )
+        # Page by page rather than a comprehension, so a ten-thousand-page PDF
+        # stops at the point its text stops being used. Extraction is the
+        # expensive part of reading a PDF, and `extract` keeps only
+        # `MAX_CHARACTERS` of what comes back.
+        pages: list[str] = []
+        total = 0
+        for page in reader.pages:
+            text = page.extract_text() or ""
+            pages.append(text)
+            total += len(text) + 2
+            if total > MAX_CHARACTERS:
+                break
+    except DocumentError:
+        # The refusal is ours (e.g. the page ceiling); leave its user-facing
+        # message alone rather than re-wrapping it as a damaged-file apology.
+        raise
     except Exception as exc:  # noqa: BLE001 - pypdf raises a variety of errors
         raise DocumentError(
             "That file could not be read as a PDF. It may be damaged or "

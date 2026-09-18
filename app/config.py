@@ -132,13 +132,38 @@ class Settings(BaseSettings):
     video_max_concurrent_renders: int = 1
 
     # ---- Video Studio: text-to-speech ------------------------------------
-    # "edge" is free and needs no key, and is the only option here that speaks
-    # Urdu. Keyed providers are used when selected explicitly.
-    #   edge | groq | custom
-    tts_provider: str = "edge"
-    tts_fallback_providers: list[str] = []
-    # Groq's TTS models (English / Arabic only, so not a fallback for Urdu).
+    # The provider every voice-over starts with. "elevenlabs" is the default
+    # because it is a contracted, commercially safe API whose voices genuinely
+    # sound different; it needs ELEVENLABS_API_KEY.
+    #
+    #   edge | elevenlabs | google | cartesia | groq | custom
+    #
+    # `tts_fallback_providers` is tried, in order, when the primary fails at
+    # request time (rate limit, bad response, dead endpoint). A fallback runs
+    # with its *own* closest voice — matched on language and gender from the
+    # provider whose voice the user picked — not with the primary's voice id.
+    #
+    # "edge" is in the chain on purpose: it is the one entry that needs no key.
+    # Microsoft's free endpoint is also the only provider that speaks Urdu, so
+    # it is the safety net that keeps a deploy with some keys missing working
+    # — an unconfigured keyed fallback is skipped, not tried and failed, so the
+    # chain always lands on edge before giving up. Groq is deliberately absent:
+    # its TTS models are English / Arabic only, useless for a multilingual
+    # catalogue, so it is only ever chosen as the primary.
+    tts_provider: str = "elevenlabs"
+    tts_fallback_providers: list[str] = [
+        "google",
+        "edge",
+        "cartesia",
+    ]
     groq_tts_model: str = "playai-tts"
+    elevenlabs_api_key: str | None = None
+    elevenlabs_tts_model: str = "eleven_flash_v2_5"
+
+    google_tts_api_key: str | None = None
+
+    cartesia_api_key: str | None = None
+    cartesia_tts_model: str = "sonic-3"
     # Hard ceiling on one synthesis request, in characters.
     tts_max_characters: int = 5000
 
@@ -156,6 +181,10 @@ class Settings(BaseSettings):
     # named here: "id:gender:locale", comma-separated. Gender and locale are
     # optional and default to neutral / en-US.
     custom_tts_base_url: str | None = None
+    elevenlabs_tts_base_url: str = "https://api.elevenlabs.io"
+    google_tts_base_url: str = "https://texttospeech.googleapis.com"
+    cartesia_tts_base_url: str = "https://api.cartesia.ai"
+    cartesia_version: str = "2026-03-01"
     custom_tts_api_key: str | None = None
     custom_tts_model: str = "tts-1"
     custom_tts_voices: str | None = None

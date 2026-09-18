@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import logging
 import re
+from dataclasses import replace
 
 from sqlalchemy.orm import Session
 
@@ -256,6 +257,60 @@ def _provider_name_for(voice_id: str, voices: list[Voice]) -> str | None:
     return None
 
 
+def _pick_fallback_voice(
+    source_voice: Voice,
+    fallback_voices: list[Voice],
+    provider_name: str,
+) -> Voice:
+    """The fallback provider's closest voice to the one the user picked.
+
+    The candidate list is **only** the fallback provider's own catalogue. A
+    voice from any other provider is not an option here: it would belong to a
+    provider whose own fallback iteration is still to come, and matching it
+    would hand the request to an engine nobody selected. The source voice is
+    matched against it by language *and* gender first — an exact locale and a
+    similar voice — then by language alone, so a fallback with no exact-locale
+    match still speaks the same language. Both compare the *fallback* voice's
+    language to the *source* voice's; a match that compares the source to
+    itself would accept the first voice in the list regardless of what the
+    user picked.
+    """
+    source_language = (source_voice.language or "").lower()
+    source_gender = (source_voice.gender or "").lower()
+
+    exact = next(
+        (
+            voice
+            for voice in fallback_voices
+            if (voice.language or "").lower() == source_language
+            and (voice.gender or "").lower() == source_gender
+        ),
+        None,
+    )
+    if exact is not None:
+        return exact
+
+    same_language = next(
+        (
+            voice
+            for voice in fallback_voices
+            if (voice.language or "").lower().split("-")[0]
+            == source_language.split("-")[0]
+        ),
+        None,
+    )
+    if same_language is not None:
+        return same_language
+
+    if fallback_voices:
+        # Last resort: keep the synthesis alive over a perfect voice match.
+        return fallback_voices[0]
+
+    raise MediaProviderError(
+        f"{provider_name} has no voices to fall back to."
+    )
+
+
 # Voice Studio lets the writer mark a pause. SSML is not accepted from users —
 # it would be an injection surface and providers disagree on it — so the marker
 # is a bare `[pause]`, converted here to real silence by splitting the text and
@@ -328,6 +383,11 @@ async def synthesize(
     # fails with a clear message instead of being sent to the wrong engine.
     if not provider_name:
         provider_name = _provider_name_for(voice_id, await list_voices())
+    if not provider_name:
+        raise VoiceError(
+            "That voice could not be found in any configured provider. "
+            "Re-choose a voice from the catalogue and try again."
+        )
 
     try:
         provider = get_tts_provider(provider_name)
@@ -350,16 +410,84 @@ async def synthesize(
         style=style_key if style_key != DEFAULT_STYLE else None,
     )
 
-    try:
-        result = await provider.synthesize(request)
-    except MediaProviderConfigError:
-        # Deliberately NOT wrapped. A missing API key is the operator's problem
-        # and the route answers 503 for it; flattening it into VoiceError would
-        # make it a 422 and tell the user to fix the text they typed, which
-        # they cannot do anything about.
-        raise
-    except MediaProviderError as exc:
-        raise VoiceError(str(exc)) from exc
+    provider_names = [provider_name] + [
+        name
+        for name in settings.tts_fallback_providers
+        if name != provider_name
+    ]
+
+    result = None
+    last_error = None
+
+    # The selected voice is looked up once, in its own provider's catalogue.
+    # Looking the id up in a merged list is exactly what hands the request to
+    # the wrong engine when two providers happen to share a voice id.
+    source_voice = next(
+        (voice for voice in await provider.list_voices() if voice.id == voice_id),
+        None,
+    )
+
+    for current_provider_name in provider_names:
+        try:
+            current_provider = get_tts_provider(current_provider_name)
+
+            current_request = request
+
+            # Use a voice belonging to the fallback provider.
+            if current_provider_name != provider_name:
+                if source_voice is None:
+                    raise MediaProviderError(
+                        f"Voice {voice_id!r} could not be found in the "
+                        f"{provider_name} catalogue."
+                    )
+
+                fallback_voices = await current_provider.list_voices()
+                fallback_voice = _pick_fallback_voice(
+                    source_voice,
+                    fallback_voices,
+                    current_provider_name,
+                )
+
+                # The text and prosody the user set are the request; only the
+                # voice has to be the fallback's own.
+                current_request = replace(request, voice_id=fallback_voice.id)
+
+            result = await current_provider.synthesize(current_request)
+
+            if result:
+                break
+
+        except MediaProviderConfigError as exc:
+            # A missing API key is the operator's problem and the route answers
+            # 503 for it — it will not succeed on retry, so the fallback chain
+            # is not consulted at all for the chosen provider. A *fallback*
+            # provider that is unconfigured is different: it is skipped and the
+            # next one is tried, which is what lets the keyless "edge" entry
+            # stay in the default chain without a working deploy depending on
+            # keys it does not have.
+            if current_provider_name == provider_name:
+                raise
+            last_error = exc
+            logger.warning(
+                "TTS fallback provider %s is not configured: %s",
+                current_provider_name,
+                exc,
+            )
+            continue
+
+        except MediaProviderError as exc:
+            last_error = exc
+            logger.warning(
+                "TTS provider %s failed: %s",
+                current_provider_name,
+                exc,
+            )
+            continue
+
+    if result is None:
+        raise VoiceError(
+            f"All configured voice providers failed. Last error: {last_error}"
+        )
 
     details = {
         # The bytes themselves. Carried on the result because the preview path
