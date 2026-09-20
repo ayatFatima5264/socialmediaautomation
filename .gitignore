@@ -33,3 +33,6 @@ Thumbs.db
 
 .vercel
 .env*
+
+# ---- Build artifacts ----
+app.zip
