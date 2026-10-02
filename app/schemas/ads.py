@@ -85,6 +85,15 @@ class CtaResponse(BaseModel):
 
 # ---- Creatives ------------------------------------------------------------
 
+# The most images one `/ads/creative` call may produce. Ten is the ceiling
+# Instagram and Facebook place on a carousel, and it is the largest option the
+# Carousel Ads tool offers (`CAROUSEL_SLIDE_COUNTS` in
+# `frontend/src/lib/ads/constants.js`, whose entries run 3…10). The endpoint and
+# the UI have to agree on this number: a cap the UI can exceed is a 422 on a
+# button the user just pressed, and a cap below the default makes the default
+# itself unsaveable. `tests/test_ads.py` asserts the two stay in step.
+MAX_CREATIVE_IMAGES = 10
+
 
 class CreativeRequest(BaseModel):
     subject: str = Field(..., min_length=2, max_length=500)
@@ -93,7 +102,7 @@ class CreativeRequest(BaseModel):
     style: str = "corporate"
     aspect_ratio: str = "1:1"
     quality: str = "standard"
-    count: int = Field(1, ge=1, le=4)
+    count: int = Field(1, ge=1, le=MAX_CREATIVE_IMAGES)
 
 
 class CreativeResponse(BaseModel):
@@ -103,6 +112,46 @@ class CreativeResponse(BaseModel):
     # failed and a stock photo was substituted. The client shows this so a
     # fallback is never mistaken for a generated creative.
     sources: list[str] = []
+
+
+# ---- Banner multi-size export (BUG-07) ------------------------------------
+# The Banner Generator's rail promises the banner re-flowed into every standard
+# display size. These two models are the request that fulfils it and the
+# manifest of what came back, so the client can list the files it received
+# without trusting a count.
+
+
+class BannerExportRequest(BaseModel):
+    #: The generated banner. A provider URL or a /api/media token URL.
+    image_url: str = Field(..., min_length=8, max_length=2000)
+    #: `"728x90"`-style labels, as shown on the rail. At least one.
+    sizes: list[str] = Field(..., min_length=1, max_length=20)
+    # Drawn onto each re-flowed size. A display ad without its text is a
+    # background, so these are part of the export rather than decoration on
+    # the preview.
+    headline: str | None = Field(None, max_length=200)
+    subheadline: str | None = Field(None, max_length=300)
+    cta: str | None = Field(None, max_length=40)
+
+
+class BannerExportFile(BaseModel):
+    size: str
+    label: str
+    network: str
+    width: int
+    height: int
+    filename: str
+    content_type: str
+    #: The PNG itself, base64 — the client writes it straight to a file, so the
+    #: composited image never has to be re-fetched or re-drawn in the browser.
+    data: str
+
+
+class BannerExportResponse(BaseModel):
+    files: list[BannerExportFile]
+    #: Stated so the UI can report the count rather than implying a whole rail.
+    requested: int
+    produced: int
 
 
 # ---- Video plans ----------------------------------------------------------

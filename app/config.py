@@ -36,19 +36,46 @@ class Settings(BaseSettings):
     # Get a free key at https://aistudio.google.com/apikey
     # Uses Gemini's OpenAI-compatibility endpoint.
     gemini_api_key: str | None = None
-    gemini_model: str = "gemini-2.0-flash"
+    # 2.0 Flash has been retired by Google: a live call returns 404
+    # `models/gemini-2.0-flash is not found`, so every request to the primary
+    # provider failed and fell through to a backup. Bumped to a model that
+    # answers.
+    gemini_model: str = "gemini-3.5-flash"
     gemini_base_url: str = "https://generativelanguage.googleapis.com/v1beta/openai"
 
     # ---- Groq (free tier) -------------------------------------------------
     # Get a free key at https://console.groq.com/keys
     groq_api_key: str | None = None
-    groq_model: str = "llama-3.3-70b-versatile"
+    # `llama-3.3-70b-versatile` is decommissioned on Groq: the same live call
+    # returns 404 `model_not_found`. `qwen3.8-27b` answers, and it is the
+    # larger of the two current free models.
+    groq_model: str = "qwen/qwen3.8-27b"
     groq_base_url: str = "https://api.groq.com/openai/v1"
 
     # ---- Shared generation knobs -----------------------------------------
+    # `ai_max_tokens` is the whole output budget, reasoning included. The current
+    # Gemini model thinks before it answers and spends that budget doing so: at
+    # 16 tokens it returns a 200 with no `content` key at all (the reasoning used
+    # all of it), which reads downstream as an unusable response and sends the
+    # request to the fallback provider. 1024 is comfortable. Lowering it below
+    # the model's reasoning overhead silently disables it as a provider.
     ai_request_timeout: float = 30.0
     ai_max_tokens: int = 1024
     ai_temperature: float = 0.8
+
+    # The budget for one *image* generation, across every provider.
+    #
+    # `ai_request_timeout` is per request, and a generation is a chain of them:
+    # up to four candidate hosts, each retried `image_ai_attempts` times with a
+    # growing pause. At 30s and 3 attempts that is minutes of waiting behind a
+    # spinner — QA recorded a run that sat on "Generating…" for over 90s. The
+    # chain therefore also has an overall deadline, after which it stops trying
+    # new hosts and says why.
+    #
+    # The client's own backstop is `GENERATION_DEADLINE` (90s) in
+    # frontend/src/lib/generationRun.js, so the server always gives up first and
+    # the user gets a real reason rather than a silent client-side abort.
+    image_generation_deadline: float = 75.0
 
     # ---- AI image generation (Pollinations) -------------------------------
     # Returns a real image at a public URL — perfect for Instagram, which
@@ -75,6 +102,25 @@ class Settings(BaseSettings):
     # After these, non-AI photo hosts (LoremFlickr, Picsum) act as a final
     # guaranteed fallback so the user always gets a visual.
     image_fallback_models: list[str] = ["sana"]
+
+    # ---- AI image retry / cache (BUG-06) ----------------------------------
+    # Pollinations rate-limits, and the chain gave up on the FIRST failure, so
+    # most requests landed on a stock photo. The AI host is worth retrying: a
+    # rate limit is transient by definition, and one retry with a short pause
+    # recovered the majority of the requests that used to be substituted.
+    #
+    # Attempts are per AI candidate, so a chain of one model makes up to
+    # `image_ai_attempts` requests before it moves to the next provider.
+    image_ai_attempts: int = 3
+    # Seconds to wait before the second attempt; doubled each time after that.
+    image_ai_backoff: float = 0.75
+    # Successful AI generations are cached in-process for this long, keyed by
+    # the full request. A re-run of the same brief (a retry button, a second
+    # variant, a reload) is served from the cache instead of asking a
+    # rate-limited host again.
+    image_ai_cache_ttl: float = 900.0
+    # Cap on cached entries, oldest evicted first.
+    image_ai_cache_size: int = 256
 
     # ---- Free stock image search -----------------------------------------
     # A free alternative to AI generation: search & pick a real stock photo.

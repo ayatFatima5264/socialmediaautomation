@@ -304,6 +304,64 @@ def transcode_audio(data: bytes, *, source_suffix: str, target: str) -> bytes:
         Path(out_path).unlink(missing_ok=True)
 
 
+def extract_poster(
+    source: str | Path,
+    destination: str | Path,
+    *,
+    at: float = 0.0,
+) -> bytes:
+    """Pull a single frame out of a video as a PNG and return its bytes.
+
+    Used to give a freshly rendered video a real poster frame, so the project has
+    an image to export and the library has something to show before the user
+    opens Thumbnail Studio. `at` is a seek position in seconds; 0 is the first
+    frame, which is the most reliable one because it needs no decode.
+
+    Raises `FFmpegError` rather than returning empty bytes: a caller that stores
+    this as a thumbnail has to be able to tell "the frame could not be read" from
+    "there was a frame and it was blank", because only the first of those means
+    the poster is absent.
+    """
+    source, destination = Path(source), Path(destination)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+
+    # `-ss` before `-i` seeks by keyframe, which is fast and, for a poster, fine:
+    # the frame it lands on is a real frame of the video, not a reconstruction.
+    # PNG is chosen over JPEG because a poster that is re-encoded on every
+    # thumbnail export compounds the artefacts, and a title card with hard edges
+    # is exactly where JPEG shows them first.
+    command = [
+        ffmpeg_path(),
+        "-hide_banner",
+        "-loglevel", "error",
+        "-y",
+        "-ss", f"{max(0.0, float(at)):.3f}",
+        "-i", str(source),
+        "-frames:v", "1",
+        "-f", "image2",
+        "-c:v", "png",
+        str(destination),
+    ]
+
+    try:
+        result = subprocess.run(command, capture_output=True, timeout=120)
+    except subprocess.TimeoutExpired as exc:
+        raise FFmpegError("Timed out while extracting a poster frame.") from exc
+    except OSError as exc:
+        raise FFmpegError(f"Could not run ffmpeg: {exc}") from exc
+
+    if result.returncode != 0 or not destination.exists() or destination.stat().st_size == 0:
+        detail = result.stderr.decode("utf-8", "replace").strip().splitlines()
+        raise FFmpegError(
+            "Could not read a frame from the rendered video"
+            + (f": {detail[-1]}" if detail else ".")
+        )
+
+    data = destination.read_bytes()
+    destination.unlink(missing_ok=True)
+    return data
+
+
 def extract_audio(source: str | Path, destination: str | Path) -> None:
     """Write a file's audio track out as 16 kHz mono MP3.
 

@@ -46,7 +46,7 @@ from app.config import settings
 from app.core.deps import get_current_user
 from app.database import get_db
 from app.models.user import User
-from app.models.video_asset import VideoAsset
+from app.models.video_asset import ASSET_KINDS, VideoAsset
 from app.schemas.video_media import (
     AssetUsage,
     MediaFilter,
@@ -138,9 +138,16 @@ def list_media(
     without shipping a frontend, and so an unknown key degrades to "everything"
     rather than to an empty page.
 
+    A tab matches on the file's kind *or* its content type, which is what makes
+    a PNG that a client stored under the generic `upload` kind still appear
+    under Images. Filtering on kind alone is how a photo uploaded from the
+    library ended up filed under Audio.
+
     Usage is resolved for the page in one pass, not per item.
     """
-    kinds = media_service.kinds_for_filter(filter)
+    spec = media_service.filter_spec(filter)
+    kinds = list(spec["kinds"])
+    content_types = list(spec["content_types"])
 
     rows = asset_service.search_assets(
         db,
@@ -152,6 +159,7 @@ def list_media(
         sort=sort,
         limit=limit,
         offset=offset,
+        content_types=content_types,
     )
     total = asset_service.count_assets(
         db,
@@ -160,6 +168,7 @@ def list_media(
         search=search,
         project_id=project_id,
         unassigned=unassigned,
+        content_types=content_types,
     )
 
     usage = media_service.usage_for(db, [row.id for row in rows])
@@ -179,7 +188,7 @@ def list_media(
 @router.post("/upload", response_model=MediaItem)
 async def upload_media(
     file: UploadFile = File(...),
-    kind: str = Form(default="upload"),
+    kind: str | None = Form(default=None),
     title: str | None = Form(default=None),
     project_id: int | None = Form(default=None),
     db: Session = Depends(get_db),
@@ -191,9 +200,15 @@ async def upload_media(
     store nothing new. The status stays 200 rather than 201 for exactly that
     reason — this endpoint does not promise it created anything.
 
-    `kind` is taken from the form rather than sniffed, because the same MP3 is
-    a voice-over, a music bed or a plain upload depending on what the user is
-    doing with it, and the file cannot say which.
+    **A named `kind` is believed; an absent one is inferred.** The same MP3 is a
+    voice-over, a music bed or a plain upload depending on what the user is
+    doing with it, and the file cannot say which — so a client that knows (Voice
+    Studio, Music Studio, a picker placing a clip) says so and is obeyed. A
+    client that says nothing is uploading a file into a library, not into a
+    role, and the kind is taken from the media type instead. The form default
+    used to be the literal string `upload`, which meant every unnamed file —
+    including every photo — was filed as `upload` and appeared under the Audio
+    tab and nowhere else.
     """
     if project_id is not None:
         # Validated before the bytes are read: rejecting a 200 MB upload after
@@ -205,6 +220,21 @@ async def upload_media(
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
     data = await file.read()
+    content_type = file.content_type or ""
+
+    if kind is None or kind == "":
+        kind = asset_service.kind_for_content(content_type, file.filename)
+    elif kind not in ASSET_KINDS:
+        # `build_key` silently falls an unknown kind back to `upload`, so
+        # accepting one here would file a file under a name that is not in the
+        # vocabulary while reporting the caller's string back. Refuse it.
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"“{kind}” is not a kind this library stores. "
+                f"Use one of: {', '.join(ASSET_KINDS)}."
+            ),
+        )
 
     try:
         asset = asset_service.store_asset(
@@ -212,7 +242,7 @@ async def upload_media(
             user_id=user.id,
             kind=kind,
             data=data,
-            content_type=file.content_type or "",
+            content_type=content_type,
             title=title or file.filename,
             filename=file.filename,
             project_id=project_id,

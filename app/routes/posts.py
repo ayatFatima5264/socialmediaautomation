@@ -49,6 +49,7 @@ from app.services.image_service import (
 )
 from app.services.image_service import generate as generate_image
 from app.services.providers import ProviderConfigError, ProviderError, available_providers
+from app.api_errors import http_error
 
 router = APIRouter(prefix="/api", tags=["posts"])
 
@@ -70,10 +71,8 @@ async def generate_post(
     )
     try:
         return await generate_posts(req, business_context=business_context)
-    except ProviderConfigError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
-    except ProviderError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except (ProviderConfigError, ProviderError) as exc:
+        raise http_error(exc) from exc
 
 
 class GenerateImageRequest(BaseModel):
@@ -539,10 +538,8 @@ async def generate_article_endpoint(
             provider_name=req.provider, business_context=business_context,
         )
         provider = get_provider(req.provider)
-    except ProviderConfigError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
-    except ProviderError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except (ProviderConfigError, ProviderError) as exc:
+        raise http_error(exc) from exc
     return GeneratedArticle(provider=provider.name, model=provider.model, **data)
 
 
@@ -593,10 +590,8 @@ async def generate_template_content_endpoint(
             provider_name=req.provider,
             business_context=business_context,
         )
-    except ProviderConfigError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
-    except ProviderError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except (ProviderConfigError, ProviderError) as exc:
+        raise http_error(exc) from exc
     return TemplateContentResponse(content=content)
 
 
@@ -647,10 +642,8 @@ async def image_edit_endpoint(
             provider_name=req.provider,
             business_context=business_context,
         )
-    except ProviderConfigError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
-    except ProviderError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except (ProviderConfigError, ProviderError) as exc:
+        raise http_error(exc) from exc
     return ImageEditResponse(**result)
 
 
@@ -679,10 +672,8 @@ async def assist_endpoint(req: AssistRequest) -> AssistResponse:
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    except ProviderConfigError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
-    except ProviderError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except (ProviderConfigError, ProviderError) as exc:
+        raise http_error(exc) from exc
     return AssistResponse(result=result)
 
 

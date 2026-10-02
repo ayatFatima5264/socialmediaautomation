@@ -68,6 +68,8 @@ export default function MusicLibrary() {
     artist: '',
     sourceUrl: '',
     attribution: '',
+    mood: '',
+    genre: '',
     confirmedRights: false,
   })
   const fileRef = useRef(null)
@@ -111,6 +113,8 @@ export default function MusicLibrary() {
         artist: '',
         sourceUrl: '',
         attribution: '',
+        mood: '',
+        genre: '',
         confirmedRights: false,
       })
       if (fileRef.current) fileRef.current.value = ''
@@ -320,6 +324,43 @@ export default function MusicLibrary() {
               onChange={(event) => setForm({ ...form, artist: event.target.value })}
             />
           </label>
+          {/* Mood and genre, because an upload with no way to describe it lands
+              in "other" and is then unreachable through the mood and genre
+              filters — the two controls directly above. The options come from
+              the facet list itself, so adding a mood server-side also adds it
+              here and the closed list stays in one place. */}
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="block">
+              <span className="label">Mood (optional)</span>
+              <select
+                className="input"
+                value={form.mood}
+                onChange={(event) => setForm({ ...form, mood: event.target.value })}
+              >
+                <option value="">Not sure — file it under Other</option>
+                {(library.facets?.moods || []).map((entry) => (
+                  <option key={entry.key} value={entry.key}>
+                    {entry.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="block">
+              <span className="label">Genre (optional)</span>
+              <select
+                className="input"
+                value={form.genre}
+                onChange={(event) => setForm({ ...form, genre: event.target.value })}
+              >
+                <option value="">Not sure — file it under Other</option>
+                {(library.facets?.genres || []).map((entry) => (
+                  <option key={entry.key} value={entry.key}>
+                    {entry.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
           <label className="block">
             <span className="label">Where it came from (optional)</span>
             <input

@@ -8,6 +8,7 @@ import { useToast } from '../../../context/ToastContext.jsx'
 import { api } from '../../../lib/api'
 import { AD_PLATFORM_KEYS, CTA_OPTIONS } from '../../../lib/ads/constants'
 import { campaignSubject } from '../../../lib/ads/campaignTypes'
+import { collectCopyResults } from '../../../lib/ads/copyResults'
 import { CAMPAIGN_NEW_PATH } from '../../../lib/ads/tools'
 import { PLATFORMS } from '../../../lib/constants'
 
@@ -156,22 +157,28 @@ export default function AdCopy() {
         ),
       )
 
-      const next = {}
-      settled.forEach((outcome, i) => {
-        if (outcome.status === 'fulfilled' && outcome.value?.variants?.length) {
-          next[platforms[i]] = outcome.value.variants
-        }
-      })
+      // The rejections are kept, not dropped: a provider outage and a genuinely
+      // empty answer look identical once the reasons are discarded, and the
+      // generic "no usable copy" then reads as a fault in the user's brief.
+      const outcome = collectCopyResults(
+        settled,
+        platforms,
+        (platform) => PLATFORMS[platform]?.label || platform,
+      )
+      const next = outcome.variants
 
-      if (!Object.keys(next).length) {
-        toast.error('The model returned no usable copy. Try again.')
+      if (outcome.empty) {
+        toast.error(outcome.error)
         return
       }
 
-      const missed = platforms.length - Object.keys(next).length
-      if (missed > 0) {
-        toast.info(`Copy written for ${Object.keys(next).length} of ${platforms.length} platforms.`)
-      }
+      if (outcome.info) toast.info(outcome.info)
+      // A partial success still hides a real failure inside a count, so each
+      // missing platform reports its own reason.
+      outcome.failures.forEach(({ platform, message }) => {
+        const label = PLATFORMS[platform]?.label || platform
+        toast.error(message ? `${label}: ${message}` : `Copy failed for ${label}.`)
+      })
 
       setByPlatform(next)
       setTab(Object.keys(next)[0])

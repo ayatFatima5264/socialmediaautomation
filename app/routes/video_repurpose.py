@@ -25,6 +25,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import flag_modified
 
+from app.api_errors import provider_http_error
 from app.core.deps import get_current_user
 from app.database import get_db
 from app.models.user import User
@@ -55,13 +56,16 @@ router = APIRouter(prefix="/api/video/repurpose", tags=["repurpose"])
 
 
 def _http(exc: Exception) -> HTTPException:
-    if isinstance(exc, MediaProviderConfigError):
-        return HTTPException(status_code=503, detail=str(exc))
-    if isinstance(exc, UsageLimitExceeded):
-        return HTTPException(status_code=429, detail=str(exc))
+    """Map a service error onto a status code.
+
+    A provider fault is handed to `app.api_errors`, the single place that
+    decides status and message, so an outage answers the same here as it does
+    in every other route. The rest are service-level refusals about the request
+    and keep their own codes.
+    """
     if isinstance(exc, asset_service.AssetNotFound):
         return HTTPException(status_code=404, detail=str(exc))
-    return HTTPException(status_code=422, detail=str(exc))
+    return provider_http_error(exc) or HTTPException(status_code=422, detail=str(exc))
 
 
 @router.get("/targets", response_model=RepurposeOptions)

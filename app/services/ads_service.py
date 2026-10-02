@@ -314,11 +314,16 @@ async def generate_creative(
         if url:
             urls.append(url)
             sources.append(provider)
+        else:
+            # Exhausted all fallbacks — record a placeholder so the caller
+            # always gets exactly `count` entries (matching the requested count).
+            urls.append("")
+            sources.append("fallback_exhausted")
 
-    # Returned to the caller, not just logged. When the AI host rate-limits, the
-    # chain silently substitutes a keyword-matched stock photo — a perfectly
-    # good image that is NOT generated. Without this the user cannot tell the
-    # two apart, and comes to believe generation is working when it is not.
+    # Returned to the caller. When the AI host rate-limits, the chain silently
+    # substitutes a keyword-matched stock photo — a perfectly good image that is
+    # NOT generated. Without this the user cannot tell the two apart, and comes
+    # to believe generation is working when it is not.
     return urls, sources
 
 
@@ -343,7 +348,11 @@ async def generate_video_plan(
     a voiceover script. The response carries `renderable: False` so no caller
     can mistake a plan for a finished file.
     """
-    system = _system("a video ad director who writes tight, shootable briefs.")
+    try:
+        system = _system("a video ad director who writes tight, shootable briefs.")
+    except Exception:
+        raise ProviderConfigError("Failed to build video plan system prompt.")
+
     user = (
         f"Plan a {duration}-second video ad.\n\n"
         f"BRIEF\n{_brief(Concept=concept, Platform=platform, Style=style, **{'Camera motion': motion})}\n\n"

@@ -683,7 +683,14 @@ def test_a_script_is_optional_and_transcription_alone_still_works(
     assert "alignment" not in body, "no script was given, so there is nothing to report"
 
 
-def test_a_provider_failure_is_422_and_a_config_error_is_503(client, real_wav, provider):
+def test_a_provider_failure_is_502_and_a_config_error_is_503(client, real_wav, provider):
+    """A provider fault is 502, not 422.
+
+    This route used to answer 422 — "unprocessable request" — when the speech
+    service failed, while `/api/ads/*` answered 502 for the same outage. The
+    caller had typed nothing wrong, so 422 pointed them at their own input.
+    `app.api_errors` decides it now, and the detail is no longer echoed back.
+    """
     headers = auth(client)
 
     provider.fail_with = MediaProviderError("the speech service is rate limiting")
@@ -692,8 +699,10 @@ def test_a_provider_failure_is_422_and_a_config_error_is_503(client, real_wav, p
         headers=headers,
         files={"file": ("clip.wav", real_wav, "audio/wav")},
     )
-    assert failed.status_code == 422
-    assert "rate limiting" in failed.json()["detail"]
+    assert failed.status_code == 502
+    assert failed.headers.get("X-Error-Code") == "provider_unavailable"
+    # The upstream wording stays in the log, not in the response.
+    assert "rate limiting" not in failed.json()["detail"]
 
     provider.fail_with = MediaProviderConfigError("GROQ_API_KEY is not set.")
     unconfigured = client.post(
@@ -702,6 +711,9 @@ def test_a_provider_failure_is_422_and_a_config_error_is_503(client, real_wav, p
         files={"file": ("clip.wav", real_wav, "audio/wav")},
     )
     assert unconfigured.status_code == 503
+    # A config error is our own message, so the missing key is still named —
+    # that is the one detail an operator needs.
+    assert "GROQ_API_KEY" in unconfigured.json()["detail"]
 
 
 # ===========================================================================

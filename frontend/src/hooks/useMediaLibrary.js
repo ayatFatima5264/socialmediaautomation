@@ -80,8 +80,14 @@ export default function useMediaLibrary({
 
   // ---- Mutations ---------------------------------------------------------
 
+  // `kind` is passed through only when a caller names one. This hook is the
+  // Media Library's own upload path, and the screen has no "what is this for"
+  // control — the user drops in a file, not a file *as a clip* — so the server
+  // infers the kind from the media type. It used to default to 'upload', which
+  // is what put every photo and every clip into the same bucket as an MP3: they
+  // appeared under the Audio tab and under neither Images nor Videos.
   const upload = useCallback(
-    async (files, { kind = 'upload' } = {}) => {
+    async (files, { kind } = {}) => {
       const list = Array.from(files || [])
       if (!list.length) return []
 

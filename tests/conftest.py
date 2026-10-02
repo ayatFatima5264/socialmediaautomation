@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import struct
 import zlib
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -186,3 +187,33 @@ def project(studio_client, headers) -> dict:
     response = studio_client.post("/api/video/projects", headers=headers, json={})
     assert response.status_code == 201, response.text
     return response.json()
+
+
+@pytest.fixture(scope="session")
+def small_video(tmp_path_factory) -> bytes:
+    """A real one-second MP4, encoded once per session.
+
+    Ingest probes an upload with ffmpeg rather than trusting the declared
+    content type, so a test that needs a *video* needs real video bytes — a
+    buffer labelled `video/mp4` is rejected, correctly, and no amount of
+    labelling gets around it. Session-scoped because the encode is the slowest
+    thing in the suite and every copy is identical.
+    """
+    import subprocess
+    import tempfile
+
+    from app.services.video.ffmpeg import ffmpeg_path
+
+    with tempfile.TemporaryDirectory() as directory:
+        path = Path(directory) / "clip.mp4"
+        subprocess.run(
+            [
+                ffmpeg_path(), "-hide_banner", "-loglevel", "error",
+                "-f", "lavfi", "-i", "testsrc=size=160x120:rate=10:duration=1",
+                "-f", "lavfi", "-i", "sine=frequency=300:duration=1",
+                "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac",
+                "-shortest", "-y", str(path),
+            ],
+            check=True, capture_output=True, timeout=120,
+        )
+        return path.read_bytes()

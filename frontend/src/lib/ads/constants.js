@@ -147,6 +147,13 @@ export const ANIMATION_STYLES = ['Smooth', 'Cinematic', 'Snappy', 'Parallax']
 
 export const VIDEO_STYLES = ['Modern & Clean', 'Warm & Natural', 'Bold & Punchy', 'Luxury', 'Playful']
 
+// The slide counts Carousel Ads offers, and the default (the first entry's
+// neighbour below) the tool opens with.
+//
+// Every entry must be within 1..MAX_CAROUSEL_SLIDES, which the backend enforces
+// as `MAX_CREATIVE_IMAGES` in `app/schemas/ads.py`. The two are one limit
+// written down twice: an option the API refuses is a 422 on a button the user
+// just pressed. `tests/test_ads.py` reads this file and fails if they drift.
 export const CAROUSEL_SLIDE_COUNTS = [3, 4, 5, 6, 7, 8, 10]
 
 export const COPY_TONES = [

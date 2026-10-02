@@ -80,9 +80,14 @@ export default function Inspector({ clip, asset, capabilities, onUpdate, onDelet
   const animations = editor.text_animations || ['none', 'fade', 'slide-up', 'pop']
   const [minSpeed, maxSpeed] = editor.speed_range || [0.25, 4]
 
+  // The columns hold preview, export and this panel side by side, and the
+  // panel is the tallest of the three when a clip is selected. Capping it to
+  // the viewport — the title pinned, the controls scrolling underneath — is
+  // what stops the Text/Style/Position/Timing sections from stretching the
+  // whole page past the preview and the timeline.
   return (
-    <div className="card flex flex-col">
-      <div className="flex items-start justify-between gap-2 p-4 pb-3">
+    <div className="card flex max-h-[70vh] flex-col lg:max-h-[calc(100vh-7rem)]">
+      <div className="flex shrink-0 items-start justify-between gap-2 border-b border-line p-4 pb-3">
         <div className="min-w-0">
           <p className="truncate font-semibold text-body">
             {clip.kind === 'text' ? clip.text || 'Text' : asset?.title || clip.kind}
@@ -100,6 +105,8 @@ export default function Inspector({ clip, asset, capabilities, onUpdate, onDelet
           Delete
         </button>
       </div>
+
+      <div className="min-h-0 flex-1 overflow-y-auto">
 
       {clip.asset_id && !asset && (
         <div className="mx-4 mb-3 rounded-[10px] border border-rose-300 bg-rose-50 px-3 py-2">
@@ -364,6 +371,7 @@ export default function Inspector({ clip, asset, capabilities, onUpdate, onDelet
           Lock this clip
         </label>
       </Section>
+      </div>
     </div>
   )
 }

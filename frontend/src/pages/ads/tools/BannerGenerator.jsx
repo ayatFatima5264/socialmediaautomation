@@ -41,9 +41,9 @@ const TOOL = 'Banner Generator'
 const PHASE = 2
 
 // The banner ratio the image model is asked for. Display sizes are far wider
-// than any generation ratio, so each maps to the nearest one the model handles
-// — the layout re-flow that produces the exact pixel sizes is a compositing
-// step, not a generation one.
+// than any generation ratio, so each maps to the nearest one the model handles.
+// The exact pixel sizes come from the export step, which re-flows the finished
+// banner with the text drawn on — see app/services/banner_export.py.
 const RATIO_FOR_SIZE = {
   '1200x628': '16:9',
   '1080x1080': '1:1',
@@ -51,6 +51,26 @@ const RATIO_FOR_SIZE = {
   '728x90': '16:9',
   '300x250': '1:1',
   '160x600': '9:16',
+}
+
+// The rail writes sizes as "1200 × 628" — with a Unicode multiplication sign,
+// not the letter x. Fold it to the ASCII `x` the export endpoint uses, and drop
+// the spaces, so the label the rail shows and the slug the API wants are one
+// string.
+const toSlug = (s) => s.replace(/\s+/g, '').replace(/[\u00d7\u2715]/g, 'x').toLowerCase()
+
+// Every size on the rail, de-duplicated — 1080x1080 is offered by both Facebook
+// and LinkedIn, and composing it twice would download the same file twice.
+const ALL_EXPORT_SLUGS = [
+  ...new Set(BANNER_EXPORT_SETS.flatMap((set) => set.sizes.map(toSlug))),
+]
+
+/** Decode the endpoint's base64 PNG into bytes for a Blob. */
+function base64ToBytes(b64) {
+  const binary = atob(b64)
+  const bytes = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i)
+  return bytes
 }
 
 export default function BannerGenerator() {
@@ -95,8 +115,55 @@ export default function BannerGenerator() {
   }, [editingAsset])
 
   const toast = useToast()
-  const { data, loading, run } = useAdGeneration(api.adCreative)
+  const { data, loading, run, cancel, elapsed  } = useAdGeneration(api.adCreative)
   const images = data?.images || null
+
+  // ---- Multi-size export (BUG-07) ----------------------------------------
+  // The rail's Download button was a permanent stub whose tooltip claimed a
+  // condition ("Available once banners have been generated") that never
+  // unlocked even after a successful generation. It now asks the server to
+  // composite the chosen banner into every size on the rail and writes the
+  // files, so a size showing a dash is a size that has not been produced yet
+  // rather than a promise nobody kept.
+  const [exporting, setExporting] = useState(false)
+  const [exported, setExported] = useState([])
+  // The first generated banner is the one the rail exports — the grid's own
+  // selection belongs to the Download action in the results component.
+  const selectedImage = images?.[0] || null
+
+  async function downloadAllSizes() {
+    if (!selectedImage) return
+
+    setExporting(true)
+    try {
+      const result = await api.adBannerExport({
+        image_url: selectedImage,
+        sizes: ALL_EXPORT_SLUGS,
+        headline: headline.trim() || null,
+        subheadline: subheadline.trim() || null,
+        cta: cta || null,
+      })
+
+      result.files.forEach((file) => {
+        const bytes = base64ToBytes(file.data)
+        const url = URL.createObjectURL(new Blob([bytes], { type: file.content_type }))
+        const link = document.createElement('a')
+        link.href = url
+        link.download = file.filename
+        document.body.appendChild(link)
+        link.click()
+        link.remove()
+        URL.revokeObjectURL(url)
+      })
+
+      setExported(result.files.map((f) => f.size))
+      toast.success(`Exported ${result.produced} sizes from one banner.`)
+    } catch (err) {
+      toast.error(err?.message || 'Could not export the banner sizes.')
+    } finally {
+      setExporting(false)
+    }
+  }
 
   // The Brand Kit's own colours, falling back to the app accent so the swatch
   // row is never an empty box. A user with no Brand Kit sees the palette the
@@ -298,6 +365,8 @@ export default function BannerGenerator() {
           phase={PHASE}
           onClick={generate}
           loading={loading}
+          onCancel={cancel}
+          elapsed={elapsed}
         />
       }
       stage={
@@ -312,8 +381,8 @@ export default function BannerGenerator() {
               {campaign
                 ? `Saved to ${campaign.name}. `
                 : 'Generated but not saved — open this tool from a campaign to keep what it makes. '}
-              Generated at the nearest ratio the model supports; re-flowing these into the
-              exact display pixel sizes is a compositing step, still to come.
+              Generated at the nearest ratio the model supports; the rail re-flows it into
+              every standard display size on request.
             </p>
           </div>
         ) : (
@@ -340,7 +409,15 @@ export default function BannerGenerator() {
                   {set.sizes.map((s) => (
                     <li key={s} className="flex items-center justify-between gap-2 text-xs">
                       <span className="text-muted">{s}</span>
-                      <span className="text-muted opacity-60">—</span>
+                      <span
+                        className={
+                          exported.includes(toSlug(s))
+                            ? 'font-semibold text-accent'
+                            : 'text-muted opacity-60'
+                        }
+                      >
+                        {exported.includes(toSlug(s)) ? '✓' : '—'}
+                      </span>
                     </li>
                   ))}
                 </ul>
@@ -350,12 +427,28 @@ export default function BannerGenerator() {
 
           <button
             type="button"
-            disabled
+            onClick={downloadAllSizes}
+            disabled={!selectedImage || exporting}
             className="btn btn-secondary btn-sm mt-3 w-full"
-            title="Available once banners have been generated"
+            title={
+              selectedImage
+                ? 'Re-flows the banner into every size above and downloads them as PNGs'
+                : 'Generate a banner first — there is nothing to re-flow yet'
+            }
           >
-            Download all sizes
+            {exporting ? 'Re-flowing…' : 'Download all sizes'}
           </button>
+
+          <p className="mt-2 text-xs leading-relaxed text-muted">
+            {exporting
+              ? 'Composing each size on the server…'
+              : selectedImage
+                ? `Re-flows this banner into all ${BANNER_EXPORT_SETS.reduce(
+                    (n, s) => n + s.sizes.length,
+                    0,
+                  )} sizes with the text drawn on. Each is a new file, not a stretched crop.`
+                : 'Generate a banner and every size above becomes downloadable.'}
+          </p>
         </RailSection>
       }
     />

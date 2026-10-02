@@ -11,8 +11,11 @@ letting a downstream publish fail.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
+import time
+from collections import OrderedDict
 from urllib.parse import quote
 
 import httpx
@@ -406,6 +409,104 @@ async def _renders_ok(url: str, client: httpx.AsyncClient) -> bool:
         return resp.status_code == 200 and ctype.startswith("image/")
 
 
+# ---------------------------------------------------------------------------
+# BUG-06 — retry the AI host, and remember what it produced.
+#
+# QA measured the delivered default for a three-version request: one real AI
+# image and two random photographs, because the chain gave up on the first
+# failure from a rate-limited host. Two changes address that directly:
+#
+#   1. A rate limit is transient, so each AI candidate is retried with a
+#      growing pause before the chain moves on. Falling straight through to a
+#      stock photo after a single 429 threw away generations that were one
+#      second away.
+#   2. A successful AI generation is cached by request, so re-running the same
+#      brief — a retry, a second variant, a page reload — is answered from
+#      memory rather than from a host that is already refusing us.
+#
+# The photo fallbacks are deliberately NOT retried and NOT cached: they are
+# there to guarantee a visual, and they always answer.
+# ---------------------------------------------------------------------------
+
+_cache: OrderedDict[str, tuple[str, str, float]] = OrderedDict()
+_cache_lock = asyncio.Lock()
+
+
+def _cache_key(provider: str, url: str) -> str:
+    return f"{provider}|{url}"
+
+
+def clear_image_cache() -> None:
+    """Drop the generation cache. Used by tests; also useful after a key change."""
+    _cache.clear()
+
+
+async def _cache_get(key: str) -> tuple[str, str] | None:
+    """(url, provider) for a cached generation, or None.
+
+    Stored and returned in the same order `generate_with_fallback` returns its
+    result, so a cache hit and a live fetch are interchangeable.
+    """
+    async with _cache_lock:
+        hit = _cache.get(key)
+        if hit is None:
+            return None
+        # Touch: OrderedDict order is the LRU order.
+        _cache.move_to_end(key)
+        url, provider, stored_at = hit
+        if time.monotonic() - stored_at > settings.image_ai_cache_ttl:
+            del _cache[key]
+            return None
+        return url, provider
+
+
+async def _cache_put(key: str, url: str, provider: str) -> None:
+    async with _cache_lock:
+        _cache[key] = (url, provider, time.monotonic())
+        _cache.move_to_end(key)
+        while len(_cache) > settings.image_ai_cache_size:
+            _cache.popitem(last=False)
+
+
+def _is_ai_candidate(provider: str) -> bool:
+    return provider.startswith("pollinations")
+
+
+async def _try_ai_candidate(
+    provider: str,
+    url: str,
+    client: httpx.AsyncClient,
+) -> tuple[bool, str]:
+    """Attempt one AI candidate up to `image_ai_attempts` times.
+
+    Returns (ok, last_error). Retries with a doubling pause, because the
+    failure being retried — a 429 or a 5xx from a busy free tier — clears on
+    its own within a second or two.
+    """
+    attempts = max(1, settings.image_ai_attempts)
+    last_error = f"{provider} returned a non-image response"
+
+    for attempt in range(attempts):
+        try:
+            if await _renders_ok(url, client):
+                return True, ""
+            last_error = f"{provider} returned a non-image response"
+        except httpx.HTTPError as exc:
+            last_error = f"{provider} request failed: {exc}"
+
+        if attempt < attempts - 1:
+            # Doubling backoff: 0.75s, 1.5s. Enough to clear a short rate
+            # window without turning one request into a minute of waiting.
+            delay = settings.image_ai_backoff * (2**attempt)
+            logger.info(
+                "Retrying %s after %.2fs (attempt %d/%d): %s",
+                provider, delay, attempt + 1, attempts, last_error,
+            )
+            await asyncio.sleep(delay)
+
+    return False, last_error
+
+
 async def generate_with_fallback(
     prompt: str,
     *,
@@ -414,20 +515,24 @@ async def generate_with_fallback(
     height: int | None = None,
     seed: int | None = None,
     enhance: bool = False,
+    keyword_source: str | None = None,
 ) -> tuple[str, str]:
     """Return (image_url, provider), automatically falling back on failure.
 
     Tries each provider in `named_candidates` in order. With verify=True (the
     default) each candidate is checked to actually render — on an API error,
     timeout, rate-limit or non-image response it moves to the next provider,
-    with no user action required. Logs which provider produced the image, and
-    raises ImageError only if *every* provider fails.
+    with no user action required. AI candidates get several attempts with a
+    growing pause first (see `_try_ai_candidate`), because a rate limit is
+    transient and one retry recovers most of them. Logs which provider
+    produced the image, and raises ImageError only if *every* provider fails.
 
     With verify=False it returns the primary immediately (fast path); the
     client-side loader still falls back across the returned candidates.
     """
     candidates = named_candidates(
-        prompt, width=width, height=height, seed=seed, enhance=enhance
+        prompt, width=width, height=height, seed=seed, enhance=enhance,
+        keyword_source=keyword_source,
     )
     if not verify:
         provider, url = candidates[0]
@@ -435,20 +540,52 @@ async def generate_with_fallback(
         return url, provider
 
     last_error = "no providers configured"
-    async with httpx.AsyncClient(
-        timeout=settings.ai_request_timeout, follow_redirects=True
-    ) as client:
-        for provider, url in candidates:
-            try:
-                if await _renders_ok(url, client):
-                    logger.info("Image generated via %s", provider)
-                    return url, provider
-                last_error = f"{provider} returned a non-image response"
-            except httpx.HTTPError as exc:
-                last_error = f"{provider} request failed: {exc}"
-            logger.warning("Image provider unavailable, falling back: %s", last_error)
-    raise ImageError(f"All image providers failed. Last error: {last_error}")
+    deadline = settings.image_generation_deadline
+    try:
+        # One budget for the whole chain, not per request. Without it the worst
+        # case is four hosts x `image_ai_attempts` retries x
+        # `ai_request_timeout`, plus the pauses between them, all behind a
+        # spinner. See the note on `image_generation_deadline` in config.py.
+        async with asyncio.timeout(deadline):
+            async with httpx.AsyncClient(
+                timeout=settings.ai_request_timeout, follow_redirects=True
+            ) as client:
+                for provider, url in candidates:
+                    key = _cache_key(provider, url)
 
+                    if _is_ai_candidate(provider):
+                        cached = await _cache_get(key)
+                        if cached is not None:
+                            logger.info("Image cache hit for %s", provider)
+                            return cached
+
+                    try:
+                        if _is_ai_candidate(provider):
+                            ok, failure = await _try_ai_candidate(provider, url, client)
+                        elif await _renders_ok(url, client):
+                            ok, failure = True, ""
+                        else:
+                            ok, failure = False, f"{provider} returned a non-image response"
+
+                        if ok:
+                            if _is_ai_candidate(provider):
+                                await _cache_put(key, url, provider)
+                            logger.info("Image generated via %s", provider)
+                            return url, provider
+                        last_error = failure
+                    except httpx.HTTPError as exc:
+                        last_error = f"{provider} request failed: {exc}"
+                    logger.warning("Image provider unavailable, falling back: %s", last_error)
+    except TimeoutError:
+        # The budget is spent. Say so, rather than reporting whichever host
+        # happened to be mid-request — "every provider failed" would send the
+        # user looking at their prompt rather than at a host that is too slow.
+        raise ImageError(
+            f"Image generation gave up after {int(deadline)}s. The image hosts are "
+            f"responding too slowly — try again, or generate fewer images at once. "
+            f"Last error: {last_error}"
+        ) from None
+    raise ImageError(f"All image providers failed. Last error: {last_error}")
 
 async def generate(prompt: str, *, verify: bool = False, **kwargs) -> str:
     """Return an image URL for `prompt` (backward-compatible thin wrapper).

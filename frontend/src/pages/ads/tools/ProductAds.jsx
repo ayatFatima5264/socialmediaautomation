@@ -68,7 +68,7 @@ export default function ProductAds() {
   const activeStyle = styles.some((s) => s.label === style) ? style : styles[0].label
 
   const toast = useToast()
-  const { data, loading, run } = useAdGeneration(api.adCreative)
+  const { data, loading, run, cancel, elapsed  } = useAdGeneration(api.adCreative)
   const images = data?.images || null
 
   // A campaign whose type has its own creative tool, and it is not this one.
@@ -210,6 +210,8 @@ export default function ProductAds() {
           phase={PHASE}
           onClick={generate}
           loading={loading}
+          onCancel={cancel}
+          elapsed={elapsed}
         />
       }
       stage={

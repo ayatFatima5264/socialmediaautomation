@@ -53,7 +53,7 @@ export default function CtaGenerator() {
   const activeTone = campaign?.tone || tone
 
   const toast = useToast()
-  const { data, loading, run } = useAdGeneration(api.adCtas)
+  const { data, loading, run, cancel, elapsed  } = useAdGeneration(api.adCtas)
 
   const ctas = data?.ctas || null
   const buttons = data?.buttons || null
@@ -144,6 +144,8 @@ export default function CtaGenerator() {
           phase={PHASE}
           onClick={generate}
           loading={loading}
+          onCancel={cancel}
+          elapsed={elapsed}
         />
       }
       stage={

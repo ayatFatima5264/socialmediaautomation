@@ -42,8 +42,18 @@ function extractDetail(data, fallback) {
   return fallback
 }
 
-async function request(path, { method = 'GET', body, form, formData, auth = true, headers = {} } = {}) {
+/**
+ * `signal` aborts the request. `fetch` has no timeout of its own, so a caller
+ * that needs a bound — a generation, an upload — supplies an AbortSignal and
+ * this passes it straight through (BUG-10).
+ *
+ * A fetch rejected by an abort surfaces as the browser's `AbortError`; it is
+ * re-raised as-is rather than folded into "Network error", because the two mean
+ * different things to the caller and only one of them is worth a toast.
+ */
+async function request(path, { method = 'GET', body, form, formData, auth = true, headers = {}, signal } = {}) {
   const opts = { method, headers: { ...headers } }
+  if (signal) opts.signal = signal
 
   if (formData) {
     // Let the browser set the multipart boundary; don't set Content-Type.
@@ -64,7 +74,11 @@ async function request(path, { method = 'GET', body, form, formData, auth = true
   let res
   try {
     res = await fetch(`${API_BASE}${path}`, opts)
-  } catch {
+  } catch (err) {
+    // An abort is not a network fault. Swallowing it into "could not reach the
+    // API server" would tell the user to check their connection when they were
+    // the one who pressed Cancel.
+    if (err?.name === 'AbortError') throw err
     throw new ApiError('Network error — could not reach the API server.', 0, null)
   }
 
@@ -316,11 +330,18 @@ export const api = {
   // Text generation runs on the configured AI provider (groq). `adVideoPlan`
   // returns a shot plan, NOT a rendered video — its `renderable` flag is false
   // until a video provider exists, and callers must respect that.
-  adCopy: (body) => request('/api/ads/copy', { method: 'POST', body }),
-  adHeadlines: (body) => request('/api/ads/headlines', { method: 'POST', body }),
-  adCtas: (body) => request('/api/ads/ctas', { method: 'POST', body }),
-  adCreative: (body) => request('/api/ads/creative', { method: 'POST', body }),
-  adVideoPlan: (body) => request('/api/ads/video-plan', { method: 'POST', body }),
+  // The generation endpoints take a second `options` argument carrying the
+  // caller's AbortSignal, so `useAdGeneration` can cancel or time one out
+  // (BUG-10). It is spread last so a caller's `signal` reaches `request` and
+  // cannot be overwritten by a default here.
+  adCopy: (body, opts) => request('/api/ads/copy', { method: 'POST', body, ...opts }),
+  adHeadlines: (body, opts) =>
+    request('/api/ads/headlines', { method: 'POST', body, ...opts }),
+  adCtas: (body, opts) => request('/api/ads/ctas', { method: 'POST', body, ...opts }),
+  adCreative: (body, opts) =>
+    request('/api/ads/creative', { method: 'POST', body, ...opts }),
+  adVideoPlan: (body, opts) =>
+    request('/api/ads/video-plan', { method: 'POST', body, ...opts }),
 
   // Campaigns are the user's own data — these require a token, unlike the
   // generation endpoints above, which treat the user as optional.
@@ -718,6 +739,11 @@ export const api = {
   downloadRender: (renderId) =>
     requestBlob(`/api/video/renders/${renderId}/download`),
 
+  // Re-flow a generated banner into display sizes. Returns the composited PNGs
+  // inline as base64, so the client writes files rather than re-drawing them.
+  adBannerExport: (payload) =>
+    request('/api/ads/banner-export', { method: 'POST', body: payload }),
+
   // ---- Media Library ------------------------------------------------------
   // The library screen and every picker dialog go through these. `filter` is a
   // tab key ("images", "videos"), not a storage kind — the mapping is the
@@ -742,10 +768,16 @@ export const api = {
   // puts a file in Video Studio's object storage. They are different stores
   // for different jobs, and a shared name here silently sends one feature's
   // uploads to the other's endpoint.
-  uploadVideoMedia: (file, { kind = 'upload', title, projectId } = {}) => {
+  // `kind` is omitted unless a caller names one. The server infers it from the
+  // file's media type, and this client used to default it to the literal string
+  // 'upload' — which put every photo and every clip a user dropped into the
+  // library into the same bucket as an MP3, so they showed up under neither
+  // Images nor Videos and appeared under Audio instead. Callers that do know
+  // (Voice Studio, Music Studio, a picker placing a clip) still pass it.
+  uploadVideoMedia: (file, { kind, title, projectId } = {}) => {
     const fd = new FormData()
     fd.append('file', file)
-    fd.append('kind', kind)
+    if (kind) fd.append('kind', kind)
     if (title) fd.append('title', title)
     if (projectId) fd.append('project_id', projectId)
     return request('/api/video/media/upload', { method: 'POST', formData: fd })

@@ -48,7 +48,12 @@ from app.services.video import assets as asset_service
 from app.services.video import compositor
 from app.services.video import renders as render_service
 from app.services.video import timeline as tl
-from app.services.video.ffmpeg import FFmpegError, ffmpeg_path, probe
+from app.services.video.ffmpeg import (
+    FFmpegError,
+    extract_poster,
+    ffmpeg_path,
+    probe,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -266,6 +271,59 @@ def _run_ffmpeg(
 # ---------------------------------------------------------------------------
 
 
+def _store_poster_frame(
+    db: Session,
+    *,
+    render: VideoRender,
+    project: VideoProject,
+    output: Path,
+    name: str,
+) -> int | None:
+    """Save one frame of the finished render as the project's thumbnail.
+
+    Returns the new asset's id, or None when a frame could not be produced or
+    stored. Never raises: a missing poster must not turn a successful render
+    into a failed one.
+
+    A thumbnail the user chose themselves is left alone — this is a default, not
+    an opinion about their design work.
+    """
+    if project.thumbnail_asset_id is not None:
+        return None
+
+    try:
+        data = extract_poster(output, output.parent / "poster.png")
+    except FFmpegError as exc:
+        logger.warning("Render %s: no poster frame (%s)", render.id, exc)
+        return None
+
+    if not data:
+        logger.warning("Render %s: poster frame was empty", render.id)
+        return None
+
+    try:
+        asset = asset_service.store_asset(
+            db,
+            user_id=render.user_id,
+            kind="thumbnail",
+            data=data,
+            content_type="image/png",
+            title=f"{name[:60]} (poster)",
+            filename=f"{name[:60]}.png",
+            project_id=project.id,
+            # Read out of the frame itself rather than from the project: the
+            # compositor can letterbox or scale, so the poster's dimensions are
+            # not necessarily the canvas's.
+            meta={"render_id": render.id, "source": "render_poster"},
+        )
+    except asset_service.AssetError as exc:
+        logger.warning("Render %s: poster frame not stored (%s)", render.id, exc)
+        return None
+
+    logger.info("Render %s: poster frame stored as asset %s", render.id, asset.id)
+    return asset.id
+
+
 def execute(db: Session, render: VideoRender) -> VideoRender:
     """Run one queued render to completion, or record why it could not run.
 
@@ -369,10 +427,29 @@ def execute(db: Session, render: VideoRender) -> VideoRender:
                 code="storage_error",
             ) from exc
 
+        # ---- poster frame ------------------------------------------------
+        # A finished video needs a real image beside it. Without one the project
+        # has no thumbnail, and the PNG/JPG exports are unavailable — which used
+        # to be exactly what happened, because the MP4 was assigned as the
+        # thumbnail and the export then tried to decode a video as an image.
+        #
+        # Best-effort on purpose: a poster is a convenience, and failing the
+        # whole render over one missing frame would throw away a video that
+        # encoded correctly. The failure is logged and the project simply has no
+        # thumbnail until the user makes one in Thumbnail Studio.
+        thumbnail_asset_id = _store_poster_frame(
+            db,
+            render=render,
+            project=project,
+            output=output,
+            name=name,
+        )
+
         return render_service.complete(
             db,
             render=render,
             output_asset_id=asset.id,
+            thumbnail_asset_id=thumbnail_asset_id,
             duration_seconds=plan.duration,
         )
 

@@ -31,6 +31,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy.orm import Session
 
+from app.api_errors import provider_http_error
 from app.config import settings
 from app.core.deps import get_current_user
 from app.database import get_db
@@ -76,10 +77,6 @@ def _http(exc: Exception) -> HTTPException:
     quota is 429. Collapsing those into 500 is what makes a studio unusable —
     the user cannot tell "try shorter text" from "come back later".
     """
-    if isinstance(exc, UsageLimitExceeded):
-        return HTTPException(status_code=429, detail=str(exc))
-    if isinstance(exc, MediaProviderConfigError):
-        return HTTPException(status_code=503, detail=str(exc))
     if isinstance(exc, asset_service.AssetNotFound):
         return HTTPException(status_code=404, detail=str(exc))
     if isinstance(exc, StorageError):
@@ -87,7 +84,9 @@ def _http(exc: Exception) -> HTTPException:
             status_code=502,
             detail="The file store could not be reached. Try again in a moment.",
         )
-    return HTTPException(status_code=422, detail=str(exc))
+    # Provider faults — 503 unconfigured, 429 quota, 502 failed — are decided in
+    # one place so they read the same here as in every other route.
+    return provider_http_error(exc) or HTTPException(status_code=422, detail=str(exc))
 
 
 def _take(asset: VideoAsset) -> VoiceTake:

@@ -327,44 +327,111 @@ def import_upload(
 # ---------------------------------------------------------------------------
 
 # How the library's filter bar groups kinds. The order is the order of the
-# tabs; the label is what the tab says. `kinds` is a list because the UI's
-# categories are coarser than the storage kinds — "Video" means both a clip the
-# user uploaded and a finished render, and nobody looking for a video thinks of
-# those as different tabs.
+# tabs; the label is what the tab says.
+#
+# Two lists per tab, and both are needed. `kinds` is what the file was *for*:
+# the UI's categories are coarser than the storage kinds — "Video" means both a
+# clip the user uploaded and a finished render, and nobody looking for a video
+# thinks of those as different tabs. `content_types` is what the file *is*.
+#
+# The second list exists because `kind` alone is not enough to answer "show me
+# the images". `POST /media/upload` takes its kind from the caller, and a
+# client that does not name one used to get the literal default `upload` — so
+# every PNG and MP4 dropped into the library landed in the same bucket as an
+# MP3, showed up under neither Images nor Videos, and appeared under Audio. A
+# tab that has to describe the file as well as the intent is correct for rows
+# written by any path, including the ones already in the database.
 MEDIA_FILTERS = (
-    {"key": "all", "label": "All", "kinds": []},
-    {"key": "image", "label": "Images", "kinds": ["image"]},
-    {"key": "video", "label": "Videos", "kinds": ["video", "render"]},
-    {"key": "audio", "label": "Audio", "kinds": ["upload"]},
-    {"key": "voice", "label": "Voice-over", "kinds": ["voice"]},
-    {"key": "music", "label": "Music", "kinds": ["music"]},
-    {"key": "subtitle", "label": "Subtitles", "kinds": ["subtitle"]},
-    {"key": "thumbnail", "label": "Thumbnails", "kinds": ["thumbnail"]},
+    {"key": "all", "label": "All", "kinds": [], "content_types": []},
+    {"key": "image", "label": "Images", "kinds": ["image"], "content_types": ["image/"]},
+    {
+        "key": "video",
+        "label": "Videos",
+        "kinds": ["video", "render"],
+        "content_types": ["video/"],
+    },
+    # `upload` is deliberately NOT in any specific tab's `kinds`. It is the
+    # catch-all a file lands on when nothing says what it is for, so matching on
+    # it would put every unclassifiable file in the first tab that mentioned it
+    # — which is how a PNG ended up listed under Audio. Media type is what
+    # identifies these files; `voice` and `music` are listed by kind because
+    # those two are genuinely about intent and have their own tabs.
+    {
+        "key": "audio",
+        "label": "Audio",
+        "kinds": ["voice", "music"],
+        "content_types": ["audio/"],
+    },
+    {"key": "voice", "label": "Voice-over", "kinds": ["voice"], "content_types": []},
+    {"key": "music", "label": "Music", "kinds": ["music"], "content_types": []},
+    {"key": "subtitle", "label": "Subtitles", "kinds": ["subtitle"], "content_types": []},
+    {"key": "thumbnail", "label": "Thumbnails", "kinds": ["thumbnail"], "content_types": []},
 )
 
 _FILTERS_BY_KEY = {entry["key"]: entry for entry in MEDIA_FILTERS}
 
 
-def kinds_for_filter(key: str | None) -> list[str]:
-    """The storage kinds behind a filter tab. Unknown or "all" means no filter.
+def filter_spec(key: str | None) -> dict:
+    """The kinds *and* content types behind a filter tab.
 
-    An unknown key returning "everything" rather than "nothing" is deliberate:
-    a stale bookmark or an old build asking for a tab that no longer exists
-    should show the library, not an empty page that looks like data loss.
+    Unknown or "all" means no filter, which returns everything. An unknown key
+    returning "everything" rather than "nothing" is deliberate: a stale bookmark
+    or an old build asking for a tab that no longer exists should show the
+    library, not an empty page that looks like data loss.
     """
-    entry = _FILTERS_BY_KEY.get((key or "all").lower())
-    return list(entry["kinds"]) if entry else []
+    return _FILTERS_BY_KEY.get((key or "all").lower(), MEDIA_FILTERS[0])
+
+
+def kinds_for_filter(key: str | None) -> list[str]:
+    """The storage kinds behind a filter tab. Unknown or "all" means no filter."""
+    return list(filter_spec(key)["kinds"])
+
+
+def content_types_for_filter(key: str | None) -> list[str]:
+    """The content-type prefixes behind a filter tab. Empty means "any"."""
+    return list(filter_spec(key)["content_types"])
+
+
+def facet_counts(db: Session, *, user_id: int) -> dict[str, int]:
+    """How many assets sit behind each filter tab, in one query.
+
+    Grouped by `(kind, content_type)` rather than by kind, because a tab is a
+    union of both and a PNG stored as `kind='upload'` has to count towards
+    Images without being counted there twice.
+
+    Eight COUNT(*) round trips to render a row of chips is the kind of thing
+    that makes a page feel slow for no reason, so it is one grouped scan.
+    """
+    rows = db.execute(
+        select(VideoAsset.kind, VideoAsset.content_type, func.count(VideoAsset.id))
+        .where(VideoAsset.user_id == user_id)
+        .group_by(VideoAsset.kind, VideoAsset.content_type)
+    ).all()
+
+    counts = {entry["key"]: 0 for entry in MEDIA_FILTERS}
+    for kind, content_type, total in rows:
+        content_type = content_type or ""
+        for entry in MEDIA_FILTERS:
+            if kind in entry["kinds"] or any(
+                content_type.startswith(prefix) for prefix in entry["content_types"]
+            ):
+                counts[entry["key"]] += int(total or 0)
+
+    # "All" is every row, not the sum of the tabs: a voice-over is in the Audio
+    # tab *and* the Voice-over tab, so adding the tabs up double-counts them.
+    counts["all"] = int(
+        db.scalar(
+            select(func.count(VideoAsset.id)).where(VideoAsset.user_id == user_id)
+        )
+        or 0
+    )
+    return counts
 
 
 def facets(db: Session, *, user_id: int) -> list[dict]:
     """The filter tabs with a live count on each one."""
-    counts = asset_service.kind_counts(db, user_id=user_id)
-    out = []
-    for entry in MEDIA_FILTERS:
-        total = (
-            counts["total"]
-            if not entry["kinds"]
-            else sum(counts.get(kind, 0) for kind in entry["kinds"])
-        )
-        out.append({"key": entry["key"], "label": entry["label"], "count": total})
-    return out
+    counts = facet_counts(db, user_id=user_id)
+    return [
+        {"key": entry["key"], "label": entry["label"], "count": counts[entry["key"]]}
+        for entry in MEDIA_FILTERS
+    ]

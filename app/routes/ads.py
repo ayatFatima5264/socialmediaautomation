@@ -10,6 +10,8 @@ start being saved against an account.
 """
 from __future__ import annotations
 
+import base64
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
@@ -21,6 +23,9 @@ from app.models.campaign_asset import ASSET_KINDS, CampaignAsset as CampaignAsse
 from app.models.user import User
 from app.schemas.ads import (
     AdCopyRequest,
+    BannerExportFile,
+    BannerExportRequest,
+    BannerExportResponse,
     Campaign,
     CampaignAsset,
     CampaignAssetBatch,
@@ -39,7 +44,9 @@ from app.schemas.ads import (
     VideoPlanResponse,
 )
 from app.services import ads_service
+from app.services import banner_export as banner_export_service
 from app.services.ads_service import HEADLINE_LIMIT, NATIVE_BUTTONS
+from app.api_errors import empty_output, http_error
 from app.services.image_service import ImageError
 from app.services.providers import ProviderConfigError, ProviderError
 
@@ -57,9 +64,10 @@ CHAR_LIMITS = {
 
 
 def _guard(exc: Exception) -> HTTPException:
-    if isinstance(exc, ProviderConfigError):
-        return HTTPException(status_code=503, detail=str(exc))
-    return HTTPException(status_code=502, detail=str(exc))
+    # Every provider failure in this module goes through app.api_errors, which
+    # is the single place that decides status and message. This used to be a
+    # second copy of that decision.
+    return http_error(exc)
 
 
 @router.post("/copy", response_model=AdCopyResponse)
@@ -84,7 +92,7 @@ async def ad_copy(
         raise _guard(exc) from exc
 
     if not variants:
-        raise HTTPException(status_code=502, detail="The model returned no usable copy.")
+        raise empty_output("usable copy")
     return AdCopyResponse(variants=variants)
 
 
@@ -107,7 +115,7 @@ async def headlines(
         raise _guard(exc) from exc
 
     if not items:
-        raise HTTPException(status_code=502, detail="The model returned no headlines.")
+        raise empty_output("headlines")
     return HeadlineResponse(headlines=items, limit=HEADLINE_LIMIT)
 
 
@@ -130,7 +138,7 @@ async def ctas(
         raise _guard(exc) from exc
 
     if not items:
-        raise HTTPException(status_code=502, detail="The model returned no CTAs.")
+        raise empty_output("CTAs")
     return CtaResponse(
         ctas=items,
         buttons=NATIVE_BUTTONS.get(req.platform, NATIVE_BUTTONS["facebook"]),
@@ -156,9 +164,57 @@ async def creative(
     except ImageError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
-    if not images:
+    if not images or len(images) != req.count:
         raise HTTPException(status_code=502, detail="No image could be generated.")
+    if len(images) != len(sources):
+        raise HTTPException(status_code=502, detail="Internal error: image/source count mismatch.")
     return CreativeResponse(images=images, sources=sources)
+
+
+@router.post("/banner-export", response_model=BannerExportResponse)
+async def banner_export(
+    req: BannerExportRequest,
+    db: Session = Depends(get_db),
+    user: User | None = Depends(get_current_user_optional),
+) -> BannerExportResponse:
+    """Re-flow a generated banner into the requested display sizes (BUG-07).
+
+    The rail's Download button was a permanent stub behind a tooltip claiming a
+    condition that never unlocked. This is the compositing step it described.
+
+    502 rather than 422 on failure: every error here is an upstream image host
+    that would not serve the banner, or a request for a size the rail does not
+    offer. The one case that IS a malformed request — a size not on the rail —
+    still answers 422, because that is what the user typed.
+    """
+    try:
+        files = await banner_export_service.export_sizes(
+            req.image_url,
+            req.sizes,
+            headline=(req.headline or "").strip(),
+            subheadline=(req.subheadline or "").strip(),
+            cta=(req.cta or "").strip(),
+        )
+    except banner_export_service.BannerExportError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    return BannerExportResponse(
+        files=[
+            BannerExportFile(
+                size=f["size"],
+                label=f["label"],
+                network=f["network"],
+                width=f["width"],
+                height=f["height"],
+                filename=f["filename"],
+                content_type=f["content_type"],
+                data=base64.b64encode(f["bytes"]).decode("ascii"),
+            )
+            for f in files
+        ],
+        requested=len(req.sizes),
+        produced=len(files),
+    )
 
 
 @router.post("/video-plan", response_model=VideoPlanResponse)
@@ -186,7 +242,7 @@ async def video_plan(
         raise _guard(exc) from exc
 
     if not plan.get("scenes"):
-        raise HTTPException(status_code=502, detail="The model returned no scenes.")
+        raise empty_output("scenes")
     return VideoPlanResponse(**plan)
 
 

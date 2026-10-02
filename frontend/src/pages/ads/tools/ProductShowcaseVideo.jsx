@@ -39,7 +39,7 @@ export default function ProductShowcaseVideo() {
   // Rendering a turntable needs a generative video model, which is not
   // configured. The shot plan is the part a language model genuinely produces,
   // so that is what this generates — and it says so rather than implying a file.
-  const { data: plan, loading, run } = useAdGeneration(api.adVideoPlan)
+  const { data: plan, loading, run, cancel, elapsed  } = useAdGeneration(api.adVideoPlan)
 
   async function generatePlan() {
     const concept = [
@@ -156,6 +156,8 @@ export default function ProductShowcaseVideo() {
           phase={PHASE}
           onClick={generatePlan}
           loading={loading}
+          onCancel={cancel}
+          elapsed={elapsed}
         />
       }
       stage={

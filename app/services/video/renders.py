@@ -265,10 +265,18 @@ def complete(
     *,
     render: VideoRender,
     output_asset_id: int | None = None,
+    thumbnail_asset_id: int | None = None,
     duration_seconds: float | None = None,
     commit: bool = True,
 ) -> VideoRender:
-    """Mark a job finished and hand its output to the project."""
+    """Mark a job finished and hand its output to the project.
+
+    `thumbnail_asset_id` is the poster frame the worker extracted, kept separate
+    from `output_asset_id` on purpose. The two used to be the same field — the
+    MP4 was assigned to `project.thumbnail_asset_id` — and that made the project
+    carry a "thumbnail" that was a video, so every PNG/JPG export failed when it
+    tried to decode it. A thumbnail is an image or it is not a thumbnail.
+    """
     if render.is_terminal:
         raise RenderError(f"This render is already {render.status}.")
 
@@ -282,10 +290,10 @@ def complete(
     project = db.get(VideoProject, render.project_id)
     if project is not None:
         project.status = "completed"
-        # The render's poster frame is the project's thumbnail, unless the
+        # The render's poster frame becomes the project's thumbnail, unless the
         # user picked one — which is a decision we must not overwrite.
-        if project.thumbnail_asset_id is None and output_asset_id is not None:
-            project.thumbnail_asset_id = output_asset_id
+        if project.thumbnail_asset_id is None and thumbnail_asset_id is not None:
+            project.thumbnail_asset_id = thumbnail_asset_id
 
     if duration_seconds:
         metering.record(

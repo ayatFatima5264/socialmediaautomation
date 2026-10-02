@@ -169,6 +169,12 @@ def manifest(db: Session, project: VideoProject) -> list[dict]:
         thumbnail = db.get(VideoAsset, project.thumbnail_asset_id)
         if thumbnail is not None and thumbnail.user_id != project.user_id:
             thumbnail = None
+        # A "thumbnail" that is actually the rendered video is not one. Reporting
+        # it as available would promise a PNG the download cannot produce.
+        if thumbnail is not None and not (thumbnail.content_type or "").startswith(
+            "image/"
+        ):
+            thumbnail = None
 
     output = db.get(VideoAsset, render.output_asset_id) if render else None
 
@@ -269,6 +275,18 @@ def _thumbnail(
         )
     except asset_service.AssetError as exc:
         raise ExportUnavailable("That thumbnail is no longer in your library.") from exc
+
+    # Fail here, with a message that says what to do, rather than further down
+    # where Pillow raises "cannot identify image file" on a video's bytes. Rows
+    # written before renders stopped assigning the MP4 here are still in the
+    # wild, so this is the path that turns that old data into a clear
+    # instruction instead of a 422 with no explanation.
+    if not (asset.content_type or "").startswith("image/"):
+        raise ExportUnavailable(
+            "This project's thumbnail is not an image — it was set to the "
+            "rendered video. Open Thumbnail Studio and save a thumbnail, then "
+            "download again."
+        )
 
     wanted = KINDS_BY_NAME[kind]["content_type"]
     design = (asset.meta or {}).get("design")

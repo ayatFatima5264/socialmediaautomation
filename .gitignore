@@ -36,3 +36,6 @@ Thumbs.db
 
 # ---- Build artifacts ----
 app.zip
+
+# ---- Local test run logs ----
+test_output.txt

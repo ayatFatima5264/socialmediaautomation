@@ -77,7 +77,7 @@ export default function TextToVideo() {
   const platform = campaign?.platforms?.[0] || 'instagram'
 
   const toast = useToast()
-  const { data: plan, loading, run } = useAdGeneration(api.adVideoPlan)
+  const { data: plan, loading, run, cancel, elapsed  } = useAdGeneration(api.adVideoPlan)
 
   async function generatePlan() {
     // Concept + campaign is a complete brief on its own; the prompt box only
@@ -209,6 +209,8 @@ export default function TextToVideo() {
           phase={PHASE}
           onClick={generatePlan}
           loading={loading}
+          onCancel={cancel}
+          elapsed={elapsed}
         />
       }
       stage={

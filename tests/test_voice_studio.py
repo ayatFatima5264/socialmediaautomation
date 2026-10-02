@@ -161,6 +161,22 @@ class ScriptedTTS(TTSProvider):
         )
 
 
+@pytest.fixture(autouse=True)
+def clear_voice_catalogue_cache():
+    """The catalogue is cached in the process for a minute, which is the point —
+    and is exactly why every test here has to drop it.
+
+    These tests each install a different provider chain, so a catalogue left
+    behind by one test is a plausible-looking list of voices belonging to
+    providers that the next test never configured.
+    """
+    from app.services.video import voice as voice_service
+
+    voice_service.invalidate_voice_catalogue()
+    yield
+    voice_service.invalidate_voice_catalogue()
+
+
 def install_providers(monkeypatch, providers: dict[str, TTSProvider]) -> None:
     """Make the voice service resolve provider names from `providers`.
 
@@ -771,15 +787,22 @@ def test_every_voice_route_requires_a_token(client, method, path):
     assert getattr(client, method)(path, **kwargs).status_code == 401
 
 
-def test_a_provider_failure_is_a_422_with_the_reason(client, provider):
-    """Not a 500. The user needs to know whether to change something or wait."""
+def test_a_provider_failure_is_a_502_with_a_usable_reason(client, provider):
+    """Not a 500, and not a 422 either.
+
+    This answered 422 — "unprocessable request" — while `/api/ads/*` answered 502
+    for the same outage, so a client could not tell a retryable fault from a
+    malformed request. The status comes from `app.api_errors` now; the detail is
+    generic and the provider's own wording stays in the log.
+    """
     provider.fail_with = MediaProviderError("The voice service is rate limiting.")
     headers = auth(client)
 
     response = generate(client, headers)
 
-    assert response.status_code == 422
-    assert "rate limiting" in response.json()["detail"]
+    assert response.status_code == 502
+    assert response.headers.get("X-Error-Code") == "provider_unavailable"
+    assert "rate limiting" not in response.json()["detail"]
 
 
 def test_an_unconfigured_provider_is_a_503(client, provider):

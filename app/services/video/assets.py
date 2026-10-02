@@ -165,6 +165,38 @@ def normalize_content_type(raw: str | None, filename: str | None = None) -> str:
     return value or "application/octet-stream"
 
 
+# The kind an unnamed upload is filed under, by media type. `upload` is the
+# fallback and is also the answer for audio: the storage vocabulary has no
+# "audio" kind, and adding one would mean rewriting every stored object's key.
+# An audio file is told apart from everything else by its content type, which
+# is what the library's filters match on.
+_UPLOAD_KINDS_BY_PREFIX = (
+    ("image/", "image"),
+    ("video/", "video"),
+)
+
+
+def kind_for_content(content_type: str, filename: str | None = None) -> str:
+    """The kind a file gets when the caller does not say what it is for.
+
+    The Media Library's upload form has no "what is this for" control — the
+    user drops in a photo, not a photo *as a video background* — so an unnamed
+    upload has to be filed by what it is. The previous default was the literal
+    `upload` for everything, which is why a PNG showed up under neither Images
+    nor Videos and appeared under Audio instead.
+
+    Deliberately conservative: this only distinguishes the two types the library
+    filters can be sure about. A caption file stays `upload`, because
+    `subtitle` means a parsed cue list rather than a raw .srt, and misfiling one
+    would put it in the editor's track picker.
+    """
+    mime = normalize_content_type(content_type, filename)
+    for prefix, kind in _UPLOAD_KINDS_BY_PREFIX:
+        if mime.startswith(prefix):
+            return kind
+    return "upload"
+
+
 def store_asset(
     db: Session,
     *,
@@ -464,17 +496,31 @@ def _library_query(
     search: str | None,
     project_id: int | None,
     unassigned: bool,
+    content_types: list[str] | None = None,
 ):
     """The WHERE clause shared by the listing and its count.
 
     One builder for both so a filter can never apply to the rows and not to the
     total — a library that says "12 of 300" while showing 12 filtered results
     out of 40 is worse than showing no total at all.
+
+    `kinds` and `content_types` are OR'd together, not AND'd: a tab matches a
+    row that either the studio filed it under the right kind *or* is the right
+    media type. That is what makes a PNG uploaded by a client that did not name
+    a kind — stored as `kind='upload'` — still appear under Images. AND would
+    require both to agree, which is precisely the case that was broken.
     """
     query = select(VideoAsset).where(VideoAsset.user_id == user_id)
 
+    clauses = []
     if kinds:
-        query = query.where(VideoAsset.kind.in_(kinds))
+        clauses.append(VideoAsset.kind.in_(kinds))
+    if content_types:
+        clauses.extend(
+            VideoAsset.content_type.like(f"{prefix}%") for prefix in content_types
+        )
+    if clauses:
+        query = query.where(or_(*clauses))
 
     if search:
         # Both the display title and the original filename: people look for
@@ -517,6 +563,7 @@ def search_assets(
     sort: str = DEFAULT_ASSET_SORT,
     limit: int = 60,
     offset: int = 0,
+    content_types: list[str] | None = None,
 ) -> list[VideoAsset]:
     """A page of the library, filtered and sorted. Always one user's."""
     query = _library_query(
@@ -525,6 +572,7 @@ def search_assets(
         search=search,
         project_id=project_id,
         unassigned=unassigned,
+        content_types=content_types,
     )
     order = ASSET_SORTS.get(sort) or ASSET_SORTS[DEFAULT_ASSET_SORT]
     query = query.order_by(*order).limit(min(limit, 200)).offset(max(offset, 0))
@@ -539,6 +587,7 @@ def count_assets(
     search: str | None = None,
     project_id: int | None = None,
     unassigned: bool = False,
+    content_types: list[str] | None = None,
 ) -> int:
     """How many rows the same filters match, ignoring the page."""
     query = _library_query(
@@ -547,6 +596,7 @@ def count_assets(
         search=search,
         project_id=project_id,
         unassigned=unassigned,
+        content_types=content_types,
     )
     return int(
         db.scalar(select(func.count()).select_from(query.subquery())) or 0

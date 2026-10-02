@@ -44,6 +44,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.orm import Session
 
+from app.api_errors import provider_http_error
 from app.config import settings
 from app.core.deps import get_current_user
 from app.database import get_db
@@ -130,15 +131,17 @@ def _storyboard(db: Session, project: VideoProject) -> StoryboardRead:
 def _http(exc: Exception) -> HTTPException:
     """Map a pipeline error onto a status code.
 
-    503 for an unconfigured provider is the one that matters: it tells the user
-    the deployment is missing something rather than that their input was wrong,
-    which is the difference between "try again" and "ask your administrator".
+    A provider fault gets the status `app.api_errors` decides, so an outage
+    reads the same here as it does in `/api/ads/*` — that disagreement is what
+    BUG-09 was. The chain is followed, so a Groq failure wrapped in a
+    `ScriptError` is still reported as the outage that caused it.
+
+    Everything reaching here that is *not* a provider fault is a service-level
+    refusal about the request itself — no topic, no scenes, a section that is
+    not in the script — and stays 422, because the caller has to change
+    something.
     """
-    if isinstance(exc, MediaProviderConfigError):
-        return HTTPException(status_code=503, detail=str(exc))
-    if isinstance(exc, UsageLimitExceeded):
-        return HTTPException(status_code=429, detail=str(exc))
-    return HTTPException(status_code=422, detail=str(exc))
+    return provider_http_error(exc) or HTTPException(status_code=422, detail=str(exc))
 
 
 # ---------------------------------------------------------------------------

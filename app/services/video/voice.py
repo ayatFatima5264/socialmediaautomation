@@ -21,8 +21,10 @@ Three things live here rather than in a provider:
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
+import time
 from dataclasses import replace
 
 from sqlalchemy.orm import Session
@@ -171,22 +173,38 @@ def apply_style(
     )
 
 
-async def list_voices() -> list[Voice]:
-    """Every voice from every usable provider, merged.
+async def _fetch_all_voices() -> list[Voice]:
+    """One pass over every provider, concurrently.
 
-    A provider that fails to answer is logged and skipped: one unreachable
-    catalogue must not empty the dropdown for the provider that is working.
+    Concurrent because the alternative is additive and the whole page waits for
+    it: an unreachable provider is a timeout, and paying that timeout serially
+    before the working provider is even asked means a broken key makes the voice
+    list as slow as the timeout rather than as slow as the one good call. Every
+    voice carries the provider that owns it, so a voice that arrives late is
+    indistinguishable from one that arrived first.
+
+    A provider that fails is logged and skipped: one unreachable catalogue must
+    not empty the dropdown for the provider that is working.
     """
+    providers = get_tts_providers()
+    results = await asyncio.gather(
+        *(provider.list_voices() for provider in providers),
+        return_exceptions=True,
+    )
+
     merged: list[Voice] = []
-    for provider in get_tts_providers():
-        try:
-            merged.extend(await provider.list_voices())
-        except MediaProviderError as exc:
-            logger.warning("Voice catalogue unavailable from %s: %s", provider.name, exc)
+    for provider, result in zip(providers, results):
+        if isinstance(result, BaseException):
+            logger.warning(
+                "Voice catalogue unavailable from %s: %s", provider.name, result
+            )
+            continue
+        merged.extend(result)
 
     # Featured languages first, then everything else alphabetically. Within a
     # language, female and male voices interleave by name rather than being
     # grouped, so neither is systematically at the bottom of a long list.
+    # Sorted before caching, so every caller sees the same order.
     def sort_key(voice: Voice) -> tuple:
         try:
             rank = FEATURED_LANGUAGES.index(voice.language)
@@ -196,6 +214,82 @@ async def list_voices() -> list[Voice]:
 
     merged.sort(key=sort_key)
     return merged
+
+
+# The catalogue, cached for a short while in this process.
+#
+# Voice Studio asks for the list on every render and on every synthesis, because
+# the synthesiser has to know which provider owns the requested voice. Without
+# this, every one of those asks is a network round trip per provider, and the
+# ElevenLabs 401 costs its full timeout each time.
+#
+# Short, because a catalogue changes rarely and a user who has just fixed a key
+# should not wait out a cache to see their voices appear. A failure is never
+# cached: the next request should retry, since the common reason for a failure
+# is a key that has just been corrected.
+_CATALOGUE_TTL_SECONDS = 60.0
+_catalogue_cache: tuple[float, list[Voice]] | None = None
+_catalogue_lock: tuple[asyncio.AbstractEventLoop, asyncio.Lock] | None = None
+
+
+def _refresh_lock() -> asyncio.Lock:
+    """The refresh lock for the loop that is running right now.
+
+    Held per loop rather than in a bare module global because an `asyncio.Lock`
+    remembers the first loop it was *contended* on and raises `is bound to a
+    different event loop` on the next one. Uvicorn runs one loop per process, so
+    a single global would work there — and would then fail in a test, a worker
+    that runs a second loop, or any future caller that does.
+
+    The loop is remembered alongside the lock rather than read back off it: the
+    lock only records a loop once something has actually waited on it, so
+    asking it which loop it belongs to answers "none" for a lock nobody has
+    contended yet — which would mint a fresh lock for every caller and defeat
+    the whole thing.
+    """
+    global _catalogue_lock
+    loop = asyncio.get_running_loop()
+    if _catalogue_lock is None or _catalogue_lock[0] is not loop:
+        _catalogue_lock = (loop, asyncio.Lock())
+    return _catalogue_lock[1]
+
+
+def invalidate_voice_catalogue() -> None:
+    """Drop the cache, so the next call asks the providers again."""
+    global _catalogue_cache
+    _catalogue_cache = None
+
+
+async def list_voices(*, refresh: bool = False) -> list[Voice]:
+    """Every voice from every usable provider, merged.
+
+    A provider that fails to answer is logged and skipped: one unreachable
+    catalogue must not empty the dropdown for the provider that is working.
+    """
+    global _catalogue_cache
+
+    if not refresh and _catalogue_cache is not None:
+        stored_at, voices = _catalogue_cache
+        if time.monotonic() - stored_at < _CATALOGUE_TTL_SECONDS:
+            return list(voices)
+
+    # One refresh at a time. Without the lock, N concurrent requests for the
+    # list each start their own fan-out and the cache saves nothing on exactly
+    # the burst it exists for.
+    async with _refresh_lock():
+        if not refresh and _catalogue_cache is not None:
+            stored_at, voices = _catalogue_cache
+            if time.monotonic() - stored_at < _CATALOGUE_TTL_SECONDS:
+                return list(voices)
+
+        voices = await _fetch_all_voices()
+        if voices:
+            _catalogue_cache = (time.monotonic(), list(voices))
+        else:
+            # Nothing to offer. Caching this would make an empty dropdown stick
+            # for a minute after the cause was fixed.
+            _catalogue_cache = None
+        return voices
 
 
 def languages_from(voices: list[Voice]) -> list[dict]:
@@ -485,9 +579,14 @@ async def synthesize(
             continue
 
     if result is None:
-        raise VoiceError(
-            f"All configured voice providers failed. Last error: {last_error}"
-        )
+        # `from last_error` is what lets the route recognise this as a provider
+        # outage: `app.api_errors` walks the cause chain, and a wrapper raised
+        # without it is indistinguishable from a bad request, so the user was
+        # told their text was wrong when the voice service was down.
+        message = f"All configured voice providers failed. Last error: {last_error}"
+        if last_error is not None:
+            raise VoiceError(message) from last_error
+        raise VoiceError(message)
 
     details = {
         # The bytes themselves. Carried on the result because the preview path

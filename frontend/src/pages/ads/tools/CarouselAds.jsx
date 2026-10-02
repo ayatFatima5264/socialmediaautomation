@@ -69,7 +69,7 @@ export default function CarouselAds() {
   const activeStyle = styles.some((s) => s.label === style) ? style : styles[0].label
 
   const toast = useToast()
-  const { data, loading, run } = useAdGeneration(api.adCreative)
+  const { data, loading, run, cancel, elapsed  } = useAdGeneration(api.adCreative)
   const images = data?.images || null
 
   const roles = carouselRoles(campaign?.campaignType, slides)
@@ -219,6 +219,8 @@ export default function CarouselAds() {
           phase={PHASE}
           onClick={generate}
           loading={loading}
+          onCancel={cancel}
+          elapsed={elapsed}
         />
       }
       stage={

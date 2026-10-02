@@ -44,7 +44,7 @@ export default function HeadlineGenerator() {
   const activePlatform = campaign?.platforms?.[0] || platform
 
   const toast = useToast()
-  const { data, loading, run } = useAdGeneration(api.adHeadlines)
+  const { data, loading, run, cancel, elapsed  } = useAdGeneration(api.adHeadlines)
 
   const headlines = data?.headlines || null
   const limit = data?.limit ?? 40
@@ -142,6 +142,8 @@ export default function HeadlineGenerator() {
           phase={PHASE}
           onClick={generate}
           loading={loading}
+          onCancel={cancel}
+          elapsed={elapsed}
         />
       }
       stage={

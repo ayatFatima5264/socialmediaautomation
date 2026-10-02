@@ -527,3 +527,216 @@ def test_every_word_of_a_media_search_has_to_match(studio_client, headers):
     ).json()
 
     assert body["total"] == 0
+
+# ---------------------------------------------------------------------------
+# An unnamed upload is filed by what it is, not by a default
+# ---------------------------------------------------------------------------
+
+
+def upload_unnamed(client, headers, *, data=PNG_BYTES, name="photo.png",
+                   content_type="image/png", title=None):
+    """Upload through the real endpoint with no `kind` in the form at all.
+
+    The Media Library's upload control sends a file and nothing else — there is
+    no "what is this for" picker on that screen — so this is what every file a
+    user drops into their library actually looks like on the wire.
+    """
+    form = {}
+    if title:
+        form["title"] = title
+    response = client.post(
+        "/api/video/media/upload",
+        headers=headers,
+        files={"file": (name, data, content_type)},
+        data=form,
+    )
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+def test_an_unnamed_png_is_filed_as_an_image(studio_client, headers):
+    """The bug: the form defaulted `kind` to the string `upload`, so a photo
+    dropped into the library was stored as `upload` and appeared under no tab
+    at all — and under Audio."""
+    item = upload_unnamed(studio_client, headers)
+
+    assert item["kind"] == "image"
+    assert item["content_type"] == "image/png"
+
+    images = studio_client.get(
+        "/api/video/media?filter=image", headers=headers
+    ).json()
+    assert [row["id"] for row in images["items"]] == [item["id"]]
+
+    audio = studio_client.get(
+        "/api/video/media?filter=audio", headers=headers
+    ).json()
+    assert audio["items"] == [], "a photo showed up under the Audio tab"
+
+
+def test_an_unnamed_mp4_is_filed_as_a_video(studio_client, headers, small_video):
+    item = upload_unnamed(
+        studio_client, headers,
+        data=small_video, name="clip.mp4", content_type="video/mp4",
+    )
+
+    assert item["kind"] == "video"
+
+    videos = studio_client.get(
+        "/api/video/media?filter=video", headers=headers
+    ).json()
+    assert [row["id"] for row in videos["items"]] == [item["id"]]
+
+
+def test_an_unnamed_audio_file_is_filed_as_an_upload(studio_client, headers):
+    """`upload` is the right answer for audio, and is left alone.
+
+    The storage vocabulary has no `audio` kind, and inventing one would mean
+    rewriting every stored object's key. The Audio tab matches on content type
+    instead, so the file is still findable under the tab that matters.
+    """
+    item = upload_unnamed(
+        studio_client, headers,
+        data=WAV_BYTES, name="take.wav", content_type="audio/wav",
+    )
+    assert item["kind"] == "upload"
+
+    audio = studio_client.get(
+        "/api/video/media?filter=audio", headers=headers
+    ).json()
+    assert [row["id"] for row in audio["items"]] == [item["id"]]
+
+
+def test_only_images_and_videos_are_inferred_anything_else_stays_an_upload():
+    """`subtitle` means a parsed cue list, not a raw .srt, so filing an
+    unclassifiable file as one would put it in the editor's track picker where
+    it cannot load. Conservative is correct here, and it is checked on the
+    function rather than through the route because the route rejects most of
+    these files anyway — an SRT arrives with `kind=subtitle`, which is
+    explicit, and the inferrer is never asked."""
+    from app.services.video.assets import kind_for_content
+
+    assert kind_for_content("image/png") == "image"
+    assert kind_for_content("image/jpeg") == "image"
+    assert kind_for_content("video/mp4") == "video"
+    assert kind_for_content("video/quicktime") == "video"
+
+    # Extension fallback: browsers send nothing for an .srt, and plenty of
+    # desktop clients send octet-stream for anything unusual.
+    assert kind_for_content("", "clip.mp4") == "video"
+    assert kind_for_content("application/octet-stream", "photo.JPG") == "image"
+
+    # Everything else keeps the catch-all.
+    assert kind_for_content("audio/wav") == "upload"
+    assert kind_for_content("application/x-subrip", "captions.srt") == "upload"
+    assert kind_for_content("text/vtt") == "upload"
+    assert kind_for_content("application/octet-stream") == "upload"
+    assert kind_for_content("") == "upload"
+
+
+def test_an_explicit_kind_is_still_believed(studio_client, headers):
+    """The studios know what they are making and say so — an MP3 that is a
+    voice-over must stay a voice-over, not be re-filed as a plain upload."""
+    item = upload(
+        studio_client, headers,
+        data=WAV_BYTES, name="vo.wav", content_type="audio/wav", kind="voice",
+    )
+    assert item["kind"] == "voice"
+
+    voice_tab = studio_client.get(
+        "/api/video/media?filter=voice", headers=headers
+    ).json()
+    assert [row["id"] for row in voice_tab["items"]] == [item["id"]]
+
+
+def test_an_unknown_kind_is_refused_rather_than_silently_replaced(studio_client, headers):
+    """`build_key` falls an unknown kind back to `upload`, so accepting one
+    here would store the file under a name that is not in the vocabulary while
+    reporting the caller's string back in the response."""
+    response = studio_client.post(
+        "/api/video/media/upload",
+        headers=headers,
+        files={"file": ("photo.png", PNG_BYTES, "image/png")},
+        data={"kind": "banana"},
+    )
+
+    assert response.status_code == 422, response.text
+    assert "banana" in response.json()["detail"]
+
+
+# ---------------------------------------------------------------------------
+# Rows that are already in the database
+# ---------------------------------------------------------------------------
+
+
+def test_a_photo_stored_under_the_old_default_still_shows_under_images(
+    studio_client, headers, studio_db
+):
+    """The filter matches on content type as well as kind.
+
+    The 0004 migration re-files the obvious rows, but a deployment that has not
+    run it yet — and anything arriving through another path — still has files
+    stored as `kind='upload'` that are plainly images. Those must be findable
+    now, not only after a migration.
+    """
+    from app.models.video_asset import VideoAsset
+
+    item = upload(studio_client, headers, kind="upload", name="legacy.png")
+    studio_db.execute(
+        VideoAsset.__table__.update()
+        .where(VideoAsset.id == item["id"])
+        .values(kind="upload")
+    )
+    studio_db.commit()
+
+    images = studio_client.get(
+        "/api/video/media?filter=image", headers=headers
+    ).json()
+    assert [row["id"] for row in images["items"]] == [item["id"]]
+
+    # And it must not also appear under Audio, which is where it used to sit.
+    audio = studio_client.get(
+        "/api/video/media?filter=audio", headers=headers
+    ).json()
+    assert audio["items"] == []
+
+
+def test_the_filter_counts_agree_with_what_the_filter_returns(studio_client, headers):
+    """A count that disagrees with the list it labels is worse than no count.
+
+    The tabs are unions of kinds and content types, so this is the only place
+    that catches a row being counted into one tab and listed in another.
+    """
+    upload_unnamed(studio_client, headers, name="a.png", title="A")
+    upload_unnamed(
+        studio_client, headers,
+        data=png_bytes(48, 48), name="b.png", title="B",
+    )
+    upload(
+        studio_client, headers, data=WAV_BYTES, name="vo.wav",
+        content_type="audio/wav", kind="voice",
+    )
+    upload(
+        studio_client, headers, data=SRT_BYTES, name="a.srt",
+        content_type="application/x-subrip", kind="subtitle",
+    )
+
+    body = studio_client.get("/api/video/media", headers=headers).json()
+    counts = {entry["key"]: entry["count"] for entry in body["filters"]}
+
+    for key in counts:
+        if key == "all":
+            continue
+        listed = studio_client.get(
+            f"/api/video/media?filter={key}", headers=headers
+        ).json()
+        assert listed["total"] == counts[key], (
+            f"the {key} tab says {counts[key]} but returns {listed['total']}"
+        )
+        assert listed["total"] == len(listed["items"]), key
+
+    # A voice-over is in the Audio tab and the Voice-over tab, so the tabs do
+    # not sum to "All" — and must not be made to.
+    assert counts["voice"] == 1
+    assert counts["audio"] == 1
+    assert counts["all"] == 4

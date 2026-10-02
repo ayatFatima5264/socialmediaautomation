@@ -215,7 +215,7 @@ def test_migrations_are_idempotent_on_a_second_run(migrated_url):
             ]
     finally:
         engine.dispose()
-    assert versions == ["0003"]
+    assert versions == ["0004"]
 
 
 def test_migration_moves_legacy_project_documents_into_rows(migrated_url):
@@ -321,6 +321,128 @@ def test_migration_renames_render_jobs_and_normalises_statuses(migrated_url):
 
     assert statuses == ["completed", "processing", "queued"]
     assert project_status == "processing"
+
+
+def test_migration_repairs_thumbnails_that_point_at_a_video(migrated_url):
+    """0004 clears the rows the old renderer wrote.
+
+    Two cases, and the difference between them is the point: a project with a
+    real image attached must be left completely alone, and a project whose
+    "thumbnail" is the rendered MP4 must end up with a real image — the poster
+    frame where one exists, NULL otherwise. NULL is the correct outcome, not a
+    loose end: the export manifest reads it as "no thumbnail yet" and tells the
+    user to make one, instead of advertising a PNG it cannot produce.
+    """
+    cfg = _alembic_config(migrated_url)
+    command.upgrade(cfg, "0003")
+
+    # Built through the ORM rather than raw INSERTs: the projects table carries
+    # a dozen NOT NULL JSON columns whose shape changes between revisions, and
+    # hand-writing them is how a migration test starts failing for a reason that
+    # has nothing to do with the migration.
+    engine = create_engine(migrated_url)
+    Session = sessionmaker(bind=engine, autoflush=False)
+    db = Session()
+    try:
+        user = User(email="r@example.com", hashed_password="x", timezone="UTC")
+        db.add(user)
+        db.flush()
+
+        def add_project(name: str) -> VideoProject:
+            row = VideoProject(
+                user_id=user.id,
+                name=name,
+                platform="custom",
+                width=256,
+                height=256,
+                fps=15,
+            )
+            db.add(row)
+            db.flush()
+            return row
+
+        def add_asset(kind: str, content_type: str, meta: dict, project: VideoProject):
+            row = VideoAsset(
+                user_id=user.id,
+                project_id=project.id,
+                kind=kind,
+                title=kind,
+                token=new_token(),
+                storage_key=f"users/{user.id}/{kind}/x",
+                storage_backend="database",
+                content_type=content_type,
+                size_bytes=10,
+                meta=meta,
+            )
+            db.add(row)
+            db.flush()
+            return row
+
+        # A: the broken case — the MP4 assigned as the thumbnail.
+        project_a = add_project("Broken")
+        project_a.thumbnail_asset_id = add_asset("render", "video/mp4", {}, project_a).id
+
+        # B: broken, but a poster frame from the newer renderer is available.
+        project_b = add_project("Repairable")
+        project_b.thumbnail_asset_id = add_asset("render", "video/mp4", {}, project_b).id
+        poster_b = add_asset(
+            "thumbnail", "image/png", {"source": "render_poster"}, project_b
+        ).id
+
+        # C: a real thumbnail. Must survive untouched.
+        project_c = add_project("Healthy")
+        image_c = add_asset("thumbnail", "image/png", {"design": {}}, project_c).id
+        project_c.thumbnail_asset_id = image_c
+
+        # D: broken, with no image anywhere on the project.
+        project_d = add_project("Hopeless")
+        project_d.thumbnail_asset_id = add_asset("render", "video/mp4", {}, project_d).id
+
+        db.commit()
+    finally:
+        db.close()
+        engine.dispose()
+
+    command.upgrade(cfg, "0004")
+
+    engine = create_engine(migrated_url)
+    try:
+        with engine.connect() as conn:
+            rows = dict(
+                conn.execute(
+                    text("SELECT name, thumbnail_asset_id FROM video_projects")
+                ).fetchall()
+            )
+            # The assets themselves must all still be there — the migration
+            # repairs the reference, it does not delete the user's files.
+            surviving = conn.execute(
+                text("SELECT COUNT(*) FROM video_assets")
+            ).scalar()
+    finally:
+        engine.dispose()
+
+    assert rows["Broken"] is None, "a video left in the thumbnail column"
+    assert rows["Repairable"] == poster_b, "the poster frame was not picked up"
+    assert rows["Healthy"] == image_c, "a real thumbnail was overwritten or cleared"
+    assert rows["Hopeless"] is None
+    assert surviving == 5, "the migration deleted assets"
+
+
+def test_the_thumbnail_repair_is_idempotent(migrated_url):
+    """`upgrade head` runs on every boot. Running the repair twice must not
+    clear a thumbnail that a user has since set in Thumbnail Studio."""
+    cfg = _alembic_config(migrated_url)
+    command.upgrade(cfg, "0004")
+    command.downgrade(cfg, "0003")
+    command.upgrade(cfg, "0004")
+
+    engine = create_engine(migrated_url)
+    try:
+        with engine.connect() as conn:
+            version = conn.execute(text("SELECT version_num FROM alembic_version")).scalar()
+    finally:
+        engine.dispose()
+    assert version == "0004"
 
 
 # ===========================================================================

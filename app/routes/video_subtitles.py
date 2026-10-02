@@ -53,6 +53,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Respon
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.api_errors import provider_http_error
 from app.config import settings
 from app.core.deps import get_current_user
 from app.database import get_db
@@ -101,13 +102,15 @@ def _http(exc: Exception) -> HTTPException:
     """Map a service error onto a status code.
 
     The distinctions that matter to the user: a provider that is not configured
-    is 503 (their admin has to fix it), a quota is 429 (come back later), and
-    anything about the file or the edit is 422 (change something and retry).
+    is 503 (their admin has to fix it), a quota is 429 (come back later), and a
+    provider that failed is 502 (try again). Those three come from
+    `app.api_errors`, so they read the same in every route rather than this one
+    disagreeing with the next.
+
+    What is left is about the file or the edit — a missing asset, a subtitle
+    operation that cannot be applied — and keeps its own code, because the
+    caller has to change something.
     """
-    if isinstance(exc, UsageLimitExceeded):
-        return HTTPException(status_code=429, detail=str(exc))
-    if isinstance(exc, MediaProviderConfigError):
-        return HTTPException(status_code=503, detail=str(exc))
     if isinstance(exc, asset_service.AssetNotFound):
         return HTTPException(status_code=404, detail=str(exc))
     if isinstance(exc, StorageError):
@@ -115,7 +118,7 @@ def _http(exc: Exception) -> HTTPException:
             status_code=502,
             detail="The file store could not be reached. Try again in a moment.",
         )
-    return HTTPException(status_code=422, detail=str(exc))
+    return provider_http_error(exc) or HTTPException(status_code=422, detail=str(exc))
 
 
 def _cues(payload) -> list[dict]:
